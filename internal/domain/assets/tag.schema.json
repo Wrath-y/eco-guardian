@@ -1,0 +1,1 @@
+{"$id":"urn:eco:schema:tag:1","type":"object","required":["category","parent_tag_ids"],"properties":{"category":{"type":"string"},"parent_tag_ids":{"type":"array","items":{"type":"string","format":"uuid"}}}}

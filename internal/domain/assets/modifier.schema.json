@@ -1,0 +1,1 @@
+{"$id":"urn:eco:schema:modifier:1","type":"object","required":["attribute_id","operation","value"],"properties":{"attribute_id":{"type":"string","format":"uuid"},"operation":{"enum":["Add","Multiply","Override","Max","Min"]},"value":{"type":"number"}}}

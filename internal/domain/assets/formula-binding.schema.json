@@ -1,0 +1,1 @@
+{"$id":"urn:eco:schema:formula-binding:1","type":"object","required":["output_attribute_id","expression"],"properties":{"output_attribute_id":{"type":"string","format":"uuid"},"expression":{"type":"string"}}}

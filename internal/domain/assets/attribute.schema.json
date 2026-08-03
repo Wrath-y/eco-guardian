@@ -1,0 +1,1 @@
+{"$id":"urn:eco:schema:attribute:1","type":"object","required":["value_type","dimension","base_unit","default"],"properties":{"value_type":{"enum":["integer","decimal","boolean"]},"dimension":{"type":"string"},"base_unit":{"type":"string"},"default":{"type":"number"},"min":{"type":"number"},"max":{"type":"number"},"display_scale":{"type":"number"}}}

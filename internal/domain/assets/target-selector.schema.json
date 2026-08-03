@@ -1,0 +1,1 @@
+{"$id":"urn:eco:schema:target-selector:1","type":"object","required":["type"],"properties":{"type":{"enum":["self","source","primary_target","all_targets","targets_with_tag"]},"tag_id":{"type":"string","format":"uuid"}}}

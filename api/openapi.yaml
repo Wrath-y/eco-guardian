@@ -1,0 +1,305 @@
+openapi: 3.1.0
+info:
+  title: Eco Guardian local API
+  version: 1.0.0
+  description: Loopback-only contract for local configuration authoring.
+servers:
+  - url: /api/v1
+paths:
+  /project-selections:
+    post:
+      operationId: selectProjectDirectory
+      responses:
+        '201': { description: Directory selected, content: { application/json: { schema: { $ref: '#/components/schemas/ProjectSelection' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /projects:
+    post:
+      operationId: openProject
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OpenProjectRequest' } } } }
+      responses:
+        '200': { description: Project is active, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }
+        '201': { description: Project created and active, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /projects/current:
+    get:
+      operationId: getCurrentProject
+      responses:
+        '200': { description: Active project, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }
+        '404': { $ref: '#/components/responses/Problem' }
+  /projects/close:
+    post:
+      operationId: closeProject
+      responses:
+        '204': { description: Project closed }
+        default: { $ref: '#/components/responses/Problem' }
+  /schemas/entities/{kind}:
+    get:
+      operationId: getEntitySchema
+      parameters: [ { $ref: '#/components/parameters/Kind' } ]
+      responses:
+        '200': { description: Compiled registry schema, content: { application/json: { schema: { $ref: '#/components/schemas/EntitySchema' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /entities/{kind}:
+    get:
+      operationId: listEntities
+      parameters:
+        - { $ref: '#/components/parameters/Kind' }
+        - { name: query, in: query, schema: { type: string, maxLength: 256 } }
+        - { name: cursor, in: query, description: Opaque continuation cursor, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+      responses:
+        '200': { description: Stable entity page, content: { application/json: { schema: { $ref: '#/components/schemas/EntityPage' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      operationId: createEntity
+      parameters: [ { $ref: '#/components/parameters/Kind' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/EntityDraft' } } } }
+      responses:
+        '201':
+          description: Entity created in a new revision
+          headers: { ETag: { $ref: '#/components/headers/EntityETag' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/SaveEntityResponse' } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /entities/{kind}/{id}:
+    get:
+      operationId: getEntity
+      parameters: [ { $ref: '#/components/parameters/Kind' }, { $ref: '#/components/parameters/EntityID' } ]
+      responses:
+        '200':
+          description: Entity
+          headers: { ETag: { $ref: '#/components/headers/EntityETag' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/Entity' } } }
+        default: { $ref: '#/components/responses/Problem' }
+    patch:
+      operationId: patchEntity
+      parameters:
+        - { $ref: '#/components/parameters/Kind' }
+        - { $ref: '#/components/parameters/EntityID' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/EntityPatch' } } } }
+      responses:
+        '200':
+          description: Entity updated in a new revision
+          headers: { ETag: { $ref: '#/components/headers/EntityETag' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/SaveEntityResponse' } } }
+        default: { $ref: '#/components/responses/Problem' }
+    delete:
+      operationId: deleteEntity
+      parameters:
+        - { $ref: '#/components/parameters/Kind' }
+        - { $ref: '#/components/parameters/EntityID' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      responses:
+        '200': { description: Entity archived in a new revision, content: { application/json: { schema: { $ref: '#/components/schemas/SaveEntityResponse' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+components:
+  parameters:
+    Kind: { name: kind, in: path, required: true, schema: { $ref: '#/components/schemas/EntityKind' } }
+    EntityID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
+    IfMatch: { name: If-Match, in: header, required: true, schema: { type: string }, description: Strong ETag returned by GET/create/patch. }
+  headers:
+    EntityETag: { required: true, schema: { type: string }, description: Strong ETag for the returned entity version. }
+  responses:
+    Problem: { description: RFC 9457 problem, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  schemas:
+    UUIDv7: { type: string, format: uuid, description: Server allocated UUIDv7. }
+    EntityKind: { type: string, enum: [character, skill, item, effect, tag, attribute] }
+    ProjectSelection:
+      type: object
+      required: [token, expires_at]
+      properties:
+        token: { type: string, minLength: 1, description: Opaque short-lived process-local capability. }
+        expires_at: { type: string, format: date-time }
+    OpenProjectRequest:
+      type: object
+      required: [selection_token, mode]
+      properties:
+        selection_token: { type: string }
+        mode: { type: string, enum: [create, open] }
+    Project:
+      type: object
+      required: [id, name, db_schema_version]
+      properties:
+        id: { $ref: '#/components/schemas/UUIDv7' }
+        name: { type: string }
+        db_schema_version: { type: integer, minimum: 1 }
+    EntitySchema:
+      type: object
+      required: [kind, schema_id, schema]
+      properties:
+        kind: { $ref: '#/components/schemas/EntityKind' }
+        schema_id: { type: string, pattern: '^urn:eco:schema:' }
+        schema: { type: object, additionalProperties: true }
+        ui_hints: { type: object, additionalProperties: true }
+    EntityStatus: { type: string, enum: [active, archived] }
+    Entity:
+      type: object
+      required: [id, kind, key, name, tag_ids, status, schema_version, payload, extensions, entity_version, created_at, updated_at]
+      properties:
+        id: { $ref: '#/components/schemas/UUIDv7' }
+        kind: { $ref: '#/components/schemas/EntityKind' }
+        key: { type: string, minLength: 1, maxLength: 128, pattern: '^[a-z][a-z0-9_]*$' }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 10000 }
+        tag_ids: { type: array, items: { $ref: '#/components/schemas/UUIDv7' } }
+        balance_group: { type: string, maxLength: 128 }
+        status: { $ref: '#/components/schemas/EntityStatus' }
+        schema_version: { type: integer, const: 1 }
+        payload: { $ref: '#/components/schemas/EntityPayload' }
+        extensions: { type: object, additionalProperties: true, description: Namespaced opaque extension values. }
+        entity_version: { type: integer, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    EntityDraft:
+      type: object
+      required: [key, name, payload]
+      properties:
+        key: { type: string, minLength: 1, maxLength: 128, pattern: '^[a-z][a-z0-9_]*$' }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 10000 }
+        tag_ids: { type: array, items: { $ref: '#/components/schemas/UUIDv7' }, default: [] }
+        balance_group: { type: string, maxLength: 128 }
+        payload: { $ref: '#/components/schemas/EntityPayload' }
+        extensions: { type: object, additionalProperties: true, default: {} }
+    EntityPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        key: { type: string, minLength: 1, maxLength: 128, pattern: '^[a-z][a-z0-9_]*$' }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 10000 }
+        tag_ids: { type: array, items: { $ref: '#/components/schemas/UUIDv7' } }
+        balance_group: { type: string, maxLength: 128 }
+        payload: { $ref: '#/components/schemas/EntityPayload' }
+        extensions: { type: object, additionalProperties: true }
+    EntityPayload:
+      oneOf:
+        - { $ref: '#/components/schemas/AttributePayload' }
+        - { $ref: '#/components/schemas/TagPayload' }
+        - { $ref: '#/components/schemas/CharacterPayload' }
+        - { $ref: '#/components/schemas/SkillPayload' }
+        - { $ref: '#/components/schemas/ItemPayload' }
+        - { $ref: '#/components/schemas/EffectPayload' }
+    AttributePayload:
+      type: object
+      required: [value_type, dimension, base_unit, default]
+      properties:
+        value_type: { type: string, enum: [integer, decimal, boolean] }
+        dimension: { type: string }
+        base_unit: { type: string }
+        default: { type: number }
+        min: { type: number }
+        max: { type: number }
+        display_scale: { type: number }
+    TagPayload:
+      type: object
+      required: [category, parent_tag_ids]
+      properties:
+        category: { type: string }
+        parent_tag_ids: { type: array, items: { $ref: '#/components/schemas/UUIDv7' } }
+    FormulaBinding:
+      type: object
+      required: [output_attribute_id, expression]
+      properties:
+        output_attribute_id: { $ref: '#/components/schemas/UUIDv7' }
+        expression: { type: string, minLength: 1 }
+    TargetSelector:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, enum: [self, source, primary_target, all_targets, targets_with_tag] }
+        tag_id: { $ref: '#/components/schemas/UUIDv7' }
+    TriggerRule:
+      type: object
+      required: [event, target]
+      properties:
+        event: { type: string, enum: [on_use, on_hit, on_damage, on_heal, on_interval, on_effect_applied] }
+        condition: { type: string }
+        target: { $ref: '#/components/schemas/TargetSelector' }
+        effect_ids: { type: array, items: { $ref: '#/components/schemas/UUIDv7' } }
+        termination_budget: { type: integer, minimum: 1 }
+    Modifier:
+      type: object
+      required: [attribute_id, operation, value]
+      properties:
+        attribute_id: { $ref: '#/components/schemas/UUIDv7' }
+        operation: { type: string, enum: [Add, Multiply, Override, Max, Min] }
+        value: { type: number }
+    StackRule:
+      type: object
+      required: [operation, max_stacks, refresh_policy]
+      properties:
+        operation: { type: string, enum: [Add, Multiply, Override, Max, Min] }
+        priority: { type: integer }
+        max_stacks: { type: integer, minimum: 1 }
+        refresh_policy: { type: string, enum: [refresh, replace, ignore] }
+        cap: { type: number }
+    CharacterPayload:
+      type: object
+      required: [attribute_values, skill_ids, item_ids, rule_blocks]
+      properties:
+        attribute_values: { type: array, items: { $ref: '#/components/schemas/FormulaBinding' } }
+        skill_ids: { type: array, items: { $ref: '#/components/schemas/UUIDv7' } }
+        item_ids: { type: array, items: { $ref: '#/components/schemas/UUIDv7' } }
+        rule_blocks: { type: array, items: { $ref: '#/components/schemas/TriggerRule' } }
+    SkillPayload:
+      type: object
+      required: [costs, cooldown, target_selector, effect_ids, rule_blocks]
+      properties:
+        costs: { type: array, items: { $ref: '#/components/schemas/FormulaBinding' } }
+        cooldown: { type: number, minimum: 0 }
+        target_selector: { $ref: '#/components/schemas/TargetSelector' }
+        effect_ids: { type: array, items: { $ref: '#/components/schemas/UUIDv7' } }
+        rule_blocks: { type: array, items: { $ref: '#/components/schemas/TriggerRule' } }
+    ItemPayload:
+      type: object
+      required: [slot, effect_ids, attribute_modifiers, enhance_tag_ids, rule_blocks]
+      properties:
+        slot: { type: string }
+        effect_ids: { type: array, items: { $ref: '#/components/schemas/UUIDv7' } }
+        attribute_modifiers: { type: array, items: { $ref: '#/components/schemas/Modifier' } }
+        enhance_tag_ids: { type: array, items: { $ref: '#/components/schemas/UUIDv7' } }
+        rule_blocks: { type: array, items: { $ref: '#/components/schemas/TriggerRule' } }
+    EffectPayload:
+      type: object
+      required: [duration, modifiers, trigger_blocks, stack_rule]
+      properties:
+        duration: { type: number, minimum: 0 }
+        modifiers: { type: array, items: { $ref: '#/components/schemas/Modifier' } }
+        trigger_blocks: { type: array, items: { $ref: '#/components/schemas/TriggerRule' } }
+        stack_rule: { $ref: '#/components/schemas/StackRule' }
+    RevisionSummary:
+      type: object
+      required: [id, display_revision, config_hash, created_at]
+      properties:
+        id: { $ref: '#/components/schemas/UUIDv7' }
+        display_revision: { type: integer, minimum: 1 }
+        config_hash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        created_at: { type: string, format: date-time }
+    SaveEntityResponse:
+      type: object
+      required: [entity, revision]
+      properties:
+        entity: { $ref: '#/components/schemas/Entity' }
+        revision: { $ref: '#/components/schemas/RevisionSummary' }
+    EntityPage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/Entity' } }
+        next_cursor: { type: [string, 'null'] }
+    Problem:
+      type: object
+      required: [type, title, status, code, retryable, request_id]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code: { type: string, enum: [INVALID_SELECTION, PROJECT_LOCKED, ACTIVE_PROJECT_CONFLICT, CLOSE_BLOCKED, UNSUPPORTED_KIND, UNSUPPORTED_SCHEMA, DUPLICATE_KEY, PRECONDITION_REQUIRED, REVISION_CONFLICT, ENTITY_REFERENCED, VALIDATION_FAILED, PROJECT_NOT_OPEN] }
+        retryable: { type: boolean }
+        request_id: { type: string }
+        entity_id: { $ref: '#/components/schemas/UUIDv7' }
+        field_path: { type: string }
+        details: { type: object, additionalProperties: true }

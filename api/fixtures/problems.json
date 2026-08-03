@@ -1,0 +1,11 @@
+[
+  {"type":"urn:eco:problem:invalid-selection","title":"Invalid project selection","status":400,"code":"INVALID_SELECTION","retryable":false,"request_id":"req-1"},
+  {"type":"urn:eco:problem:project-locked","title":"Project is locked","status":423,"code":"PROJECT_LOCKED","retryable":true,"request_id":"req-2"},
+  {"type":"urn:eco:problem:active-project-conflict","title":"Close the active project first","status":409,"code":"ACTIVE_PROJECT_CONFLICT","retryable":false,"request_id":"req-3"},
+  {"type":"urn:eco:problem:close-blocked","title":"Project close is blocked","status":409,"code":"CLOSE_BLOCKED","retryable":false,"request_id":"req-4"},
+  {"type":"urn:eco:problem:unsupported-kind","title":"Unsupported entity kind","status":400,"code":"UNSUPPORTED_KIND","retryable":false,"request_id":"req-5"},
+  {"type":"urn:eco:problem:duplicate-key","title":"Duplicate entity key","status":409,"code":"DUPLICATE_KEY","retryable":false,"request_id":"req-6"},
+  {"type":"urn:eco:problem:precondition-required","title":"If-Match is required","status":428,"code":"PRECONDITION_REQUIRED","retryable":false,"request_id":"req-7"},
+  {"type":"urn:eco:problem:revision-conflict","title":"Entity revision conflict","status":409,"code":"REVISION_CONFLICT","retryable":false,"request_id":"req-8"},
+  {"type":"urn:eco:problem:entity-referenced","title":"Entity is referenced","status":409,"code":"ENTITY_REFERENCED","retryable":false,"request_id":"req-9","details":{"references":[{"entity_id":"018f9e40-0000-7000-8000-000000000001","field_path":"payload.skill_ids[0]"}]}}
+]
