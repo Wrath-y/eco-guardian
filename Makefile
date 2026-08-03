@@ -14,3 +14,9 @@ build: web-build
 
 build-production:
 	rtk ./scripts/build-production.sh
+
+build-macos:
+	rtk go build -o dist/eco-guardian ./cmd/eco-guardian
+
+build-windows:
+	rtk env GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o dist/eco-guardian.exe ./cmd/eco-guardian

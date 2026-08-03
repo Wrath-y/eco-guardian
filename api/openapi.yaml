@@ -26,6 +26,19 @@ paths:
       responses:
         '200': { description: Active project, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }
         '404': { $ref: '#/components/responses/Problem' }
+  /projects/recent:
+    get:
+      operationId: listRecentProjects
+      responses:
+        '200': { description: Recent project metadata, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Project' } } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /projects/recent/{id}:
+    post:
+      operationId: openRecentProject
+      parameters: [ { $ref: '#/components/parameters/ProjectID' } ]
+      responses:
+        '200': { description: Recent project opened and active, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }
+        default: { $ref: '#/components/responses/Problem' }
   /projects/close:
     post:
       operationId: closeProject
@@ -96,6 +109,7 @@ components:
   parameters:
     Kind: { name: kind, in: path, required: true, schema: { $ref: '#/components/schemas/EntityKind' } }
     EntityID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
+    ProjectID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     IfMatch: { name: If-Match, in: header, required: true, schema: { type: string }, description: Strong ETag returned by GET/create/patch. }
   headers:
     EntityETag: { required: true, schema: { type: string }, description: Strong ETag for the returned entity version. }

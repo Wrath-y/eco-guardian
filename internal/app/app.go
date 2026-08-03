@@ -7,30 +7,72 @@ import (
 	"sync"
 )
 
-// Config contains process-level configuration. A zero value is safe for
-// command and unit-test startup; HTTP is attached by a later composition step.
-type Config struct{}
+// Runtime is the loopback HTTP service owned by the process composition root.
+type Runtime interface {
+	Start() error
+	Close(context.Context) error
+}
+
+// ProjectManager is intentionally a narrow lifecycle port. The concrete
+// single-project manager lives in internal/project and is closed only after
+// the HTTP listener has stopped accepting requests.
+type ProjectManager interface {
+	Close(context.Context) error
+}
 
 // Application owns service lifetime in one deterministic place.
 type Application struct {
-	mu      sync.Mutex
-	started bool
+	mu       sync.Mutex
+	started  bool
+	runtime  Runtime
+	projects ProjectManager
 }
 
-func New(Config) (*Application, error) { return &Application{}, nil }
+// Config contains process-level configuration. Its zero value is safe for
+// command and unit-test startup without an active project.
+type Config struct {
+	Runtime  Runtime
+	Projects ProjectManager
+}
+
+func New(config Config) (*Application, error) {
+	return &Application{runtime: config.Runtime, projects: config.Projects}, nil
+}
 
 func (a *Application) Start() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.started {
+		return nil
+	}
+	if a.runtime != nil {
+		if err := a.runtime.Start(); err != nil {
+			return err
+		}
+	}
 	a.started = true
 	return nil
 }
 
-func (a *Application) Close(context.Context) error {
+func (a *Application) Close(ctx context.Context) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if !a.started {
+		return nil
+	}
+	var first error
+	if a.runtime != nil {
+		if err := a.runtime.Close(ctx); err != nil {
+			first = err
+		}
+	}
+	if a.projects != nil {
+		if err := a.projects.Close(ctx); err != nil && first == nil {
+			first = err
+		}
+	}
 	a.started = false
-	return nil
+	return first
 }
 
 func (a *Application) Started() bool {

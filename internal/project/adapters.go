@@ -1,0 +1,62 @@
+package project
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+
+	"github.com/zouyi/eco-guardian/internal/domain"
+	store "github.com/zouyi/eco-guardian/internal/storage/sqlite"
+)
+
+// FileLocker uses an exclusive lock file held for the active project lifetime.
+// It is intentionally independent from SQLite and works on Windows as well as
+// developer platforms; a second process cannot acquire the same lock name.
+type FileLocker struct{}
+type fileLock struct {
+	file *os.File
+	path string
+}
+
+func (FileLocker) Acquire(dir string) (Lock, error) {
+	path := filepath.Join(dir, ".eco-guardian.lock")
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if errors.Is(err, os.ErrExist) {
+		return nil, ErrProjectLocked
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &fileLock{file, path}, nil
+}
+func (l *fileLock) Release() error {
+	err := l.file.Close()
+	remove := os.Remove(l.path)
+	if err != nil {
+		return err
+	}
+	return remove
+}
+
+type SQLiteFactory struct{ Registry *domain.Registry }
+type sqliteHandle struct{ store *store.Store }
+
+func (h *sqliteHandle) Close() error        { return h.store.Close() }
+func (h *sqliteHandle) ID() domain.ID       { return h.store.ProjectID() }
+func (h *sqliteHandle) Store() *store.Store { return h.store }
+func (f SQLiteFactory) Create(ctx context.Context, dir string) (ProjectHandle, error) {
+	s, _, err := store.Create(ctx, dir, f.Registry)
+	if err != nil {
+		return nil, err
+	}
+	return &sqliteHandle{s}, nil
+}
+func (f SQLiteFactory) Open(ctx context.Context, dir string) (ProjectHandle, error) {
+	_ = ctx
+	s, _, err := store.Open(dir, f.Registry)
+	if err != nil {
+		return nil, err
+	}
+	return &sqliteHandle{s}, nil
+}

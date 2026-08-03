@@ -4,3 +4,18 @@
 openspec
 docs
 node_modules
+
+# Local build outputs and single-file development builds.
+dist/
+eco-guardian
+
+# Local SQLite project data and its companion files.
+*.db
+*.db-wal
+*.db-shm
+.eco-guardian.lock
+
+# Frontend test and coverage artifacts.
+web/playwright-report/
+web/test-results/
+web/coverage/

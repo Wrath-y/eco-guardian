@@ -54,6 +54,7 @@ func (r *Runtime) Address() string {
 	}
 	return r.listener.Addr().String()
 }
+func (r *Runtime) Engine() *gin.Engine { return r.engine }
 func (r *Runtime) Close(ctx context.Context) error {
 	r.once.Do(func() {
 		if r.server == nil {

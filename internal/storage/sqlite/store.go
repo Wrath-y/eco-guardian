@@ -42,6 +42,7 @@ type Store struct {
 	writes    sync.Mutex
 	now       func() time.Time
 	projectID domain.ID
+	failStage func(string) error // test-only transaction fault injector
 }
 
 func Create(ctx context.Context, dir string, registry *domain.Registry) (*Store, domain.ID, error) {
@@ -319,6 +320,9 @@ func (s *Store) saveTx(ctx context.Context, tx *sql.Tx, e domain.Entity, create 
 	if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO entity_blobs(hash,json) VALUES(?,?)", hash, blob); err != nil {
 		return domain.RevisionSummary{}, err
 	}
+	if err = s.inject("blob"); err != nil {
+		return domain.RevisionSummary{}, err
+	}
 	if create {
 		_, err = tx.ExecContext(ctx, `INSERT INTO working_entities(id,kind,entity_key,schema_version,entity_version,blob_hash,status,created_at,updated_at)VALUES(?,?,?,?,?,?,?,?,?)`, e.ID, e.Kind, e.Key, e.SchemaVersion, e.EntityVersion, hash, e.Status, e.CreatedAt.Format(time.RFC3339Nano), e.UpdatedAt.Format(time.RFC3339Nano))
 		if err != nil {
@@ -337,6 +341,9 @@ func (s *Store) saveTx(ctx context.Context, tx *sql.Tx, e domain.Entity, create 
 			return domain.RevisionSummary{}, ErrNotFound
 		}
 	}
+	if err = s.inject("working"); err != nil {
+		return domain.RevisionSummary{}, err
+	}
 	if _, err = tx.ExecContext(ctx, "DELETE FROM entity_references WHERE source_entity_id=?", e.ID); err != nil {
 		return domain.RevisionSummary{}, err
 	}
@@ -354,7 +361,17 @@ func (s *Store) saveTx(ctx context.Context, tx *sql.Tx, e domain.Entity, create 
 			return domain.RevisionSummary{}, err
 		}
 	}
+	if err = s.inject("indexes"); err != nil {
+		return domain.RevisionSummary{}, err
+	}
 	return s.writeRevision(ctx, tx)
+}
+
+func (s *Store) inject(stage string) error {
+	if s.failStage == nil {
+		return nil
+	}
+	return s.failStage(stage)
 }
 func (s *Store) writeRevision(ctx context.Context, tx *sql.Tx) (domain.RevisionSummary, error) {
 	rows, err := tx.QueryContext(ctx, "SELECT id,entity_version,status,blob_hash FROM working_entities ORDER BY id")
@@ -399,6 +416,9 @@ func (s *Store) writeRevision(ctx context.Context, tx *sql.Tx) (domain.RevisionS
 		if _, err = tx.ExecContext(ctx, "INSERT INTO revision_entities(revision_id,entity_id,entity_version,status,blob_hash)VALUES(?,?,?,?,?)", id, x.id, x.v, x.st, x.h); err != nil {
 			return domain.RevisionSummary{}, err
 		}
+	}
+	if err = s.inject("revision"); err != nil {
+		return domain.RevisionSummary{}, err
 	}
 	return domain.RevisionSummary{ID: id, DisplayRevision: display, ConfigHash: h, CreatedAt: now}, nil
 }
