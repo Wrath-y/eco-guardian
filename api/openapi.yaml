@@ -105,11 +105,26 @@ paths:
       responses:
         '200': { description: Entity archived in a new revision, content: { application/json: { schema: { $ref: '#/components/schemas/SaveEntityResponse' } } } }
         default: { $ref: '#/components/responses/Problem' }
+  /validation/runs:
+    post:
+      operationId: createValidationRun
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateValidationRunRequest' } } } }
+      responses:
+        '201': { description: Synchronously completed immutable validation run, content: { application/json: { schema: { $ref: '#/components/schemas/ValidationRun' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /validation/runs/{id}:
+    get:
+      operationId: getValidationRun
+      parameters: [ { $ref: '#/components/parameters/ValidationRunID' } ]
+      responses:
+        '200': { description: Immutable validation result, content: { application/json: { schema: { $ref: '#/components/schemas/ValidationRun' } } } }
+        default: { $ref: '#/components/responses/Problem' }
 components:
   parameters:
     Kind: { name: kind, in: path, required: true, schema: { $ref: '#/components/schemas/EntityKind' } }
     EntityID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     ProjectID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
+    ValidationRunID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     IfMatch: { name: If-Match, in: header, required: true, schema: { type: string }, description: Strong ETag returned by GET/create/patch. }
   headers:
     EntityETag: { required: true, schema: { type: string }, description: Strong ETag for the returned entity version. }
@@ -117,6 +132,9 @@ components:
     Problem: { description: RFC 9457 problem, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
   schemas:
     UUIDv7: { type: string, format: uuid, description: Server allocated UUIDv7. }
+    DecimalString: { type: string, pattern: '^-?(0|[1-9][0-9]*)(\.[0-9]+)?$', description: Canonical finite decimal128 string. }
+    IntegerString: { type: string, pattern: '^-?(0|[1-9][0-9]*)$', description: Canonical integer string. }
+    Hash: { type: string, pattern: '^[a-f0-9]{64}$' }
     EntityKind: { type: string, enum: [character, skill, item, effect, tag, attribute] }
     ProjectSelection:
       type: object
@@ -139,12 +157,40 @@ components:
         db_schema_version: { type: integer, minimum: 1 }
     EntitySchema:
       type: object
-      required: [kind, schema_id, schema]
+      required: [kind, schema_id, schema, dsl_registry]
       properties:
         kind: { $ref: '#/components/schemas/EntityKind' }
         schema_id: { type: string, pattern: '^urn:eco:schema:' }
         schema: { type: object, additionalProperties: true }
         ui_hints: { type: object, additionalProperties: true }
+        dsl_registry: { $ref: '#/components/schemas/DslRegistryMetadata' }
+    DslRegistryMetadata:
+      type: object
+      required: [dsl_version, manifest_hash, selector_template, scopes, units, functions]
+      description: Read-only metadata for suggestions. It contains no executable code.
+      properties:
+        dsl_version: { type: string }
+        manifest_hash: { $ref: '#/components/schemas/Hash' }
+        selector_template: { type: string, const: '${scope:symbol}' }
+        scopes: { type: array, items: { type: string, enum: [self, source, target, scenario] } }
+        units: { type: array, items: { $ref: '#/components/schemas/DslUnitMetadata' } }
+        functions: { type: array, items: { $ref: '#/components/schemas/DslFunctionMetadata' } }
+    DslUnitMetadata:
+      type: object
+      required: [name, value_type, dimension, base]
+      properties:
+        name: { type: string }
+        value_type: { type: string, enum: [decimal, integer] }
+        dimension: { type: string }
+        base: { type: string }
+    DslFunctionMetadata:
+      type: object
+      required: [name, signature, pure, implementation_version]
+      properties:
+        name: { type: string }
+        signature: { type: string }
+        pure: { type: boolean, const: true }
+        implementation_version: { type: string }
     EntityStatus: { type: string, enum: [active, archived] }
     Entity:
       type: object
@@ -201,10 +247,10 @@ components:
         value_type: { type: string, enum: [integer, decimal, boolean] }
         dimension: { type: string }
         base_unit: { type: string }
-        default: { type: number }
-        min: { type: number }
-        max: { type: number }
-        display_scale: { type: number }
+        default: { oneOf: [{ $ref: '#/components/schemas/DecimalString' }, { type: boolean }] }
+        min: { $ref: '#/components/schemas/DecimalString' }
+        max: { $ref: '#/components/schemas/DecimalString' }
+        display_scale: { $ref: '#/components/schemas/DecimalString' }
     TagPayload:
       type: object
       required: [category, parent_tag_ids]
@@ -231,23 +277,23 @@ components:
         condition: { type: string }
         target: { $ref: '#/components/schemas/TargetSelector' }
         effect_ids: { type: array, items: { $ref: '#/components/schemas/UUIDv7' } }
-        termination_budget: { type: integer, minimum: 1 }
+        termination_budget: { $ref: '#/components/schemas/IntegerString' }
     Modifier:
       type: object
       required: [attribute_id, operation, value]
       properties:
         attribute_id: { $ref: '#/components/schemas/UUIDv7' }
         operation: { type: string, enum: [Add, Multiply, Override, Max, Min] }
-        value: { type: number }
+        value: { $ref: '#/components/schemas/DecimalString' }
     StackRule:
       type: object
       required: [operation, max_stacks, refresh_policy]
       properties:
         operation: { type: string, enum: [Add, Multiply, Override, Max, Min] }
-        priority: { type: integer }
-        max_stacks: { type: integer, minimum: 1 }
+        priority: { $ref: '#/components/schemas/IntegerString' }
+        max_stacks: { $ref: '#/components/schemas/IntegerString' }
         refresh_policy: { type: string, enum: [refresh, replace, ignore] }
-        cap: { type: number }
+        cap: { $ref: '#/components/schemas/DecimalString' }
     CharacterPayload:
       type: object
       required: [attribute_values, skill_ids, item_ids, rule_blocks]
@@ -261,7 +307,7 @@ components:
       required: [costs, cooldown, target_selector, effect_ids, rule_blocks]
       properties:
         costs: { type: array, items: { $ref: '#/components/schemas/FormulaBinding' } }
-        cooldown: { type: number, minimum: 0 }
+        cooldown: { $ref: '#/components/schemas/IntegerString' }
         target_selector: { $ref: '#/components/schemas/TargetSelector' }
         effect_ids: { type: array, items: { $ref: '#/components/schemas/UUIDv7' } }
         rule_blocks: { type: array, items: { $ref: '#/components/schemas/TriggerRule' } }
@@ -278,24 +324,111 @@ components:
       type: object
       required: [duration, modifiers, trigger_blocks, stack_rule]
       properties:
-        duration: { type: number, minimum: 0 }
+        duration: { $ref: '#/components/schemas/IntegerString' }
         modifiers: { type: array, items: { $ref: '#/components/schemas/Modifier' } }
         trigger_blocks: { type: array, items: { $ref: '#/components/schemas/TriggerRule' } }
         stack_rule: { $ref: '#/components/schemas/StackRule' }
     RevisionSummary:
       type: object
-      required: [id, display_revision, config_hash, created_at]
+      required: [id, display_revision, config_hash, created_at, validation]
       properties:
         id: { $ref: '#/components/schemas/UUIDv7' }
         display_revision: { type: integer, minimum: 1 }
         config_hash: { type: string, pattern: '^[a-f0-9]{64}$' }
         created_at: { type: string, format: date-time }
+        validation: { $ref: '#/components/schemas/LocalValidationSummary' }
+    LocalValidationSummary:
+      type: object
+      required: [run_id, scope, error, block, warning, info]
+      properties:
+        run_id: { $ref: '#/components/schemas/UUIDv7' }
+        scope: { type: string, const: LOCAL }
+        error: { type: integer, minimum: 0 }
+        block: { type: integer, minimum: 0 }
+        warning: { type: integer, minimum: 0 }
+        info: { type: integer, minimum: 0 }
     SaveEntityResponse:
       type: object
       required: [entity, revision]
       properties:
         entity: { $ref: '#/components/schemas/Entity' }
         revision: { $ref: '#/components/schemas/RevisionSummary' }
+    ValidationScope: { type: string, enum: [LOCAL, FULL] }
+    ValidationSource:
+      oneOf:
+        - $ref: '#/components/schemas/WorkingValidationSource'
+        - $ref: '#/components/schemas/RevisionValidationSource'
+      discriminator: { propertyName: type }
+    WorkingValidationSource:
+      type: object
+      required: [type]
+      properties: { type: { const: working } }
+    RevisionValidationSource:
+      type: object
+      required: [type, revision_id]
+      properties: { type: { const: revision }, revision_id: { $ref: '#/components/schemas/UUIDv7' } }
+    VersionManifest:
+      type: object
+      required: [schema, dsl, registry, numeric_policy]
+      properties:
+        schema: { type: string }
+        dsl: { type: string }
+        registry: { type: string }
+        numeric_policy: { type: string }
+    FormulaSpan:
+      type: object
+      required: [start_byte, end_byte]
+      properties:
+        start_byte: { type: integer, minimum: 0, description: UTF-8 byte offset, inclusive. }
+        end_byte: { type: integer, minimum: 1, description: UTF-8 byte offset, exclusive. }
+    ValidationSeverity: { type: string, enum: [ERROR, BLOCK, WARNING, INFO] }
+    SeveritySummary:
+      type: object
+      required: [error, block, warning, info]
+      properties:
+        error: { type: integer, minimum: 0 }
+        block: { type: integer, minimum: 0 }
+        warning: { type: integer, minimum: 0 }
+        info: { type: integer, minimum: 0 }
+    ValidationIssue:
+      type: object
+      required: [severity, code, entity_id, field_path, message_key, message, fingerprint]
+      properties:
+        severity: { $ref: '#/components/schemas/ValidationSeverity' }
+        code: { type: string }
+        entity_id: { $ref: '#/components/schemas/UUIDv7' }
+        field_path: { type: string, description: RFC 6901 JSON Pointer. }
+        formula_span: { oneOf: [{ $ref: '#/components/schemas/FormulaSpan' }, { type: 'null' }] }
+        ordinal: { type: integer, minimum: 0 }
+        message_key: { type: string }
+        message: { type: string, description: Readable server-derived presentation text; excluded from validation identity and result hashes. }
+        message_params: { type: object, additionalProperties: { type: string } }
+        fix_hint_key: { type: string }
+        fix_hint: { type: string, description: Readable server-derived presentation hint; excluded from validation identity and result hashes. }
+        evidence: { type: object, additionalProperties: { type: string } }
+        fingerprint: { $ref: '#/components/schemas/Hash' }
+    CreateValidationRunRequest:
+      type: object
+      required: [source, scope]
+      properties:
+        source: { $ref: '#/components/schemas/ValidationSource' }
+        scope: { $ref: '#/components/schemas/ValidationScope' }
+        entity_ids: { type: array, items: { $ref: '#/components/schemas/UUIDv7' }, description: Required only for LOCAL; forbidden for FULL. }
+    ValidationRun:
+      type: object
+      required: [id, source, scope, input_hash, versions, status, summary, result_hash, created_at, issues]
+      properties:
+        id: { $ref: '#/components/schemas/UUIDv7' }
+        source: { $ref: '#/components/schemas/ValidationSource' }
+        scope: { $ref: '#/components/schemas/ValidationScope' }
+        input_hash: { $ref: '#/components/schemas/Hash' }
+        versions: { $ref: '#/components/schemas/VersionManifest' }
+        status: { type: string, const: completed }
+        summary: { $ref: '#/components/schemas/SeveritySummary' }
+        result_hash: { $ref: '#/components/schemas/Hash' }
+        created_at: { type: string, format: date-time }
+        issues: { type: array, items: { $ref: '#/components/schemas/ValidationIssue' } }
+    ValidationGateResult: { type: string, enum: [PASS, REQUIRES_VALIDATION, BLOCKED] }
     EntityPage:
       type: object
       required: [items]
@@ -311,7 +444,7 @@ components:
         status: { type: integer }
         detail: { type: string }
         instance: { type: string }
-        code: { type: string, enum: [INVALID_SELECTION, PROJECT_LOCKED, ACTIVE_PROJECT_CONFLICT, CLOSE_BLOCKED, UNSUPPORTED_KIND, UNSUPPORTED_SCHEMA, DUPLICATE_KEY, PRECONDITION_REQUIRED, REVISION_CONFLICT, ENTITY_REFERENCED, VALIDATION_FAILED, PROJECT_NOT_OPEN] }
+        code: { type: string, enum: [INVALID_SELECTION, PROJECT_LOCKED, ACTIVE_PROJECT_CONFLICT, CLOSE_BLOCKED, UNSUPPORTED_KIND, UNSUPPORTED_SCHEMA, DUPLICATE_KEY, PRECONDITION_REQUIRED, REVISION_CONFLICT, ENTITY_REFERENCED, VALIDATION_FAILED, PROJECT_NOT_OPEN, INVALID_VALIDATION_REQUEST, INVALID_VALIDATION_SOURCE, INVALID_VALIDATION_SCOPE, INVALID_VALIDATION_TARGET, VALIDATION_SOURCE_NOT_FOUND, VALIDATION_RUN_NOT_FOUND, VALIDATION_STORAGE_FAILURE] }
         retryable: { type: boolean }
         request_id: { type: string }
         entity_id: { $ref: '#/components/schemas/UUIDv7' }

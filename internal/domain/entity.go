@@ -143,8 +143,20 @@ func (e Entity) ApplyPatch(patch EntityPatch, now time.Time) (Entity, error) {
 }
 
 type RevisionSummary struct {
-	ID              ID        `json:"id"`
-	DisplayRevision int64     `json:"display_revision"`
-	ConfigHash      string    `json:"config_hash"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID              ID                      `json:"id"`
+	DisplayRevision int64                   `json:"display_revision"`
+	ConfigHash      string                  `json:"config_hash"`
+	CreatedAt       time.Time               `json:"created_at"`
+	Validation      *LocalValidationSummary `json:"validation,omitempty"`
+}
+
+// LocalValidationSummary intentionally contains only transport-safe summary
+// data. Detailed immutable issues remain in the validation report store.
+type LocalValidationSummary struct {
+	RunID   ID     `json:"run_id"`
+	Scope   string `json:"scope"`
+	Error   int    `json:"error"`
+	Block   int    `json:"block"`
+	Warning int    `json:"warning"`
+	Info    int    `json:"info"`
 }

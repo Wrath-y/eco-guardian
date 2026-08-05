@@ -1,0 +1,8 @@
+{
+  "dsl_version": "dsl-v1",
+  "expressions": [
+    "${self:018f1e68-7f8f-7b75-8000-000000000001} + 1[damage_point]",
+    "if(true, 1[ratio], 0[ratio])",
+    "clamp(10[count], 0[count], 99[count])"
+  ]
+}

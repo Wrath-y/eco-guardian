@@ -1,19 +1,55 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { onBeforeRouteLeave, useRoute } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import StructuredPayloadForm from '@/components/StructuredPayloadForm.vue'
+import ValidationPanel from '@/components/ValidationPanel.vue'
 import { emptyDraft, rendererMap, validateDraft, type Entity, type EntityKind, type EntitySchema, type FieldIssue } from '@/forms/registry'
+import { issueNavigationQuery, readIssueNavigation } from '@/forms/issue-navigation'
+import { utf8SpanToUTF16 } from '@/forms/utf8-span'
+import type { components } from '@/api/generated'
 
 const route = useRoute()
+const router = useRouter()
 const kind = computed(() => String(route.params.kind) as EntityKind)
 const id = computed(() => String(route.params.id))
 const entity = ref<Record<string, unknown> | null>(null)
 const schema = ref<EntitySchema | null>(null)
 const error = ref(''); const issues = ref<FieldIssue[]>([]); const errorSummary = ref<HTMLElement | null>(null)
 const etag = ref(''); const dirty = ref(false); const saving = ref(false); const saved = ref(''); const conflict = ref(false); const switchDialog = ref<HTMLDialogElement | null>(null); const closeResolver = ref<((value: boolean) => void) | null>(null)
+const validationRun = ref<components['schemas']['ValidationRun'] | null>(null); const validationLoading = ref(false); const validationError = ref(''); const validationStale = ref(false)
+const localSaveSummary = ref<components['schemas']['LocalValidationSummary'] | null>(null)
+const currentFormHash = ref(''); const runFormHash = ref(''); const currentWorkingInputHash = ref(''); const runVersionIdentity = ref('')
 const fieldId = (path: string) => `field-${path.replace(/[^a-z0-9]+/gi, '-')}`
 const issuesFor = (path: string) => issues.value.filter(issue => issue.path === path)
-function markDirty() { dirty.value = true; saved.value = ''; issues.value = validateDraft(entity.value ?? {}, kind.value) }
+function stableValue(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableValue).join(',')}]`
+  if (value && typeof value === 'object') return `{${Object.keys(value as Record<string, unknown>).sort().map(key => `${JSON.stringify(key)}:${stableValue((value as Record<string, unknown>)[key])}`).join(',')}}`
+  return JSON.stringify(value)
+}
+function hashForm(value: unknown): string {
+  let hash = 2166136261
+  for (const char of stableValue(value)) { hash ^= char.codePointAt(0) ?? 0; hash = Math.imul(hash, 16777619) }
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+function refreshValidationStaleness() {
+  const run = validationRun.value
+  validationStale.value = run !== null && (currentFormHash.value !== runFormHash.value || currentWorkingInputHash.value !== run.input_hash || runVersionIdentity.value !== stableValue(run.versions))
+}
+function markDirty() { dirty.value = true; saved.value = ''; localSaveSummary.value = null; currentFormHash.value = hashForm(command(id.value === 'new')); refreshValidationStaleness(); issues.value = validateDraft(entity.value ?? {}, kind.value) }
+
+async function focusValidationIssue() {
+  const target = readIssueNavigation(route.query)
+  if (!target) return
+  await nextTick()
+  const field = Array.from(document.querySelectorAll<HTMLElement>('[data-field-path]'))
+    .find(element => element.dataset.fieldPath === target.fieldPath)
+  if (!field) return
+  field.focus()
+  field.scrollIntoView?.({ block: 'center' })
+  if (!target.span || !(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement)) return
+  const selection = utf8SpanToUTF16(field.value, target.span)
+  if (selection) field.setSelectionRange(selection.start, selection.end)
+}
 
 async function load() {
   error.value = ''; issues.value = []
@@ -48,8 +84,21 @@ async function save(): Promise<boolean> {
       issues.value = (problem?.details?.issues ?? []).map(issue => ({ path: issue.Path ?? issue.path ?? problem?.field_path ?? '', message: issue.Message ?? issue.message ?? '字段无效' }))
       await focusErrors(); return false
     }
-    const data = await r.json() as { entity: Entity }; entity.value = data.entity; dirty.value = false; etag.value = r.headers.get('ETag') ?? etag.value; saved.value = '保存成功。已创建新的配置修订。'; return true
+    const data = await r.json() as { entity: Entity; revision: { validation: components['schemas']['LocalValidationSummary'] } }; entity.value = data.entity; localSaveSummary.value = data.revision.validation; dirty.value = false; currentFormHash.value = hashForm(command(false)); currentWorkingInputHash.value = ''; refreshValidationStaleness(); etag.value = r.headers.get('ETag') ?? etag.value; saved.value = '保存成功。已创建新的配置修订。'; return true
   } catch { error.value = '保存请求失败，请检查连接后重试。'; await focusErrors(); return false } finally { saving.value = false }
+}
+async function runValidation() {
+  validationLoading.value = true; validationError.value = ''
+  const submittedFormHash = hashForm(command(id.value === 'new'))
+  try {
+    const response = await fetch('/api/v1/validation/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source: { type: 'working' }, scope: 'FULL' }) })
+    if (!response.ok) throw new Error((await response.json().catch(() => null) as { title?: string } | null)?.title ?? '校验请求失败')
+    validationRun.value = await response.json() as components['schemas']['ValidationRun']; runFormHash.value = submittedFormHash; currentFormHash.value = submittedFormHash; currentWorkingInputHash.value = validationRun.value.input_hash; runVersionIdentity.value = stableValue(validationRun.value.versions); refreshValidationStaleness()
+  } catch (cause) { validationError.value = cause instanceof Error ? cause.message : '校验请求失败，请检查连接后重试。' } finally { validationLoading.value = false }
+}
+async function activateValidationIssue(issue: components['schemas']['ValidationIssue']) {
+  if (issue.entity_id !== id.value) { validationError.value = '此问题属于其他实体；请从结果页使用实体类型映射打开对应编辑器。'; return }
+  await router.replace({ query: issueNavigationQuery(issue) })
 }
 async function refreshServer() { await load(); dirty.value = false; conflict.value = false }
 function copyInput() { void navigator.clipboard?.writeText(JSON.stringify(command(id.value === 'new'), null, 2)); saved.value = '已复制本地输入。' }
@@ -61,7 +110,8 @@ async function handleCloseRequest(event: Event) {
   if (!dirty.value) { request.detail.resolve(true); return }
   closeResolver.value = request.detail.resolve; switchDialog.value?.showModal()
 }
-onMounted(() => { void load(); window.addEventListener('beforeunload', warn); window.addEventListener('eco-guardian:request-close', handleCloseRequest) })
+watch(() => route.fullPath, () => { void focusValidationIssue() })
+onMounted(() => { void load().then(focusValidationIssue); window.addEventListener('beforeunload', warn); window.addEventListener('eco-guardian:request-close', handleCloseRequest) })
 onBeforeUnmount(() => { window.removeEventListener('beforeunload', warn); window.removeEventListener('eco-guardian:request-close', handleCloseRequest) })
 onBeforeRouteLeave(async () => {
   if (!dirty.value) return true
@@ -74,11 +124,13 @@ onBeforeRouteLeave(async () => {
     <div v-if="issues.length || error" ref="errorSummary" tabindex="-1" role="alert" aria-live="assertive" class="error-summary"><strong>保存未完成</strong><p v-if="error">{{ error }}</p><ul v-if="issues.length"><li v-for="issue in issues" :key="`${issue.path}:${issue.message}`"><a :href="`#${fieldId(issue.path)}`">{{ issue.path }}：{{ issue.message }}</a></li></ul></div>
     <div v-if="conflict" role="alert" aria-live="assertive">服务器版本已更新；本地输入已保留。<button @click="refreshServer">刷新服务器版本</button><button @click="copyInput">复制本地输入</button><button @click="conflict=false">保留输入继续编辑</button></div>
     <aside v-if="entity.extensions && Object.keys(entity.extensions as object).length" role="note">此对象包含当前版本不支持的扩展；它们将只读保留。<pre>{{ JSON.stringify(entity.extensions, null, 2) }}</pre></aside>
-    <label for="field-key">Key <input id="field-key" :aria-invalid="Boolean(issuesFor('key').length)" :aria-describedby="issuesFor('key').length ? 'key-error' : undefined" :value="String(entity.key ?? '')" @input="entity.key=($event.target as HTMLInputElement).value; markDirty()"></label><span v-if="issuesFor('key').length" id="key-error">{{ issuesFor('key')[0].message }}</span>
-    <label for="field-name">名称 <input id="field-name" :aria-invalid="Boolean(issuesFor('name').length)" :value="String(entity.name ?? '')" @input="entity.name=($event.target as HTMLInputElement).value; markDirty()"></label><span v-if="issuesFor('name').length">{{ issuesFor('name')[0].message }}</span>
-    <label for="field-description">说明 <textarea id="field-description" :value="String(entity.description ?? '')" @input="entity.description=($event.target as HTMLTextAreaElement).value; markDirty()"></textarea></label>
-    <StructuredPayloadForm :kind="kind" :model-value="entity.payload as never" @update:model-value="entity.payload=$event" @changed="markDirty" />
-    <button :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存' }}</button><p v-if="dirty" role="status">有未保存修改</p><p v-if="saved" role="status">{{ saved }}</p>
+    <label for="field-key">Key <input id="field-key" data-field-path="/key" :aria-invalid="Boolean(issuesFor('key').length)" :aria-describedby="issuesFor('key').length ? 'key-error' : undefined" :value="String(entity.key ?? '')" @input="entity.key=($event.target as HTMLInputElement).value; markDirty()"></label><span v-if="issuesFor('key').length" id="key-error">{{ issuesFor('key')[0].message }}</span>
+    <label for="field-name">名称 <input id="field-name" data-field-path="/name" :aria-invalid="Boolean(issuesFor('name').length)" :value="String(entity.name ?? '')" @input="entity.name=($event.target as HTMLInputElement).value; markDirty()"></label><span v-if="issuesFor('name').length">{{ issuesFor('name')[0].message }}</span>
+    <label for="field-description">说明 <textarea id="field-description" data-field-path="/description" :value="String(entity.description ?? '')" @input="entity.description=($event.target as HTMLTextAreaElement).value; markDirty()"></textarea></label>
+    <StructuredPayloadForm :kind="kind" :model-value="entity.payload as never" :dsl="schema?.dsl_registry" @update:model-value="entity.payload=$event" @changed="markDirty" />
+    <button :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存' }}</button><p v-if="dirty" role="status">有未保存修改</p><p v-if="saved" role="status">{{ saved }}</p><p v-if="localSaveSummary" role="status">LOCAL 校验摘要：ERROR {{ localSaveSummary.error }}，BLOCK {{ localSaveSummary.block }}，WARNING {{ localSaveSummary.warning }}，INFO {{ localSaveSummary.info }}。<span v-if="localSaveSummary.block">此修订含 BLOCK，仍需 FULL 校验且不可用于后续门禁。</span></p>
+    <button type="button" :disabled="validationLoading || id === 'new'" @click="runValidation">{{ validationLoading ? '校验中…' : '运行 FULL 校验' }}</button>
+    <ValidationPanel :run="validationRun" :loading="validationLoading" :error="validationError" :stale="validationStale" @retry="runValidation" @activate="activateValidationIssue" />
     <dialog ref="switchDialog" aria-labelledby="switch-title"><h2 id="switch-title">处理未保存修改</h2><p>切换或关闭项目前，请保存或放弃当前输入。</p><button :disabled="saving" @click="saveAndSwitch">保存并继续</button><button :disabled="saving" @click="discardAndSwitch">放弃修改</button><button :disabled="saving" @click="finishCloseRequest(false)">继续编辑</button></dialog>
   </section><p v-else role="status">正在加载编辑器…</p>
 </template>

@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/zouyi/eco-guardian/internal/domain"
+	"github.com/zouyi/eco-guardian/internal/formula"
 )
 
 type Problem struct {
@@ -44,7 +45,12 @@ func (h *SchemaHandler) get(c *gin.Context) {
 		problem(c, http.StatusBadRequest, "UNSUPPORTED_KIND", "Unsupported entity kind")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"kind": kind, "schema_id": schema.ID, "schema": jsonRaw(schema.Raw), "ui_hints": gin.H{}})
+	dsl, err := formula.V1Registry()
+	if err != nil {
+		problem(c, http.StatusServiceUnavailable, "VALIDATION_STORAGE_FAILURE", "Formula registry unavailable")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"kind": kind, "schema_id": schema.ID, "schema": jsonRaw(schema.Raw), "ui_hints": gin.H{}, "dsl_registry": gin.H{"dsl_version": formula.DSLVersion, "manifest_hash": dsl.ManifestHash(), "selector_template": "${scope:symbol}", "scopes": []string{"self", "source", "target", "scenario"}, "units": dsl.Units(), "functions": dsl.Functions()}})
 }
 
 type jsonRaw []byte

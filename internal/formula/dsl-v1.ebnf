@@ -1,0 +1,17 @@
+(* DSL v1. Source offsets are UTF-8 byte offsets and all spans are [start,end). *)
+Expression  = Or .
+Or          = And { "||" And } .
+And         = Compare { "&&" Compare } .
+Compare     = Sum [ ( "<" | "<=" | ">" | ">=" | "==" | "!=" ) Sum ] .
+Sum         = Product { ( "+" | "-" ) Product } .
+Product     = Unary { ( "*" | "/" ) Unary } .
+Unary       = [ "-" | "!" ] Primary .
+Primary     = Boolean | Quantity | Selector | Call | "(" Expression ")" .
+Boolean     = "true" | "false" .
+Quantity    = Number [ "[" Identifier "]" ] .
+Selector    = "${" Scope ":" Symbol "}" .
+Scope       = "self" | "source" | "target" | "scenario" .
+Call        = Identifier "(" [ Expression { "," Expression } ] ")" .
+Number      = Digit { Digit } [ "." Digit { Digit } ] [ ("e" | "E") ["+" | "-"] Digit { Digit } ] .
+Identifier  = Letter { Letter | Digit | "_" } .
+Symbol      = Identifier | UUID .

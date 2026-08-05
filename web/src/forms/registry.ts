@@ -17,12 +17,12 @@ export interface FieldIssue { path: string; message: string }
 
 export function emptyPayload(kind: EntityKind): Payload {
   switch (kind) {
-    case 'attribute': return { value_type: 'decimal', dimension: '', base_unit: '', default: 0 }
+    case 'attribute': return { value_type: 'decimal', dimension: '', base_unit: '', default: '0' }
     case 'tag': return { category: '', parent_tag_ids: [] }
     case 'character': return { attribute_values: [], skill_ids: [], item_ids: [], rule_blocks: [] }
-    case 'skill': return { costs: [], cooldown: 0, target_selector: { type: 'self' }, effect_ids: [], rule_blocks: [] }
+    case 'skill': return { costs: [], cooldown: '0', target_selector: { type: 'self' }, effect_ids: [], rule_blocks: [] }
     case 'item': return { slot: '', effect_ids: [], attribute_modifiers: [], enhance_tag_ids: [], rule_blocks: [] }
-    case 'effect': return { duration: 0, modifiers: [], trigger_blocks: [], stack_rule: { operation: 'Add', max_stacks: 1, refresh_policy: 'refresh' } }
+    case 'effect': return { duration: '0', modifiers: [], trigger_blocks: [], stack_rule: { operation: 'Add', max_stacks: '1', refresh_policy: 'refresh' } }
   }
 }
 

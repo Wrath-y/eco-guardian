@@ -1,0 +1,2 @@
+go test fuzz v1
+string("if(true, 1[ratio], ${scenario:level})")

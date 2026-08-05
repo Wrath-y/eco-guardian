@@ -26,6 +26,18 @@ describe('structured authoring forms', () => {
     }
   })
 
+  it('offers only registry metadata and inserts a stable selector token without evaluating it', async () => {
+    const view = render(StructuredPayloadForm, { props: {
+      kind: 'character', modelValue: { attribute_values: [{ output_attribute_id: '', expression: '' }], skill_ids: [], item_ids: [], rule_blocks: [] },
+      dsl: { dsl_version: 'dsl-v1', manifest_hash: 'manifest', selector_template: '${scope:symbol}', scopes: ['self', 'source', 'target', 'scenario'], units: [{ name: 'scalar', value_type: 'decimal', dimension: 'scalar', base: 'scalar' }], functions: [{ name: 'min', signature: '(T,T,...)->T', pure: true, implementation_version: '1' }] },
+    } })
+    expect(screen.getByRole('button', { name: '插入 self 选择器' })).toBeTruthy()
+    expect(view.container.querySelector('option[value="min("]')).toBeTruthy()
+    await fireEvent.click(screen.getByRole('button', { name: '插入 self 选择器' }))
+    expect(screen.getByDisplayValue('${self:symbol}')).toBeTruthy()
+    expect(screen.queryByText(/执行|预览|运行公式/)).toBeNull()
+  })
+
   it('keeps invalid input and focuses the linked error summary', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify({ kind: 'tag', schema_id: 'urn:eco:schema:tag:1', schema: {} }), { status: 200 }))))
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/projects', component: { template: '<main />' } }, { path: '/config/:kind/:id', component: EntityEditorView }] })
@@ -38,6 +50,25 @@ describe('structured authoring forms', () => {
     expect(document.activeElement).toBe(summary)
   })
 
+  it('announces a saved LOCAL BLOCK revision without presenting it as a FULL pass', async () => {
+    const id = '01948c1e-0000-7000-8000-000000000010'
+    vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve(new Response(JSON.stringify(url.includes('/schemas/') ? { kind: 'tag', schema_id: 'urn:eco:schema:tag:1', schema: {} } : {
+      entity: { id, kind: 'tag', key: 'fire', name: 'Fire', tag_ids: [], status: 'active', schema_version: 1, payload: { category: 'element', parent_tag_ids: [] }, extensions: {}, entity_version: 1, created_at: '', updated_at: '' },
+      revision: { id: '01948c1e-0000-7000-8000-000000000011', display_revision: 1, config_hash: 'a'.repeat(64), created_at: '', validation: { run_id: '01948c1e-0000-7000-8000-000000000012', scope: 'LOCAL', error: 0, block: 1, warning: 0, info: 0 } },
+    }), { status: url.includes('/schemas/') ? 200 : 201, headers: url.includes('/schemas/') ? {} : { ETag: '"entity:1"' } }))))
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/projects', component: { template: '<main />' } }, { path: '/config/:kind/:id', component: EntityEditorView }] })
+    await router.push('/config/tag/new'); await router.isReady()
+    render({ template: '<RouterView />' }, { global: { plugins: [router] } })
+    await waitFor(() => expect(screen.getByRole('button', { name: '保存' })).toBeTruthy())
+    await fireEvent.update(screen.getByLabelText('Key'), 'fire')
+    await fireEvent.update(screen.getByLabelText('名称'), 'Fire')
+    await fireEvent.update(document.querySelector('[data-field-path="/payload/category"]') as HTMLInputElement, 'element')
+    await fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(await screen.findByText(/LOCAL 校验摘要：ERROR 0，BLOCK 1/)).toBeTruthy()
+    expect(screen.getByText(/此修订含 BLOCK/)).toBeTruthy()
+    expect(screen.queryByText('当前 FULL 校验通过。')).toBeNull()
+  })
+
   it('renders an unknown extension as a read-only warning', async () => {
     vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve(new Response(JSON.stringify(url.includes('/schemas/') ? { kind: 'tag', schema_id: 'urn:eco:schema:tag:1', schema: {} } : {
       id: '01948c1e-0000-7000-8000-000000000000', kind: 'tag', key: 'fire', name: 'Fire', tag_ids: [], status: 'active', schema_version: 1,
@@ -48,5 +79,33 @@ describe('structured authoring forms', () => {
     render({ template: '<RouterView />' }, { global: { plugins: [router] } })
     expect(await screen.findByText('此对象包含当前版本不支持的扩展；它们将只读保留。')).toBeTruthy()
     expect(screen.getByText(/urn:future\/example/)).toBeTruthy()
+  })
+
+  it('focuses an RFC 6901 formula field and selects its UTF-8 diagnostic span', async () => {
+    const id = '01948c1e-0000-7000-8000-000000000000'
+    vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve(new Response(JSON.stringify(url.includes('/schemas/') ? { kind: 'character', schema_id: 'urn:eco:schema:character:1', schema: {} } : {
+      id, kind: 'character', key: 'hero', name: 'Hero', tag_ids: [], status: 'active', schema_version: 1,
+      payload: { attribute_values: [{ output_attribute_id: 'attack', expression: '甲😀+1' }], skill_ids: [], item_ids: [], rule_blocks: [] }, extensions: {}, entity_version: 1, created_at: '', updated_at: '',
+    }), { status: 200, headers: url.includes('/entities/') ? { ETag: '"entity:1"' } : {} }))))
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/projects', component: { template: '<main />' } }, { path: '/config/:kind/:id', component: EntityEditorView }] })
+    await router.push(`/config/character/${id}?field_path=/payload/attribute_values/0/expression&span_start=3&span_end=7`); await router.isReady()
+    render({ template: '<RouterView />' }, { global: { plugins: [router] } })
+    const expression = await screen.findByDisplayValue('甲😀+1') as HTMLInputElement
+    await waitFor(() => expect(document.activeElement).toBe(expression))
+    expect([expression.selectionStart, expression.selectionEnd]).toEqual([1, 3])
+  })
+
+  it('falls back to field focus when a formula span is not valid UTF-8', async () => {
+    const id = '01948c1e-0000-7000-8000-000000000001'
+    vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve(new Response(JSON.stringify(url.includes('/schemas/') ? { kind: 'character', schema_id: 'urn:eco:schema:character:1', schema: {} } : {
+      id, kind: 'character', key: 'hero', name: 'Hero', tag_ids: [], status: 'active', schema_version: 1,
+      payload: { attribute_values: [{ output_attribute_id: 'attack', expression: '甲😀+1' }], skill_ids: [], item_ids: [], rule_blocks: [] }, extensions: {}, entity_version: 1, created_at: '', updated_at: '',
+    }), { status: 200, headers: url.includes('/entities/') ? { ETag: '"entity:1"' } : {} }))))
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/projects', component: { template: '<main />' } }, { path: '/config/:kind/:id', component: EntityEditorView }] })
+    await router.push(`/config/character/${id}?field_path=/payload/attribute_values/0/expression&span_start=1&span_end=7`); await router.isReady()
+    render({ template: '<RouterView />' }, { global: { plugins: [router] } })
+    const expression = await screen.findByDisplayValue('甲😀+1') as HTMLInputElement
+    await waitFor(() => expect(document.activeElement).toBe(expression))
+    expect(expression.selectionStart).toBe(expression.selectionEnd)
   })
 })

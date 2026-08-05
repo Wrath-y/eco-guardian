@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/zouyi/eco-guardian/internal/domain"
 	"github.com/zouyi/eco-guardian/internal/project"
+	store "github.com/zouyi/eco-guardian/internal/storage/sqlite"
 )
 
 type ProjectHandler struct {
@@ -45,7 +46,7 @@ func (h *ProjectHandler) openRecent(c *gin.Context) {
 		writeProjectError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"id": info.ID, "name": info.Name, "db_schema_version": 1})
+	c.JSON(http.StatusOK, gin.H{"id": info.ID, "name": info.Name, "db_schema_version": store.DBSchemaVersion()})
 }
 func (h *ProjectHandler) selectDir(c *gin.Context) {
 	if h.selector == nil {
@@ -87,7 +88,7 @@ func (h *ProjectHandler) open(c *gin.Context) {
 	if request.Mode == "create" {
 		status = http.StatusCreated
 	}
-	c.JSON(status, gin.H{"id": info.ID, "name": info.Name, "db_schema_version": 1})
+	c.JSON(status, gin.H{"id": info.ID, "name": info.Name, "db_schema_version": store.DBSchemaVersion()})
 }
 func (h *ProjectHandler) current(c *gin.Context) {
 	info, ok := h.manager.Current()
@@ -95,7 +96,7 @@ func (h *ProjectHandler) current(c *gin.Context) {
 		problem(c, 404, "PROJECT_NOT_OPEN", "No active project")
 		return
 	}
-	c.JSON(200, gin.H{"id": info.ID, "name": info.Name, "db_schema_version": 1})
+	c.JSON(200, gin.H{"id": info.ID, "name": info.Name, "db_schema_version": store.DBSchemaVersion()})
 }
 func (h *ProjectHandler) close(c *gin.Context) {
 	if err := h.manager.Close(c.Request.Context()); err != nil {

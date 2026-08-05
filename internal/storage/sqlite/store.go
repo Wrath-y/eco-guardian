@@ -20,12 +20,16 @@ import (
 )
 
 const databaseName = "project.db"
+const currentSchemaVersion = 2
+
+func DBSchemaVersion() int { return currentSchemaVersion }
 
 var (
-	ErrProjectInvalid   = errors.New("invalid or unsupported project database")
-	ErrDuplicateKey     = errors.New("duplicate active kind/key")
-	ErrNotFound         = errors.New("entity not found")
-	ErrRevisionConflict = errors.New("entity revision conflict")
+	ErrProjectInvalid        = errors.New("invalid or unsupported project database")
+	ErrDuplicateKey          = errors.New("duplicate active kind/key")
+	ErrNotFound              = errors.New("entity not found")
+	ErrRevisionConflict      = errors.New("entity revision conflict")
+	errLocalPreflightChanged = errors.New("local validation preflight changed")
 )
 
 type ReferencedError struct{ References []domain.Reference }
@@ -78,6 +82,9 @@ func Create(ctx context.Context, dir string, registry *domain.Registry) (*Store,
 	if err == nil {
 		_, err = tx.ExecContext(ctx, "INSERT INTO project_meta(id,db_schema_version,created_at) VALUES(?,?,?)", id, 1, s.now().UTC().Format(time.RFC3339Nano))
 	}
+	if err == nil {
+		err = applyMigrationV2(ctx, tx)
+	}
 	if err != nil {
 		tx.Rollback()
 		s.Close()
@@ -98,12 +105,43 @@ func Open(dir string, registry *domain.Registry) (*Store, domain.ID, error) {
 	}
 	var id domain.ID
 	var version int
-	if err = s.db.QueryRow("SELECT id,db_schema_version FROM project_meta").Scan(&id, &version); err != nil || !id.Valid() || version != 1 {
+	if err = s.db.QueryRow("SELECT id,db_schema_version FROM project_meta").Scan(&id, &version); err != nil || !id.Valid() {
 		s.Close()
 		return nil, "", fmt.Errorf("%w: %v", ErrProjectInvalid, err)
 	}
+	if version == 1 {
+		if err = upgradeV2(context.Background(), s.db); err != nil {
+			s.Close()
+			return nil, "", fmt.Errorf("%w: %v", ErrProjectInvalid, err)
+		}
+		version = 2
+	}
+	if version != currentSchemaVersion {
+		s.Close()
+		return nil, "", fmt.Errorf("%w: unsupported schema version %d", ErrProjectInvalid, version)
+	}
 	s.projectID = id
 	return s, id, nil
+}
+
+func upgradeV2(ctx context.Context, db *sql.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = applyMigrationV2(ctx, tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+func applyMigrationV2(ctx context.Context, tx *sql.Tx) error {
+	migration, err := root.Assets.ReadFile("migrations/0002_validation.sql")
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, string(migration))
+	return err
 }
 func open(path string, registry *domain.Registry) (*Store, error) {
 	if registry == nil {
@@ -211,20 +249,16 @@ func (s *Store) Create(ctx context.Context, kind domain.EntityKind, d domain.Ent
 	if err != nil {
 		return domain.Entity{}, domain.RevisionSummary{}, err
 	}
-	if issues := s.registry.Validate(e); len(issues) > 0 {
-		return domain.Entity{}, domain.RevisionSummary{}, ValidationError{issues}
+	e, err = s.validateProspective(e)
+	if err != nil {
+		return domain.Entity{}, domain.RevisionSummary{}, err
 	}
 	return s.save(ctx, e, true)
 }
 func (s *Store) Patch(ctx context.Context, kind domain.EntityKind, id domain.ID, version int64, p domain.EntityPatch) (domain.Entity, domain.RevisionSummary, error) {
-	s.writes.Lock()
-	defer s.writes.Unlock()
-	tx, e := s.db.BeginTx(ctx, nil)
-	if e != nil {
-		return domain.Entity{}, domain.RevisionSummary{}, e
-	}
-	defer tx.Rollback()
-	current, e := s.getTx(ctx, tx, kind, id)
+	// Compose and validate outside the serialized write transaction. The same
+	// entity version is rechecked inside it before any write takes place.
+	current, e := s.Get(ctx, kind, id)
 	if e != nil {
 		return domain.Entity{}, domain.RevisionSummary{}, e
 	}
@@ -235,14 +269,62 @@ func (s *Store) Patch(ctx context.Context, kind domain.EntityKind, id domain.ID,
 	if e != nil {
 		return domain.Entity{}, domain.RevisionSummary{}, e
 	}
-	if issues := s.registry.Validate(next); len(issues) > 0 {
-		return domain.Entity{}, domain.RevisionSummary{}, ValidationError{issues}
+	next, e = s.validateProspective(next)
+	if e != nil {
+		return domain.Entity{}, domain.RevisionSummary{}, e
 	}
-	r, e := s.saveTx(ctx, tx, next, false)
-	if e == nil {
-		e = tx.Commit()
+	for attempt := 0; attempt < 2; attempt++ {
+		preflight, preflightErr := s.preflightLocal(ctx, next)
+		if preflightErr != nil {
+			return domain.Entity{}, domain.RevisionSummary{}, preflightErr
+		}
+		s.writes.Lock()
+		tx, txErr := s.db.BeginTx(ctx, nil)
+		if txErr != nil {
+			s.writes.Unlock()
+			return domain.Entity{}, domain.RevisionSummary{}, txErr
+		}
+		current, txErr = s.getTx(ctx, tx, kind, id)
+		if txErr == nil && current.EntityVersion != version {
+			txErr = ErrRevisionConflict
+		}
+		if txErr == nil {
+			var currentInput bool
+			currentInput, txErr = s.recheckLocalPreflightTx(ctx, tx, preflight)
+			if txErr == nil && !currentInput {
+				txErr = errLocalPreflightChanged
+			}
+		}
+		if txErr == nil {
+			txErr = s.recheckActiveKeyTx(ctx, tx, next)
+		}
+		var revision domain.RevisionSummary
+		if txErr == nil {
+			revision, txErr = s.saveTx(ctx, tx, next, false)
+		}
+		if txErr == nil {
+			txErr = tx.Commit()
+		} else {
+			_ = tx.Rollback()
+		}
+		s.writes.Unlock()
+		if errors.Is(txErr, errLocalPreflightChanged) && attempt == 0 {
+			continue
+		}
+		return next, revision, txErr
 	}
-	return next, r, e
+	return domain.Entity{}, domain.RevisionSummary{}, ErrRevisionConflict
+}
+
+func (s *Store) validateProspective(entity domain.Entity) (domain.Entity, error) {
+	normalized, err := domain.NormalizeNumericEntity(entity)
+	if err != nil {
+		return domain.Entity{}, ValidationError{[]domain.FieldIssue{{Path: "payload", Message: err.Error()}}}
+	}
+	if issues := s.registry.Validate(normalized); len(issues) > 0 {
+		return domain.Entity{}, ValidationError{issues}
+	}
+	return normalized, nil
 }
 func (s *Store) Delete(ctx context.Context, kind domain.EntityKind, id domain.ID, version int64) (domain.Entity, domain.RevisionSummary, error) {
 	s.writes.Lock()
@@ -287,18 +369,55 @@ func (s *Store) Delete(ctx context.Context, kind domain.EntityKind, id domain.ID
 }
 
 func (s *Store) save(ctx context.Context, e domain.Entity, create bool) (domain.Entity, domain.RevisionSummary, error) {
-	s.writes.Lock()
-	defer s.writes.Unlock()
-	tx, err := s.db.BeginTx(ctx, nil)
+	for attempt := 0; attempt < 2; attempt++ {
+		preflight, err := s.preflightLocal(ctx, e)
+		if err != nil {
+			return domain.Entity{}, domain.RevisionSummary{}, err
+		}
+		s.writes.Lock()
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			s.writes.Unlock()
+			return domain.Entity{}, domain.RevisionSummary{}, err
+		}
+		currentInput, err := s.recheckLocalPreflightTx(ctx, tx, preflight)
+		if err == nil && !currentInput {
+			err = errLocalPreflightChanged
+		}
+		if err == nil {
+			err = s.recheckActiveKeyTx(ctx, tx, e)
+		}
+		var revision domain.RevisionSummary
+		if err == nil {
+			revision, err = s.saveTx(ctx, tx, e, create)
+		}
+		if err == nil {
+			err = tx.Commit()
+		} else {
+			_ = tx.Rollback()
+		}
+		s.writes.Unlock()
+		if errors.Is(err, errLocalPreflightChanged) && attempt == 0 {
+			continue
+		}
+		return e, revision, err
+	}
+	return domain.Entity{}, domain.RevisionSummary{}, ErrRevisionConflict
+}
+
+func (s *Store) recheckActiveKeyTx(ctx context.Context, tx *sql.Tx, entity domain.Entity) error {
+	if entity.Status != domain.StatusActive {
+		return nil
+	}
+	var existing domain.ID
+	err := tx.QueryRowContext(ctx, `SELECT id FROM working_entities WHERE kind=? AND entity_key=? AND status='active' AND id<>? LIMIT 1`, entity.Kind, entity.Key, entity.ID).Scan(&existing)
+	if err == sql.ErrNoRows {
+		return nil
+	}
 	if err != nil {
-		return domain.Entity{}, domain.RevisionSummary{}, err
+		return err
 	}
-	defer tx.Rollback()
-	r, err := s.saveTx(ctx, tx, e, create)
-	if err == nil {
-		err = tx.Commit()
-	}
-	return e, r, err
+	return ErrDuplicateKey
 }
 func (s *Store) getTx(ctx context.Context, tx *sql.Tx, kind domain.EntityKind, id domain.ID) (domain.Entity, error) {
 	var raw []byte
@@ -364,7 +483,22 @@ func (s *Store) saveTx(ctx context.Context, tx *sql.Tx, e domain.Entity, create 
 	if err = s.inject("indexes"); err != nil {
 		return domain.RevisionSummary{}, err
 	}
-	return s.writeRevision(ctx, tx)
+	revision, err := s.writeRevision(ctx, tx)
+	if err != nil {
+		return domain.RevisionSummary{}, err
+	}
+	if err = s.persistRevisionDerived(ctx, tx, revision.ID); err != nil {
+		return domain.RevisionSummary{}, err
+	}
+	if err = s.inject("derived"); err != nil {
+		return domain.RevisionSummary{}, err
+	}
+	summary, err := s.persistLocalValidation(ctx, tx, e, revision)
+	if err != nil {
+		return domain.RevisionSummary{}, err
+	}
+	revision.Validation = &summary
+	return revision, nil
 }
 
 func (s *Store) inject(stage string) error {

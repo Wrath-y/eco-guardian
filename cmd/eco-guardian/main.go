@@ -32,6 +32,7 @@ func main() {
 	httpapi.NewProjectHandler(manager, project.NativeDirectorySelector{}).Register(runtime.Engine())
 	httpapi.NewSchemaHandler(registry).Register(runtime.Engine())
 	httpapi.NewEntityHandler(httpapi.StoreFromProjectManager(manager)).Register(runtime.Engine())
+	httpapi.NewValidationHandler(httpapi.ValidationStoreFromProjectManager(manager)).Register(runtime.Engine())
 	application, err := app.New(app.Config{Runtime: runtime, Projects: manager})
 	if err != nil {
 		log.Fatal(err)

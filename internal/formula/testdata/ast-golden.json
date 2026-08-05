@@ -1,0 +1,7 @@
+[
+  {"source":"1 + 2 * 3","hash":"precedence"},
+  {"source":"${self:018f1e68-7f8f-7b75-8000-000000000001}","hash":"selector"},
+  {"source":"if(false, 1[ratio], 0[ratio])","hash":"short-circuit-form"},
+  {"source":"min(1[count], 2[count])","hash":"function"},
+  {"source":"甲 + 1","hash":"forbidden-bare-identifier"}
+]

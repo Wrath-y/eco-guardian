@@ -25,6 +25,18 @@ func TestSchemaHandlerServesAllBuiltIns(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("%s: %d %s", kind, w.Code, w.Body.String())
 		}
+		var body struct {
+			DSL struct {
+				ManifestHash     string                  `json:"manifest_hash"`
+				SelectorTemplate string                  `json:"selector_template"`
+				Scopes           []string                `json:"scopes"`
+				Units            []struct{ Name string } `json:"units"`
+				Functions        []struct{ Name string } `json:"functions"`
+			} `json:"dsl_registry"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.DSL.ManifestHash == "" || body.DSL.SelectorTemplate != "${scope:symbol}" || len(body.DSL.Scopes) != 4 || len(body.DSL.Units) != 9 || len(body.DSL.Functions) != 8 {
+			t.Fatalf("%s: invalid DSL metadata=%s err=%v", kind, w.Body.String(), err)
+		}
 	}
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/schemas/entities/nope", nil))

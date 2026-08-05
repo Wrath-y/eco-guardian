@@ -6,4 +6,4 @@ cp web/src/api/generated.ts "$contract_tmp"
 npm --prefix web run generate:api
 cmp -s "$contract_tmp" web/src/api/generated.ts
 rm -f "$contract_tmp"
-go test ./internal/httpapi ./internal/domain
+go test ./internal/httpapi ./internal/domain ./internal/formula ./internal/validation

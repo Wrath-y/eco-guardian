@@ -4,5 +4,5 @@
   {"kind":"character","key":"hero","name":"Hero","payload":{"attribute_values":[],"skill_ids":[],"item_ids":[]}},
   {"kind":"skill","key":"slash","name":"Slash","payload":{"costs":[],"cooldown":0,"target_selector":{"type":"unknown"},"effect_ids":[],"rule_blocks":[]}},
   {"kind":"item","key":"sword","name":"Sword","payload":{"slot":"weapon","effect_ids":[],"attribute_modifiers":[],"enhance_tag_ids":[],"rule_blocks":[{"event":"unknown","target":{"type":"self"}}]}},
-  {"kind":"effect","key":"burn","name":"Burn","payload":{"duration":1,"modifiers":[],"trigger_blocks":[],"stack_rule":{"operation":"Bogus","max_stacks":1,"refresh_policy":"refresh"}}}
+  {"kind":"effect","key":"burn","name":"Burn","payload":{"duration":"1","modifiers":[],"trigger_blocks":[],"stack_rule":{"operation":"Bogus","max_stacks":"1","refresh_policy":"refresh"}}}
 ]

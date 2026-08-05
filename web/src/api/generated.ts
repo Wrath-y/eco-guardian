@@ -148,6 +148,38 @@ export interface paths {
         patch: operations["patchEntity"];
         trace?: never;
     };
+    "/validation/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createValidationRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/validation/runs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getValidationRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -157,6 +189,11 @@ export interface components {
          * @description Server allocated UUIDv7.
          */
         UUIDv7: string;
+        /** @description Canonical finite decimal128 string. */
+        DecimalString: string;
+        /** @description Canonical integer string. */
+        IntegerString: string;
+        Hash: string;
         /** @enum {string} */
         EntityKind: "character" | "skill" | "item" | "effect" | "tag" | "attribute";
         ProjectSelection: {
@@ -184,6 +221,31 @@ export interface components {
             ui_hints?: {
                 [key: string]: unknown;
             };
+            dsl_registry: components["schemas"]["DslRegistryMetadata"];
+        };
+        /** @description Read-only metadata for suggestions. It contains no executable code. */
+        DslRegistryMetadata: {
+            dsl_version: string;
+            manifest_hash: components["schemas"]["Hash"];
+            /** @constant */
+            selector_template: "${scope:symbol}";
+            scopes: ("self" | "source" | "target" | "scenario")[];
+            units: components["schemas"]["DslUnitMetadata"][];
+            functions: components["schemas"]["DslFunctionMetadata"][];
+        };
+        DslUnitMetadata: {
+            name: string;
+            /** @enum {string} */
+            value_type: "decimal" | "integer";
+            dimension: string;
+            base: string;
+        };
+        DslFunctionMetadata: {
+            name: string;
+            signature: string;
+            /** @constant */
+            pure: true;
+            implementation_version: string;
         };
         /** @enum {string} */
         EntityStatus: "active" | "archived";
@@ -239,10 +301,10 @@ export interface components {
             value_type: "integer" | "decimal" | "boolean";
             dimension: string;
             base_unit: string;
-            default: number;
-            min?: number;
-            max?: number;
-            display_scale?: number;
+            default: components["schemas"]["DecimalString"] | boolean;
+            min?: components["schemas"]["DecimalString"];
+            max?: components["schemas"]["DecimalString"];
+            display_scale?: components["schemas"]["DecimalString"];
         };
         TagPayload: {
             category: string;
@@ -263,22 +325,22 @@ export interface components {
             condition?: string;
             target: components["schemas"]["TargetSelector"];
             effect_ids?: components["schemas"]["UUIDv7"][];
-            termination_budget?: number;
+            termination_budget?: components["schemas"]["IntegerString"];
         };
         Modifier: {
             attribute_id: components["schemas"]["UUIDv7"];
             /** @enum {string} */
             operation: "Add" | "Multiply" | "Override" | "Max" | "Min";
-            value: number;
+            value: components["schemas"]["DecimalString"];
         };
         StackRule: {
             /** @enum {string} */
             operation: "Add" | "Multiply" | "Override" | "Max" | "Min";
-            priority?: number;
-            max_stacks: number;
+            priority?: components["schemas"]["IntegerString"];
+            max_stacks: components["schemas"]["IntegerString"];
             /** @enum {string} */
             refresh_policy: "refresh" | "replace" | "ignore";
-            cap?: number;
+            cap?: components["schemas"]["DecimalString"];
         };
         CharacterPayload: {
             attribute_values: components["schemas"]["FormulaBinding"][];
@@ -288,7 +350,7 @@ export interface components {
         };
         SkillPayload: {
             costs: components["schemas"]["FormulaBinding"][];
-            cooldown: number;
+            cooldown: components["schemas"]["IntegerString"];
             target_selector: components["schemas"]["TargetSelector"];
             effect_ids: components["schemas"]["UUIDv7"][];
             rule_blocks: components["schemas"]["TriggerRule"][];
@@ -301,7 +363,7 @@ export interface components {
             rule_blocks: components["schemas"]["TriggerRule"][];
         };
         EffectPayload: {
-            duration: number;
+            duration: components["schemas"]["IntegerString"];
             modifiers: components["schemas"]["Modifier"][];
             trigger_blocks: components["schemas"]["TriggerRule"][];
             stack_rule: components["schemas"]["StackRule"];
@@ -312,11 +374,103 @@ export interface components {
             config_hash: string;
             /** Format: date-time */
             created_at: string;
+            validation: components["schemas"]["LocalValidationSummary"];
+        };
+        LocalValidationSummary: {
+            run_id: components["schemas"]["UUIDv7"];
+            /** @constant */
+            scope: "LOCAL";
+            error: number;
+            block: number;
+            warning: number;
+            info: number;
         };
         SaveEntityResponse: {
             entity: components["schemas"]["Entity"];
             revision: components["schemas"]["RevisionSummary"];
         };
+        /** @enum {string} */
+        ValidationScope: "LOCAL" | "FULL";
+        ValidationSource: components["schemas"]["WorkingValidationSource"] | components["schemas"]["RevisionValidationSource"];
+        WorkingValidationSource: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "WorkingValidationSource";
+        };
+        RevisionValidationSource: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "RevisionValidationSource";
+            revision_id: components["schemas"]["UUIDv7"];
+        };
+        VersionManifest: {
+            schema: string;
+            dsl: string;
+            registry: string;
+            numeric_policy: string;
+        };
+        FormulaSpan: {
+            /** @description UTF-8 byte offset */
+            start_byte: number;
+            /** @description UTF-8 byte offset */
+            end_byte: number;
+        };
+        /** @enum {string} */
+        ValidationSeverity: "ERROR" | "BLOCK" | "WARNING" | "INFO";
+        SeveritySummary: {
+            error: number;
+            block: number;
+            warning: number;
+            info: number;
+        };
+        ValidationIssue: {
+            severity: components["schemas"]["ValidationSeverity"];
+            code: string;
+            entity_id: components["schemas"]["UUIDv7"];
+            /** @description RFC 6901 JSON Pointer. */
+            field_path: string;
+            formula_span?: components["schemas"]["FormulaSpan"] | null;
+            ordinal?: number;
+            message_key: string;
+            /** @description Readable server-derived presentation text; excluded from validation identity and result hashes. */
+            message: string;
+            message_params?: {
+                [key: string]: string;
+            };
+            fix_hint_key?: string;
+            /** @description Readable server-derived presentation hint; excluded from validation identity and result hashes. */
+            fix_hint?: string;
+            evidence?: {
+                [key: string]: string;
+            };
+            fingerprint: components["schemas"]["Hash"];
+        };
+        CreateValidationRunRequest: {
+            source: components["schemas"]["ValidationSource"];
+            scope: components["schemas"]["ValidationScope"];
+            /** @description Required only for LOCAL; forbidden for FULL. */
+            entity_ids?: components["schemas"]["UUIDv7"][];
+        };
+        ValidationRun: {
+            id: components["schemas"]["UUIDv7"];
+            source: components["schemas"]["ValidationSource"];
+            scope: components["schemas"]["ValidationScope"];
+            input_hash: components["schemas"]["Hash"];
+            versions: components["schemas"]["VersionManifest"];
+            /** @constant */
+            status: "completed";
+            summary: components["schemas"]["SeveritySummary"];
+            result_hash: components["schemas"]["Hash"];
+            /** Format: date-time */
+            created_at: string;
+            issues: components["schemas"]["ValidationIssue"][];
+        };
+        /** @enum {string} */
+        ValidationGateResult: "PASS" | "REQUIRES_VALIDATION" | "BLOCKED";
         EntityPage: {
             items: components["schemas"]["Entity"][];
             next_cursor?: string | null;
@@ -329,7 +483,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "INVALID_SELECTION" | "PROJECT_LOCKED" | "ACTIVE_PROJECT_CONFLICT" | "CLOSE_BLOCKED" | "UNSUPPORTED_KIND" | "UNSUPPORTED_SCHEMA" | "DUPLICATE_KEY" | "PRECONDITION_REQUIRED" | "REVISION_CONFLICT" | "ENTITY_REFERENCED" | "VALIDATION_FAILED" | "PROJECT_NOT_OPEN";
+            code: "INVALID_SELECTION" | "PROJECT_LOCKED" | "ACTIVE_PROJECT_CONFLICT" | "CLOSE_BLOCKED" | "UNSUPPORTED_KIND" | "UNSUPPORTED_SCHEMA" | "DUPLICATE_KEY" | "PRECONDITION_REQUIRED" | "REVISION_CONFLICT" | "ENTITY_REFERENCED" | "VALIDATION_FAILED" | "PROJECT_NOT_OPEN" | "INVALID_VALIDATION_REQUEST" | "INVALID_VALIDATION_SOURCE" | "INVALID_VALIDATION_SCOPE" | "INVALID_VALIDATION_TARGET" | "VALIDATION_SOURCE_NOT_FOUND" | "VALIDATION_RUN_NOT_FOUND" | "VALIDATION_STORAGE_FAILURE";
             retryable: boolean;
             request_id: string;
             entity_id?: components["schemas"]["UUIDv7"];
@@ -354,6 +508,7 @@ export interface components {
         Kind: components["schemas"]["EntityKind"];
         EntityID: components["schemas"]["UUIDv7"];
         ProjectID: components["schemas"]["UUIDv7"];
+        ValidationRunID: components["schemas"]["UUIDv7"];
         /** @description Strong ETag returned by GET/create/patch. */
         IfMatch: string;
     };
@@ -663,6 +818,54 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SaveEntityResponse"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createValidationRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateValidationRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Synchronously completed immutable validation run */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationRun"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getValidationRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ValidationRunID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable validation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationRun"];
                 };
             };
             default: components["responses"]["Problem"];
