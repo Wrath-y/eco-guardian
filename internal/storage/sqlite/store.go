@@ -16,21 +16,60 @@ import (
 
 	root "github.com/zouyi/eco-guardian"
 	"github.com/zouyi/eco-guardian/internal/domain"
+	"github.com/zouyi/eco-guardian/internal/validation"
+	versioning "github.com/zouyi/eco-guardian/internal/versioning"
+	versioningpolicy "github.com/zouyi/eco-guardian/internal/versioning/policy"
+	versioningrevision "github.com/zouyi/eco-guardian/internal/versioning/revision"
 	_ "modernc.org/sqlite"
 )
 
 const databaseName = "project.db"
-const currentSchemaVersion = 2
+const currentSchemaVersion = 4
 
 func DBSchemaVersion() int { return currentSchemaVersion }
 
 var (
-	ErrProjectInvalid        = errors.New("invalid or unsupported project database")
-	ErrDuplicateKey          = errors.New("duplicate active kind/key")
-	ErrNotFound              = errors.New("entity not found")
-	ErrRevisionConflict      = errors.New("entity revision conflict")
-	errLocalPreflightChanged = errors.New("local validation preflight changed")
+	ErrProjectInvalid          = errors.New("invalid or unsupported project database")
+	ErrDuplicateKey            = errors.New("duplicate active kind/key")
+	ErrNotFound                = errors.New("entity not found")
+	ErrRevisionConflict        = errors.New("entity revision conflict")
+	ErrMigrationBackupRequired = errors.New("migration requires successful online backup")
+	ErrSchemaTooNew            = errors.New("project schema is newer than this application")
+	errLocalPreflightChanged   = errors.New("local validation preflight changed")
 )
+
+// BackupEvidence proves an adapter completed all mandatory pre-migration
+// checks. The SQLite package owns only this port; backup implementation belongs
+// to the later backup capability.
+type BackupEvidence struct {
+	Online           bool
+	IntegrityChecked bool
+	Checksum         string
+}
+
+func (e BackupEvidence) Valid() bool {
+	if !e.Online || !e.IntegrityChecked || len(e.Checksum) != 64 {
+		return false
+	}
+	for _, r := range e.Checksum {
+		if !strings.ContainsRune("0123456789abcdef", r) {
+			return false
+		}
+	}
+	return true
+}
+
+type MigrationBackup interface {
+	Backup(context.Context, string, domain.ID) (BackupEvidence, error)
+}
+
+type SchemaTooNewError struct{ DatabaseVersion, SupportedVersion int }
+
+func (e *SchemaTooNewError) Unwrap() error { return ErrSchemaTooNew }
+
+func (e *SchemaTooNewError) Error() string {
+	return fmt.Sprintf("%s: database=%d supported=%d", ErrSchemaTooNew, e.DatabaseVersion, e.SupportedVersion)
+}
 
 type ReferencedError struct{ References []domain.Reference }
 
@@ -42,6 +81,7 @@ func (e ValidationError) Error() string { return "entity validation failed" }
 
 type Store struct {
 	db        *sql.DB
+	path      string
 	registry  *domain.Registry
 	writes    sync.Mutex
 	now       func() time.Time
@@ -83,7 +123,7 @@ func Create(ctx context.Context, dir string, registry *domain.Registry) (*Store,
 		_, err = tx.ExecContext(ctx, "INSERT INTO project_meta(id,db_schema_version,created_at) VALUES(?,?,?)", id, 1, s.now().UTC().Format(time.RFC3339Nano))
 	}
 	if err == nil {
-		err = applyMigrationV2(ctx, tx)
+		err = applyMigrationSteps(ctx, tx, 1, nil)
 	}
 	if err != nil {
 		tx.Rollback()
@@ -99,6 +139,13 @@ func Create(ctx context.Context, dir string, registry *domain.Registry) (*Store,
 }
 
 func Open(dir string, registry *domain.Registry) (*Store, domain.ID, error) {
+	return OpenWithMigrationBackup(context.Background(), dir, registry, nil)
+}
+
+// OpenWithMigrationBackup upgrades only after schema support is read and, for
+// a populated older project, a registered backup port proves online backup,
+// integrity, and checksum success before any migration transaction starts.
+func OpenWithMigrationBackup(ctx context.Context, dir string, registry *domain.Registry, backup MigrationBackup) (*Store, domain.ID, error) {
 	s, err := open(filepath.Join(dir, databaseName), registry)
 	if err != nil {
 		return nil, "", err
@@ -109,18 +156,41 @@ func Open(dir string, registry *domain.Registry) (*Store, domain.ID, error) {
 		s.Close()
 		return nil, "", fmt.Errorf("%w: %v", ErrProjectInvalid, err)
 	}
-	if version == 1 {
-		if err = upgradeV2(context.Background(), s.db); err != nil {
-			s.Close()
-			return nil, "", fmt.Errorf("%w: %v", ErrProjectInvalid, err)
-		}
-		version = 2
+	if version > currentSchemaVersion {
+		s.Close()
+		return nil, "", &SchemaTooNewError{DatabaseVersion: version, SupportedVersion: currentSchemaVersion}
 	}
-	if version != currentSchemaVersion {
+	if version < 1 {
 		s.Close()
 		return nil, "", fmt.Errorf("%w: unsupported schema version %d", ErrProjectInvalid, version)
 	}
+	if version < currentSchemaVersion {
+		populated, dataErr := hasProjectData(ctx, s.db)
+		if dataErr != nil {
+			s.Close()
+			return nil, "", fmt.Errorf("%w: %v", ErrProjectInvalid, dataErr)
+		}
+		if populated {
+			if backup == nil {
+				s.Close()
+				return nil, "", ErrMigrationBackupRequired
+			}
+			evidence, backupErr := backup.Backup(ctx, dir, id)
+			if backupErr != nil || !evidence.Valid() {
+				s.Close()
+				return nil, "", fmt.Errorf("%w: %v", ErrMigrationBackupRequired, backupErr)
+			}
+		}
+		if err = upgradeToCurrent(ctx, s.db, version); err != nil {
+			s.Close()
+			return nil, "", fmt.Errorf("%w: %v", ErrProjectInvalid, err)
+		}
+	}
 	s.projectID = id
+	if err = verifyMigrationSteps(ctx, s.db); err != nil {
+		s.Close()
+		return nil, "", fmt.Errorf("%w: %v", ErrProjectInvalid, err)
+	}
 	return s, id, nil
 }
 
@@ -135,6 +205,78 @@ func upgradeV2(ctx context.Context, db *sql.DB) error {
 	}
 	return tx.Commit()
 }
+func upgradeToCurrent(ctx context.Context, db *sql.DB, version int) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = applyMigrationSteps(ctx, tx, version, nil); err != nil {
+		return err
+	}
+	version = currentSchemaVersion
+	if version != currentSchemaVersion {
+		return fmt.Errorf("unsupported schema version %d", version)
+	}
+	return tx.Commit()
+}
+func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func(string) error) error {
+	if version == 1 {
+		if err := applyMigrationV2(ctx, tx); err != nil {
+			return err
+		}
+		if hook != nil {
+			if err := hook("validation-v2"); err != nil {
+				return err
+			}
+		}
+		version = 2
+	}
+	if version == 2 {
+		if err := applyMigrationV3(ctx, tx); err != nil {
+			return err
+		}
+		if hook != nil {
+			if err := hook("versioning-v3"); err != nil {
+				return err
+			}
+		}
+		version = 3
+	}
+	if version == 3 {
+		if err := applyMigrationV4(ctx, tx); err != nil {
+			return err
+		}
+		version = 4
+	}
+	if version != currentSchemaVersion {
+		return fmt.Errorf("unsupported schema version %d", version)
+	}
+	return nil
+}
+func verifyMigrationSteps(ctx context.Context, db *sql.DB) error {
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM schema_migration_steps WHERE step_id IN ('validation-v2','versioning-v3','release-audit-v4')`).Scan(&count); err != nil {
+		return err
+	}
+	if count != 3 {
+		return errors.New("missing committed migration step")
+	}
+	return nil
+}
+func applyMigrationV4(ctx context.Context, tx *sql.Tx) error {
+	body, err := root.Assets.ReadFile("migrations/0004_release_audit.sql")
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, string(body))
+	return err
+}
+func hasProjectData(ctx context.Context, db *sql.DB) (bool, error) {
+	var count int
+	err := db.QueryRowContext(ctx, `SELECT count(*) FROM config_revisions`).Scan(&count)
+	return count > 0, err
+}
 func applyMigrationV2(ctx context.Context, tx *sql.Tx) error {
 	migration, err := root.Assets.ReadFile("migrations/0002_validation.sql")
 	if err != nil {
@@ -142,6 +284,149 @@ func applyMigrationV2(ctx context.Context, tx *sql.Tx) error {
 	}
 	_, err = tx.ExecContext(ctx, string(migration))
 	return err
+}
+
+// applyMigrationV3 is intentionally invoked by the ordered migration runner
+// added with the versioning upgrade preflight. Keeping the schema step separate
+// lets a new runner enforce mandatory backup before mutating an existing DB.
+func applyMigrationV3(ctx context.Context, tx *sql.Tx) error {
+	migration, err := root.Assets.ReadFile("migrations/0003_versioning.sql")
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, string(migration)); err != nil {
+		return err
+	}
+	if err = backfillRevisionMetadata(ctx, tx); err != nil {
+		return err
+	}
+	return seedStarterReleasePolicy(ctx, tx)
+}
+
+func seedStarterReleasePolicy(ctx context.Context, tx *sql.Tx) error {
+	var count int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM release_policies`).Scan(&count); err != nil {
+		return err
+	}
+	if count != 0 {
+		return nil
+	}
+	definition := versioningpolicy.Definition{Samples: 1000, ThresholdID: "starter-threshold-v1", ThresholdOn: true,
+		Capabilities: []versioningpolicy.CapabilityRequirement{{CapabilityID: "graph", GateID: "projection", ContractVersion: "1"}, {CapabilityID: "simulation", GateID: "scenario", ContractVersion: "1"}, {CapabilityID: "risk", GateID: "threshold", ContractVersion: "1"}, {CapabilityID: "backup", GateID: "online-backup", ContractVersion: "1"}},
+		Scenes:       []versioningpolicy.Scene{{ID: "single-target-30s", Required: true, Metrics: []versioningpolicy.Metric{{ID: "damage", Required: true}}}, {ID: "extreme-stack-60s", Required: true, Metrics: []versioningpolicy.Metric{{ID: "damage", Required: true}}}, {ID: "single-target-180s", Required: false, Metrics: []versioningpolicy.Metric{{ID: "damage", Required: false}}}, {ID: "three-target-60s", Required: false, Metrics: []versioningpolicy.Metric{{ID: "damage", Required: false}}}}}
+	canonical, err := definition.CanonicalJSON()
+	if err != nil {
+		return err
+	}
+	id, err := domain.NewID()
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO release_policies(id,display_version,canonical_body,canonical_hash,created_at) VALUES(?,?,?,?,?)`, id, 1, string(canonical), versioning.SHA256(canonical), time.Now().UTC().Format(time.RFC3339Nano))
+	return err
+}
+
+// backfillRevisionMetadata only reads historical immutable facts. It takes the
+// #6 version manifest from a revision-source validation run when present and
+// records absent later capabilities as unregistered; it never substitutes a
+// currently installed implementation for history.
+func backfillRevisionMetadata(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `SELECT id,created_at FROM config_revisions ORDER BY display_revision,id`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var revisionID domain.ID
+		var createdAt string
+		if err = rows.Scan(&revisionID, &createdAt); err != nil {
+			return err
+		}
+		manifest, err := historicalVersionManifest(ctx, tx, revisionID)
+		if err != nil {
+			return err
+		}
+		body, err := manifest.CanonicalJSON()
+		if err != nil {
+			return err
+		}
+		hash, err := manifest.Hash()
+		if err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO revision_metadata(revision_id,version_manifest,version_manifest_hash,created_at) VALUES(?,?,?,?)`, revisionID, string(body), hash, createdAt); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
+func historicalVersionManifest(ctx context.Context, tx *sql.Tx, revisionID domain.ID) (versioningrevision.VersionManifest, error) {
+	var raw string
+	err := tx.QueryRowContext(ctx, `SELECT version_manifest FROM validation_runs WHERE source_kind='revision' AND source_revision_id=? ORDER BY created_at DESC,id DESC LIMIT 1`, revisionID).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return unresolvedHistoricalManifest(), nil
+	}
+	if err != nil {
+		return versioningrevision.VersionManifest{}, err
+	}
+	var versions validation.VersionManifest
+	if err := json.Unmarshal([]byte(raw), &versions); err != nil {
+		return versioningrevision.VersionManifest{}, err
+	}
+	if !versions.Valid() {
+		return unresolvedHistoricalManifest(), nil
+	}
+	return versionManifestFromValidation(versions)
+}
+
+func versionManifestFromValidation(versions validation.VersionManifest) (versioningrevision.VersionManifest, error) {
+	if !versions.Valid() {
+		return versioningrevision.VersionManifest{}, errors.New("incomplete validation version manifest")
+	}
+	manifest := versioningrevision.VersionManifest{Entries: []versioningrevision.VersionEntry{
+		{CapabilityID: "schema", ContractVersion: "validation-v1", ImplementationVersion: versions.Schema, State: versioningrevision.Registered},
+		{CapabilityID: "dsl", ContractVersion: "validation-v1", ImplementationVersion: versions.DSL, State: versioningrevision.Registered},
+		{CapabilityID: "validator-registry", ContractVersion: "validation-v1", ImplementationVersion: versions.Registry, State: versioningrevision.Registered},
+		{CapabilityID: "numeric-policy", ContractVersion: "validation-v1", ImplementationVersion: versions.NumericPolicy, State: versioningrevision.Registered},
+		{CapabilityID: "graph-projector", ContractVersion: "unavailable", State: versioningrevision.Unregistered},
+		{CapabilityID: "simulation-engine", ContractVersion: "unavailable", State: versioningrevision.Unregistered},
+	}}
+	if !manifest.Valid() {
+		return versioningrevision.VersionManifest{}, errors.New("invalid revision version manifest")
+	}
+	return manifest, nil
+}
+
+type revisionMetadataFields struct {
+	name, description                  string
+	parentRevisionID, sourceRevisionID domain.ID
+	sourceReleaseID                    domain.ID
+}
+
+func writeRevisionMetadata(ctx context.Context, tx *sql.Tx, revision domain.RevisionSummary, versions validation.VersionManifest, fields revisionMetadataFields) error {
+	manifest, err := versionManifestFromValidation(versions)
+	if err != nil {
+		return err
+	}
+	body, err := manifest.CanonicalJSON()
+	if err != nil {
+		return err
+	}
+	hash, err := manifest.Hash()
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO revision_metadata(revision_id,name,description,parent_revision_id,source_revision_id,source_release_id,version_manifest,version_manifest_hash,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, revision.ID, nullString(fields.name), nullString(fields.description), nullID(fields.parentRevisionID), nullID(fields.sourceRevisionID), nullID(fields.sourceReleaseID), string(body), hash, revision.CreatedAt.Format(time.RFC3339Nano))
+	return err
+}
+
+func unresolvedHistoricalManifest() versioningrevision.VersionManifest {
+	entries := []versioningrevision.VersionEntry{}
+	for _, capability := range []string{"schema", "dsl", "validator-registry", "numeric-policy", "graph-projector", "simulation-engine"} {
+		entries = append(entries, versioningrevision.VersionEntry{CapabilityID: capability, ContractVersion: "unavailable", State: versioningrevision.Unregistered})
+	}
+	return versioningrevision.VersionManifest{Entries: entries}
 }
 func open(path string, registry *domain.Registry) (*Store, error) {
 	if registry == nil {
@@ -159,7 +444,7 @@ func open(path string, registry *domain.Registry) (*Store, error) {
 			return nil, err
 		}
 	}
-	return &Store{db: db, registry: registry, now: time.Now}, nil
+	return &Store{db: db, path: path, registry: registry, now: time.Now}, nil
 }
 func (s *Store) Close() error         { return s.db.Close() }
 func (s *Store) ProjectID() domain.ID { return s.projectID }
@@ -432,6 +717,10 @@ func (s *Store) getTx(ctx context.Context, tx *sql.Tx, kind domain.EntityKind, i
 	return e, json.Unmarshal(raw, &e)
 }
 func (s *Store) saveTx(ctx context.Context, tx *sql.Tx, e domain.Entity, create bool) (domain.RevisionSummary, error) {
+	versions, err := currentValidationVersionManifest()
+	if err != nil {
+		return domain.RevisionSummary{}, err
+	}
 	hash, blob, err := domain.BlobHash(e)
 	if err != nil {
 		return domain.RevisionSummary{}, err
@@ -487,13 +776,19 @@ func (s *Store) saveTx(ctx context.Context, tx *sql.Tx, e domain.Entity, create 
 	if err != nil {
 		return domain.RevisionSummary{}, err
 	}
+	if err = writeRevisionMetadata(ctx, tx, revision, versions, revisionMetadataFields{}); err != nil {
+		return domain.RevisionSummary{}, err
+	}
+	if err = s.inject("metadata"); err != nil {
+		return domain.RevisionSummary{}, err
+	}
 	if err = s.persistRevisionDerived(ctx, tx, revision.ID); err != nil {
 		return domain.RevisionSummary{}, err
 	}
 	if err = s.inject("derived"); err != nil {
 		return domain.RevisionSummary{}, err
 	}
-	summary, err := s.persistLocalValidation(ctx, tx, e, revision)
+	summary, err := s.persistLocalValidation(ctx, tx, e, revision, versions)
 	if err != nil {
 		return domain.RevisionSummary{}, err
 	}

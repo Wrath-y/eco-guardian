@@ -29,13 +29,13 @@ test('project creation exposes all six structured authoring routes', async ({ pa
 })
 
 test('invalid save retains input and moves focus to the error summary', async ({ page }) => {
-  await mockAPI(page); await page.goto('/projects'); await page.getByRole('button', { name: '创建项目' }).click(); await page.goto('/config/tag/new')
+  await mockAPI(page); await page.goto('/projects'); await page.getByRole('button', { name: '创建项目' }).click(); await expect(page.getByText('当前项目：e2e')).toBeVisible(); await page.goto('/config/tag/new')
   await page.getByRole('button', { name: '保存' }).click(); const summary = page.getByRole('alert'); await expect(summary).toContainText('请修正'); await expect(summary).toBeFocused()
 })
 
 test('a LOCAL BLOCK save is explicit, and a corrected/reloaded entity can receive a current FULL pass', async ({ page }) => {
   const state: MockState = { active: false, mutations: 0, created: new Set(), localBlock: true }
-  await mockAPI(page, state); await page.goto('/projects'); await page.getByRole('button', { name: '创建项目' }).click(); await page.goto('/config/tag/new')
+  await mockAPI(page, state); await page.goto('/projects'); await page.getByRole('button', { name: '创建项目' }).click(); await expect(page.getByText('当前项目：e2e')).toBeVisible(); await page.goto('/config/tag/new')
   await page.getByLabel('Key').fill('broken_reference'); await page.getByLabel('名称').fill('Broken reference'); await page.locator('[data-field-path="/payload/category"]').fill('element')
   await page.getByRole('button', { name: '保存' }).click()
   await expect(page.getByText(/LOCAL 校验摘要：ERROR 0，BLOCK 1/)).toBeVisible()
@@ -54,7 +54,7 @@ test('two tabs retain the losing input after REVISION_CONFLICT', async ({ browse
 })
 
 test('dirty editor can continue editing or discard before project navigation', async ({ page }) => {
-  await mockAPI(page); await page.goto('/projects'); await page.getByRole('button', { name: '创建项目' }).click(); await page.goto('/config/tag/new'); await page.getByLabel('名称').fill('Unsaved')
+  await mockAPI(page); await page.goto('/projects'); await page.getByRole('button', { name: '创建项目' }).click(); await expect(page.getByText('当前项目：e2e')).toBeVisible(); await page.goto('/config/tag/new'); await page.getByLabel('名称').fill('Unsaved')
   await page.getByRole('link', { name: '项目' }).click(); await expect(page.getByRole('dialog')).toBeVisible(); await page.getByRole('button', { name: '继续编辑' }).click(); await expect(page).toHaveURL(/\/config\/tag\/new/)
   await page.getByRole('link', { name: '项目' }).click(); await page.getByRole('button', { name: '放弃修改' }).click(); await expect(page).toHaveURL(/\/projects/)
 })

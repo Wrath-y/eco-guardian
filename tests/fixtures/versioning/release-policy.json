@@ -1,0 +1,1 @@
+{"samples":1000,"scenes":[{"id":"single-target-30s","metrics":[{"id":"damage","required":true}],"required":true}],"threshold_id":"risk-v1"}

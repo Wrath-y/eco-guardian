@@ -1,0 +1,1 @@
+{"entries":[{"capability_id":"dsl","contract_version":"1","implementation_version":"dsl-v1","state":"registered"},{"capability_id":"numeric-policy","contract_version":"1","implementation_version":"decimal-v1","state":"registered"},{"capability_id":"schema","contract_version":"1","implementation_version":"schema-v1","state":"registered"}]}

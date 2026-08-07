@@ -119,12 +119,115 @@ paths:
       responses:
         '200': { description: Immutable validation result, content: { application/json: { schema: { $ref: '#/components/schemas/ValidationRun' } } } }
         default: { $ref: '#/components/responses/Problem' }
+  /revisions:
+    get:
+      operationId: listRevisions
+      parameters:
+        - { name: cursor, in: query, schema: { type: string }, description: Opaque stable continuation cursor. }
+        - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+      responses:
+        '200': { description: Stable revision history page, content: { application/json: { schema: { $ref: '#/components/schemas/RevisionPage' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      operationId: createRevision
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateRevisionRequest' } } } }
+      responses:
+        '201': { description: Immutable checkpoint or forward-rollback revision created, content: { application/json: { schema: { $ref: '#/components/schemas/RevisionDetail' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /revisions/{id}:
+    get:
+      operationId: getRevision
+      parameters: [ { $ref: '#/components/parameters/RevisionID' } ]
+      responses:
+        '200': { description: Immutable revision detail and derived status timeline, content: { application/json: { schema: { $ref: '#/components/schemas/RevisionDetail' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /revisions/{id}/diff:
+    get:
+      operationId: getRevisionDiff
+      parameters:
+        - { $ref: '#/components/parameters/RevisionID' }
+        - { name: base, in: query, required: true, schema: { $ref: '#/components/schemas/UUIDv7' }, description: Immutable base revision; no server-side fallback is permitted. }
+      responses:
+        '200': { description: Deterministic structured revision diff, content: { application/json: { schema: { $ref: '#/components/schemas/RevisionDiff' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /release-policies:
+    get:
+      operationId: listReleasePolicies
+      parameters:
+        - { name: cursor, in: query, schema: { type: string }, description: Opaque stable continuation cursor. }
+        - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+      responses:
+        '200': { description: Immutable release-policy history, content: { application/json: { schema: { $ref: '#/components/schemas/ReleasePolicyPage' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      operationId: createReleasePolicy
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateReleasePolicyRequest' } } } }
+      responses:
+        '201': { description: New immutable release-policy version, content: { application/json: { schema: { $ref: '#/components/schemas/ReleasePolicy' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /releases:
+    get:
+      operationId: listReleases
+      parameters:
+        - { name: cursor, in: query, schema: { type: string }, description: Opaque stable continuation cursor. }
+        - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+      responses:
+        '200': { description: Read-only release history, content: { application/json: { schema: { $ref: '#/components/schemas/ReleasePage' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      operationId: createRelease
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateReleaseRequest' } } } }
+      responses:
+        '202': { description: Release preflight accepted and durable Job queued, content: { application/json: { schema: { $ref: '#/components/schemas/ReleaseJobAccepted' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /releases/{id}:
+    get:
+      operationId: getRelease
+      parameters: [ { $ref: '#/components/parameters/ReleaseID' } ]
+      responses:
+        '200': { description: Immutable release detail, content: { application/json: { schema: { $ref: '#/components/schemas/ReleaseDetail' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /jobs/{id}:
+    get:
+      operationId: getJob
+      parameters: [ { $ref: '#/components/parameters/JobID' } ]
+      responses:
+        '200': { description: Durable release Job state; clients may poll using poll_after_ms, content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /jobs/{id}/events:
+    get:
+      operationId: streamJobEvents
+      parameters:
+        - { $ref: '#/components/parameters/JobID' }
+        - { $ref: '#/components/parameters/LastEventID' }
+      responses:
+        '200': { description: Persisted Job events in ordinal order, content: { text/event-stream: { schema: { type: string } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /jobs/{id}/cancel:
+    post:
+      operationId: cancelJob
+      parameters: [ { $ref: '#/components/parameters/JobID' } ]
+      responses:
+        '202': { description: Cancellation accepted when the Job has not crossed an external-effect boundary, content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /runtime/capabilities:
+    get:
+      operationId: getRuntimeCapabilities
+      responses:
+        '200': { description: Server-authoritative release capability state, content: { application/json: { schema: { $ref: '#/components/schemas/RuntimeCapabilities' } } } }
+        default: { $ref: '#/components/responses/Problem' }
 components:
   parameters:
     Kind: { name: kind, in: path, required: true, schema: { $ref: '#/components/schemas/EntityKind' } }
     EntityID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     ProjectID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     ValidationRunID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
+    RevisionID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
+    ReleaseID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
+    JobID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
+    IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 256 }, description: Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. }
+    LastEventID: { name: Last-Event-ID, in: header, schema: { type: integer, minimum: 0 }, description: Resume SSE delivery strictly after this persisted event ordinal. }
     IfMatch: { name: If-Match, in: header, required: true, schema: { type: string }, description: Strong ETag returned by GET/create/patch. }
   headers:
     EntityETag: { required: true, schema: { type: string }, description: Strong ETag for the returned entity version. }
@@ -337,6 +440,290 @@ components:
         config_hash: { type: string, pattern: '^[a-f0-9]{64}$' }
         created_at: { type: string, format: date-time }
         validation: { $ref: '#/components/schemas/LocalValidationSummary' }
+    VersionContributor:
+      type: object
+      required: [capability_id, contract_version, state]
+      properties:
+        capability_id: { type: string, minLength: 1 }
+        contract_version: { type: string, minLength: 1 }
+        implementation_version: { type: [string, 'null'], description: Immutable implementation identity; null only when unavailable at revision creation. }
+        state: { type: string, enum: [registered, unregistered] }
+    RevisionVersionManifest:
+      type: object
+      required: [entries, hash]
+      properties:
+        entries: { type: array, minItems: 1, items: { $ref: '#/components/schemas/VersionContributor' } }
+        hash: { $ref: '#/components/schemas/Hash' }
+    RevisionMetadata:
+      type: object
+      required: [revision_id, config_hash, version_manifest, created_at]
+      properties:
+        revision_id: { $ref: '#/components/schemas/UUIDv7' }
+        config_hash: { $ref: '#/components/schemas/Hash' }
+        name: { type: [string, 'null'], maxLength: 200 }
+        description: { type: [string, 'null'], maxLength: 10000 }
+        parent_revision_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        source_revision_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        source_release_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        version_manifest: { $ref: '#/components/schemas/RevisionVersionManifest' }
+        created_at: { type: string, format: date-time }
+    RevisionStatus:
+      type: string
+      enum: [working, candidate, active_release, history]
+      description: Derived read model only; it never mutates immutable revision history.
+    RevisionHistoryItem:
+      type: object
+      required: [id, display_revision, config_hash, metadata, status]
+      properties:
+        id: { $ref: '#/components/schemas/UUIDv7' }
+        display_revision: { type: integer, minimum: 1 }
+        config_hash: { $ref: '#/components/schemas/Hash' }
+        metadata: { $ref: '#/components/schemas/RevisionMetadata' }
+        status: { type: array, items: { $ref: '#/components/schemas/RevisionStatus' } }
+    RevisionDetail:
+      allOf:
+        - $ref: '#/components/schemas/RevisionHistoryItem'
+        - type: object
+          required: [timeline]
+          properties:
+            timeline: { $ref: '#/components/schemas/RevisionTimeline' }
+    RevisionPage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/RevisionHistoryItem' } }
+        next_cursor: { type: [string, 'null'], description: Opaque stable cursor ordered by display revision and revision ID. }
+    RevisionTimelineEvent:
+      type: object
+      required: [id, occurred_at, type, revision_id]
+      properties:
+        id: { type: string, minLength: 1 }
+        occurred_at: { type: string, format: date-time }
+        type: { type: string, enum: [revision_created, validation_completed, gate_evaluated, release_queued, release_completed, active_pointer_changed] }
+        revision_id: { $ref: '#/components/schemas/UUIDv7' }
+        subject_id: { type: [string, 'null'] }
+        status: { type: [string, 'null'] }
+    RevisionTimeline:
+      type: array
+      description: Stable chronological projection of immutable facts; revision status is not stored on the revision.
+      items: { $ref: '#/components/schemas/RevisionTimelineEvent' }
+    CurrentWorkingPrecondition:
+      type: object
+      required: [revision_id]
+      properties:
+        revision_id: { $ref: '#/components/schemas/UUIDv7' }
+        entity_etag: { type: [string, 'null'], description: Optional strong entity ETag when a single entity is the source of the operation. }
+    CreateCheckpointRevision:
+      type: object
+      required: [kind, current_working]
+      properties:
+        kind: { type: string, const: checkpoint }
+        current_working: { $ref: '#/components/schemas/CurrentWorkingPrecondition' }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 10000 }
+    RestoreReleaseRevision:
+      type: object
+      required: [kind, current_working, source_release_id]
+      properties:
+        kind: { type: string, const: restore_release }
+        current_working: { $ref: '#/components/schemas/CurrentWorkingPrecondition' }
+        source_release_id: { $ref: '#/components/schemas/UUIDv7' }
+    CreateRevisionRequest:
+      oneOf:
+        - $ref: '#/components/schemas/CreateCheckpointRevision'
+        - $ref: '#/components/schemas/RestoreReleaseRevision'
+      discriminator: { propertyName: kind, mapping: { checkpoint: '#/components/schemas/CreateCheckpointRevision', restore_release: '#/components/schemas/RestoreReleaseRevision' } }
+    FieldChangeKind: { type: string, enum: [ADD, DELETE, MOVE, MODIFY] }
+    FieldChange:
+      type: object
+      required: [entity_id, entity_kind, path, kind]
+      properties:
+        entity_id: { $ref: '#/components/schemas/UUIDv7' }
+        entity_kind: { $ref: '#/components/schemas/EntityKind' }
+        path: { type: string, description: RFC 6901 JSON Pointer. }
+        kind: { $ref: '#/components/schemas/FieldChangeKind' }
+        old_value: { description: Canonical JSON value before the change. }
+        new_value: { description: Canonical JSON value after the change. }
+        old_ordinal: { type: integer, minimum: 0 }
+        new_ordinal: { type: integer, minimum: 0 }
+    DiffBaselineState: { type: string, enum: [AVAILABLE, NO_BASELINE] }
+    RevisionDiff:
+      type: object
+      required: [base_revision_id, target_revision_id, base_config_hash, target_config_hash, baseline_state, changes]
+      properties:
+        base_revision_id: { $ref: '#/components/schemas/UUIDv7' }
+        target_revision_id: { $ref: '#/components/schemas/UUIDv7' }
+        base_config_hash: { $ref: '#/components/schemas/Hash' }
+        target_config_hash: { $ref: '#/components/schemas/Hash' }
+        baseline_state: { $ref: '#/components/schemas/DiffBaselineState' }
+        changes: { type: array, items: { $ref: '#/components/schemas/FieldChange' } }
+    ReleaseMetric:
+      type: object
+      required: [id, required]
+      properties:
+        id: { type: string, minLength: 1 }
+        required: { type: boolean }
+    ReleaseScene:
+      type: object
+      required: [id, required, metrics]
+      properties:
+        id: { type: string, minLength: 1 }
+        required: { type: boolean }
+        metrics: { type: array, minItems: 1, items: { $ref: '#/components/schemas/ReleaseMetric' } }
+    CapabilityGateRequirement:
+      type: object
+      required: [capability_id, gate_id, contract_version]
+      properties:
+        capability_id: { type: string, minLength: 1 }
+        gate_id: { type: string, minLength: 1 }
+        contract_version: { type: string, minLength: 1 }
+        implementation_version: { type: [string, 'null'] }
+    ReleasePolicyDefinition:
+      type: object
+      required: [scenes, samples, threshold_id, threshold_enabled, capabilities]
+      properties:
+        scenes: { type: array, minItems: 1, items: { $ref: '#/components/schemas/ReleaseScene' } }
+        samples: { type: integer, minimum: 1 }
+        threshold_id: { type: string, minLength: 1 }
+        threshold_enabled: { type: boolean, const: true }
+        capabilities: { type: array, minItems: 1, items: { $ref: '#/components/schemas/CapabilityGateRequirement' } }
+    CreateReleasePolicyRequest:
+      allOf:
+        - $ref: '#/components/schemas/ReleasePolicyDefinition'
+    ReleasePolicy:
+      allOf:
+        - $ref: '#/components/schemas/ReleasePolicyDefinition'
+        - type: object
+          required: [id, display_version, policy_hash, created_at]
+          properties:
+            id: { $ref: '#/components/schemas/UUIDv7' }
+            display_version: { type: integer, minimum: 1 }
+            policy_hash: { $ref: '#/components/schemas/Hash' }
+            created_at: { type: string, format: date-time }
+    ReleasePolicyPage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/ReleasePolicy' } }
+        next_cursor: { type: [string, 'null'], description: Opaque stable cursor ordered by display version and ID. }
+    GateEvidence:
+      type: object
+      required: [gate_id, result_id, result_hash, state]
+      properties:
+        capability_id: { type: string }
+        gate_id: { type: string, minLength: 1 }
+        result_id: { $ref: '#/components/schemas/UUIDv7' }
+        result_hash: { $ref: '#/components/schemas/Hash' }
+        state: { type: string, enum: [PASS, WARNING, BLOCK, UNAVAILABLE, STALE] }
+        evidence_url: { type: [string, 'null'] }
+    ReleaseConfirmation:
+      type: object
+      required: [kind, confirmed]
+      properties:
+        kind: { type: string, enum: [establish_baseline, acknowledge_warning, numeric_override] }
+        confirmed: { type: boolean, const: true }
+        reason: { type: [string, 'null'], maxLength: 10000 }
+    CreateReleaseRequest:
+      type: object
+      required: [candidate_revision_id, config_hash, version_manifest_hash, policy_id, expected_baseline_release_id, confirmations]
+      properties:
+        candidate_revision_id: { $ref: '#/components/schemas/UUIDv7' }
+        config_hash: { $ref: '#/components/schemas/Hash' }
+        version_manifest_hash: { $ref: '#/components/schemas/Hash' }
+        policy_id: { $ref: '#/components/schemas/UUIDv7' }
+        expected_baseline_release_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }], description: Explicit null establishes a first-release baseline. }
+        notes: { type: string, maxLength: 10000 }
+        confirmations: { type: array, items: { $ref: '#/components/schemas/ReleaseConfirmation' } }
+        gate_evidence: { type: array, items: { $ref: '#/components/schemas/GateEvidence' }, description: Read-only client echo for audit consistency; server remains authoritative. }
+    ActiveReleasePointer:
+      type: object
+      required: [generation]
+      properties:
+        release_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        generation: { type: integer, minimum: 0 }
+    Release:
+      type: object
+      required: [id, revision_id, policy_id, intent_id, gate_evidence, confirmations, created_at]
+      properties:
+        id: { $ref: '#/components/schemas/UUIDv7' }
+        revision_id: { $ref: '#/components/schemas/UUIDv7' }
+        policy_id: { $ref: '#/components/schemas/UUIDv7' }
+        baseline_release_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        intent_id: { $ref: '#/components/schemas/UUIDv7' }
+        notes: { type: string }
+        gate_evidence: { type: array, items: { $ref: '#/components/schemas/GateEvidence' } }
+        confirmations: { type: array, items: { $ref: '#/components/schemas/ReleaseConfirmation' } }
+        created_at: { type: string, format: date-time }
+    ReleaseDetail:
+      allOf:
+        - $ref: '#/components/schemas/Release'
+        - type: object
+          required: [active_pointer]
+          properties:
+            active_pointer: { $ref: '#/components/schemas/ActiveReleasePointer' }
+    ReleasePage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/Release' } }
+        next_cursor: { type: [string, 'null'] }
+    ReleaseJobAccepted:
+      type: object
+      required: [job_id, location]
+      properties:
+        job_id: { $ref: '#/components/schemas/UUIDv7' }
+        location: { type: string, format: uri-reference }
+    JobStatus: { type: string, enum: [queued, running, succeeded, failed, canceled, interrupted] }
+    JobEvent:
+      type: object
+      required: [job_id, ordinal, phase, progress, created_at]
+      properties:
+        job_id: { $ref: '#/components/schemas/UUIDv7' }
+        ordinal: { type: integer, minimum: 1 }
+        phase: { type: string, minLength: 1 }
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        warning: { type: [string, 'null'] }
+        error: { type: [string, 'null'] }
+        result_type: { type: [string, 'null'] }
+        result_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        result_url: { type: [string, 'null'], format: uri-reference }
+        created_at: { type: string, format: date-time }
+    Job:
+      type: object
+      required: [id, kind, status, request_hash, events_url, poll_after_ms, created_at]
+      properties:
+        id: { $ref: '#/components/schemas/UUIDv7' }
+        kind: { type: string, const: release }
+        status: { $ref: '#/components/schemas/JobStatus' }
+        request_hash: { $ref: '#/components/schemas/Hash' }
+        events_url: { type: string, format: uri-reference }
+        poll_after_ms: { type: integer, minimum: 100, description: Polling fallback cadence when SSE is unavailable. }
+        latest_event_ordinal: { type: integer, minimum: 0 }
+        result_type: { type: [string, 'null'] }
+        result_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        result_url: { type: [string, 'null'], format: uri-reference }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ReleaseDisabledReason:
+      type: object
+      required: [capability_id, gate_id, code]
+      properties:
+        capability_id: { type: string, minLength: 1 }
+        gate_id: { type: string, minLength: 1 }
+        code: { type: string, enum: [MISSING, INCOMPATIBLE, UNAVAILABLE] }
+        detail: { type: [string, 'null'] }
+    ReleaseCapability:
+      type: object
+      required: [enabled, disabled_reasons]
+      properties:
+        enabled: { type: boolean, description: Server-authoritative release-entry state; it is never computed by the client. }
+        disabled_reasons: { type: array, items: { $ref: '#/components/schemas/ReleaseDisabledReason' } }
+    RuntimeCapabilities:
+      type: object
+      required: [release]
+      description: Safe runtime availability projection. It deliberately omits backup credentials, service endpoints, and client-computed Gate pass state.
+      properties:
+        release: { $ref: '#/components/schemas/ReleaseCapability' }
     LocalValidationSummary:
       type: object
       required: [run_id, scope, error, block, warning, info]
@@ -444,7 +831,7 @@ components:
         status: { type: integer }
         detail: { type: string }
         instance: { type: string }
-        code: { type: string, enum: [INVALID_SELECTION, PROJECT_LOCKED, ACTIVE_PROJECT_CONFLICT, CLOSE_BLOCKED, UNSUPPORTED_KIND, UNSUPPORTED_SCHEMA, DUPLICATE_KEY, PRECONDITION_REQUIRED, REVISION_CONFLICT, ENTITY_REFERENCED, VALIDATION_FAILED, PROJECT_NOT_OPEN, INVALID_VALIDATION_REQUEST, INVALID_VALIDATION_SOURCE, INVALID_VALIDATION_SCOPE, INVALID_VALIDATION_TARGET, VALIDATION_SOURCE_NOT_FOUND, VALIDATION_RUN_NOT_FOUND, VALIDATION_STORAGE_FAILURE] }
+        code: { type: string, enum: [INVALID_SELECTION, PROJECT_LOCKED, ACTIVE_PROJECT_CONFLICT, CLOSE_BLOCKED, UNSUPPORTED_KIND, UNSUPPORTED_SCHEMA, DUPLICATE_KEY, PRECONDITION_REQUIRED, REVISION_CONFLICT, ENTITY_REFERENCED, VALIDATION_FAILED, PROJECT_NOT_OPEN, INVALID_VALIDATION_REQUEST, INVALID_VALIDATION_SOURCE, INVALID_VALIDATION_SCOPE, INVALID_VALIDATION_TARGET, VALIDATION_SOURCE_NOT_FOUND, VALIDATION_RUN_NOT_FOUND, VALIDATION_STORAGE_FAILURE, REVISION_NOT_FOUND, REVISION_IMMUTABLE, DIFF_BASE_INVALID, RELEASE_POLICY_INVALID, RELEASE_CAPABILITY_DISABLED, RELEASE_PREFLIGHT_FAILED, RELEASE_BASE_CONFLICT, IDEMPOTENCY_CONFLICT, MANDATORY_BACKUP_FAILED, MIGRATION_BACKUP_REQUIRED, INVALID_CONFIRMATION, HISTORY_NOT_FOUND, STORAGE_FAILURE, EXTERNAL_SERVICE_FAILURE] }
         retryable: { type: boolean }
         request_id: { type: string }
         entity_id: { $ref: '#/components/schemas/UUIDv7' }

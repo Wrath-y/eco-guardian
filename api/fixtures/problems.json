@@ -7,5 +7,19 @@
   {"type":"urn:eco:problem:duplicate-key","title":"Duplicate entity key","status":409,"code":"DUPLICATE_KEY","retryable":false,"request_id":"req-6"},
   {"type":"urn:eco:problem:precondition-required","title":"If-Match is required","status":428,"code":"PRECONDITION_REQUIRED","retryable":false,"request_id":"req-7"},
   {"type":"urn:eco:problem:revision-conflict","title":"Entity revision conflict","status":409,"code":"REVISION_CONFLICT","retryable":false,"request_id":"req-8"},
-  {"type":"urn:eco:problem:entity-referenced","title":"Entity is referenced","status":409,"code":"ENTITY_REFERENCED","retryable":false,"request_id":"req-9","details":{"references":[{"entity_id":"018f9e40-0000-7000-8000-000000000001","field_path":"payload.skill_ids[0]"}]}}
+  {"type":"urn:eco:problem:entity-referenced","title":"Entity is referenced","status":409,"code":"ENTITY_REFERENCED","retryable":false,"request_id":"req-9","details":{"references":[{"entity_id":"018f9e40-0000-7000-8000-000000000001","field_path":"payload.skill_ids[0]"}]}},
+  {"type":"urn:eco:problem:revision-not-found","title":"Revision not found","status":404,"code":"REVISION_NOT_FOUND","retryable":false,"request_id":"req-10"},
+  {"type":"urn:eco:problem:revision-immutable","title":"Revision is immutable","status":409,"code":"REVISION_IMMUTABLE","retryable":false,"request_id":"req-11"},
+  {"type":"urn:eco:problem:diff-base-invalid","title":"Diff base is invalid","status":400,"code":"DIFF_BASE_INVALID","retryable":false,"request_id":"req-12"},
+  {"type":"urn:eco:problem:release-policy-invalid","title":"Release policy is invalid","status":400,"code":"RELEASE_POLICY_INVALID","retryable":false,"request_id":"req-13"},
+  {"type":"urn:eco:problem:release-capability-disabled","title":"Release capability is disabled","status":409,"code":"RELEASE_CAPABILITY_DISABLED","retryable":false,"request_id":"req-14"},
+  {"type":"urn:eco:problem:release-preflight-failed","title":"Release preflight failed","status":422,"code":"RELEASE_PREFLIGHT_FAILED","retryable":false,"request_id":"req-15"},
+  {"type":"urn:eco:problem:release-base-conflict","title":"Release baseline changed","status":409,"code":"RELEASE_BASE_CONFLICT","retryable":false,"request_id":"req-16"},
+  {"type":"urn:eco:problem:idempotency-conflict","title":"Idempotency key conflicts","status":409,"code":"IDEMPOTENCY_CONFLICT","retryable":false,"request_id":"req-17"},
+  {"type":"urn:eco:problem:mandatory-backup-failed","title":"Mandatory backup failed","status":502,"code":"MANDATORY_BACKUP_FAILED","retryable":true,"request_id":"req-18"},
+  {"type":"urn:eco:problem:migration-backup-required","title":"Migration backup is required","status":409,"code":"MIGRATION_BACKUP_REQUIRED","retryable":false,"request_id":"req-19"},
+  {"type":"urn:eco:problem:invalid-confirmation","title":"Release confirmation is invalid","status":400,"code":"INVALID_CONFIRMATION","retryable":false,"request_id":"req-20"},
+  {"type":"urn:eco:problem:history-not-found","title":"History not found","status":404,"code":"HISTORY_NOT_FOUND","retryable":false,"request_id":"req-21"},
+  {"type":"urn:eco:problem:storage-failure","title":"Storage failure","status":500,"code":"STORAGE_FAILURE","retryable":true,"request_id":"req-22"},
+  {"type":"urn:eco:problem:external-service-failure","title":"External service failure","status":503,"code":"EXTERNAL_SERVICE_FAILURE","retryable":true,"request_id":"req-23"}
 ]

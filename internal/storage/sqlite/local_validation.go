@@ -119,16 +119,40 @@ func workingManifestHashTx(ctx context.Context, tx *sql.Tx) (string, error) {
 	return fmt.Sprintf("%x", sum), nil
 }
 
+// currentValidationVersionManifest is the single source of the #6
+// interpretation identities used by both LOCAL validation and the immutable
+// revision metadata written by a save. Keeping it shared prevents a revision
+// from recording metadata that disagrees with its LOCAL validation result.
+func currentValidationVersionManifest() (validation.VersionManifest, error) {
+	registry, err := formula.V1Registry()
+	if err != nil {
+		return validation.VersionManifest{}, err
+	}
+	return validation.VersionManifest{
+		Schema:        "schema-v1",
+		DSL:           formula.DSLVersion,
+		Registry:      registry.ManifestHash(),
+		NumericPolicy: formula.NumericPolicyV1.Version,
+	}, nil
+}
+
 // persistLocalValidation records only direct references and the changed
 // entity's formula syntax/type checks. Global graph validators deliberately
 // remain FULL-only.
-func (s *Store) persistLocalValidation(ctx context.Context, tx *sql.Tx, entity domain.Entity, revision domain.RevisionSummary) (domain.LocalValidationSummary, error) {
+func (s *Store) persistLocalValidation(ctx context.Context, tx *sql.Tx, entity domain.Entity, revision domain.RevisionSummary, versions validation.VersionManifest) (domain.LocalValidationSummary, error) {
+	return s.persistLocalValidationForEntities(ctx, tx, []domain.Entity{entity}, revision, versions)
+}
+
+// persistLocalValidationForEntities remains LOCAL-only: it checks direct
+// references and formula syntax/types without invoking graph-wide validators.
+// Checkpoints use it with their materialized immutable manifest so their run
+// is never mislabeled FULL.
+func (s *Store) persistLocalValidationForEntities(ctx context.Context, tx *sql.Tx, entities []domain.Entity, revision domain.RevisionSummary, versions validation.VersionManifest) (domain.LocalValidationSummary, error) {
 	registry, err := formula.V1Registry()
 	if err != nil {
 		return domain.LocalValidationSummary{}, err
 	}
-	versions := validation.VersionManifest{Schema: "schema-v1", DSL: formula.DSLVersion, Registry: registry.ManifestHash(), NumericPolicy: formula.NumericPolicyV1.Version}
-	references, bindings := validation.WalkKnownSchema([]domain.Entity{entity})
+	references, bindings := validation.WalkKnownSchema(entities)
 	issues := make([]validation.Issue, 0)
 	for _, reference := range references {
 		var kind domain.EntityKind

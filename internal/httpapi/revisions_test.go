@@ -1,0 +1,159 @@
+package httpapi
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+	"github.com/zouyi/eco-guardian/internal/app"
+	"github.com/zouyi/eco-guardian/internal/domain"
+	versioninggate "github.com/zouyi/eco-guardian/internal/versioning/gate"
+	versioningpolicy "github.com/zouyi/eco-guardian/internal/versioning/policy"
+	versioningrelease "github.com/zouyi/eco-guardian/internal/versioning/release"
+)
+
+type fakeVersionService struct {
+	app.VersioningService
+	policies    versioningpolicy.Page
+	capability  versioninggate.ReleaseCapability
+	created     versioningrelease.Command
+	createdJob  versioningrelease.Job
+	createErr   error
+	createCalls int
+	job         versioningrelease.Job
+	events      []versioningrelease.Event
+}
+
+func (f *fakeVersionService) ListPolicies(context.Context, string, int) (versioningpolicy.Page, error) {
+	return f.policies, nil
+}
+func (f *fakeVersionService) ReleaseCapability(context.Context) (versioninggate.ReleaseCapability, error) {
+	return f.capability, nil
+}
+func (f *fakeVersionService) CreateRelease(_ context.Context, command versioningrelease.Command) (versioningrelease.Job, error) {
+	f.created, f.createCalls = command, f.createCalls+1
+	return f.createdJob, f.createErr
+}
+func (f *fakeVersionService) GetReleaseJob(context.Context, domain.ID) (versioningrelease.Job, error) {
+	return f.job, nil
+}
+func (f *fakeVersionService) ListReleaseJobEvents(context.Context, domain.ID, int64) ([]versioningrelease.Event, error) {
+	return f.events, nil
+}
+
+func TestVersionHandlerRejectsAbsentProjectAndInvalidListLimit(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	NewVersionHandler(func() app.VersioningService { return nil }).Register(engine)
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/revisions", nil))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("absent project status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestVersionHandlerDelegatesPolicyCapabilityAndReleaseCommands(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	id, err := domain.NewID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobID, err := domain.NewID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &fakeVersionService{
+		policies:   versioningpolicy.Page{Items: []versioningpolicy.ReleasePolicy{{ID: id, DisplayVersion: 1, CanonicalHash: strings.Repeat("a", 64)}}},
+		capability: versioninggate.ReleaseCapability{Enabled: false, Reasons: []versioninggate.DisabledReason{{CapabilityID: "graph", GateID: "projection", Reason: "required gate is unregistered"}}},
+		createdJob: versioningrelease.Job{ID: jobID},
+	}
+	engine := gin.New()
+	NewVersionHandler(func() app.VersioningService { return service }).Register(engine)
+
+	policyResponse := httptest.NewRecorder()
+	engine.ServeHTTP(policyResponse, httptest.NewRequest(http.MethodGet, "/api/v1/release-policies", nil))
+	if policyResponse.Code != http.StatusOK || !strings.Contains(policyResponse.Body.String(), "policy_hash") {
+		t.Fatalf("policy response=%d body=%s", policyResponse.Code, policyResponse.Body.String())
+	}
+	capabilityResponse := httptest.NewRecorder()
+	engine.ServeHTTP(capabilityResponse, httptest.NewRequest(http.MethodGet, "/api/v1/runtime/capabilities", nil))
+	if capabilityResponse.Code != http.StatusOK || !strings.Contains(capabilityResponse.Body.String(), "MISSING") {
+		t.Fatalf("capability response=%d body=%s", capabilityResponse.Code, capabilityResponse.Body.String())
+	}
+
+	body := `{"candidate_revision_id":"` + string(id) + `","config_hash":"` + strings.Repeat("b", 64) + `","version_manifest_hash":"` + strings.Repeat("c", 64) + `","policy_id":"` + string(id) + `","expected_baseline_release_id":null,"confirmations":[]}`
+	releaseRequest := httptest.NewRequest(http.MethodPost, "/api/v1/releases", strings.NewReader(body))
+	releaseRequest.Header.Set("Content-Type", "application/json")
+	releaseRequest.Header.Set("Idempotency-Key", "release-one")
+	releaseResponse := httptest.NewRecorder()
+	engine.ServeHTTP(releaseResponse, releaseRequest)
+	if releaseResponse.Code != http.StatusAccepted || service.createCalls != 1 || !service.created.BaselineSpecified || service.created.IdempotencyKey != "release-one" {
+		t.Fatalf("release response=%d command=%#v calls=%d body=%s", releaseResponse.Code, service.created, service.createCalls, releaseResponse.Body.String())
+	}
+	var accepted map[string]string
+	if err := json.Unmarshal(releaseResponse.Body.Bytes(), &accepted); err != nil || accepted["location"] != "/api/v1/jobs/"+string(jobID) {
+		t.Fatalf("accepted=%v err=%v", accepted, err)
+	}
+}
+
+func TestVersionHandlerRejectsInvalidIdempotencyKeyAndReadOnlyMutation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &fakeVersionService{}
+	engine := gin.New()
+	NewVersionHandler(func() app.VersioningService { return service }).Register(engine)
+	invalid := httptest.NewRequest(http.MethodPost, "/api/v1/releases", strings.NewReader(`{"expected_baseline_release_id":null}`))
+	invalid.Header.Set("Content-Type", "application/json")
+	invalid.Header.Set("Idempotency-Key", " ")
+	invalidResponse := httptest.NewRecorder()
+	engine.ServeHTTP(invalidResponse, invalid)
+	if invalidResponse.Code != http.StatusBadRequest || service.createCalls != 0 {
+		t.Fatalf("invalid release response=%d calls=%d body=%s", invalidResponse.Code, service.createCalls, invalidResponse.Body.String())
+	}
+	readonlyResponse := httptest.NewRecorder()
+	engine.ServeHTTP(readonlyResponse, httptest.NewRequest(http.MethodDelete, "/api/v1/releases/any", nil))
+	if readonlyResponse.Code != http.StatusMethodNotAllowed || !strings.Contains(readonlyResponse.Body.String(), "REVISION_IMMUTABLE") {
+		t.Fatalf("read-only response=%d body=%s", readonlyResponse.Code, readonlyResponse.Body.String())
+	}
+}
+
+func TestVersionHandlerMapsReleaseBaseConflictToProblemDetails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	id, err := domain.NewID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &fakeVersionService{createErr: versioningrelease.ErrReleaseBaseConflict}
+	engine := gin.New()
+	NewVersionHandler(func() app.VersioningService { return service }).Register(engine)
+	body := `{"candidate_revision_id":"` + string(id) + `","config_hash":"` + strings.Repeat("b", 64) + `","version_manifest_hash":"` + strings.Repeat("c", 64) + `","policy_id":"` + string(id) + `","expected_baseline_release_id":null,"confirmations":[{"kind":"establish_baseline","confirmed":true}]}`
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/releases", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Idempotency-Key", "release-conflict")
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "RELEASE_BASE_CONFLICT") {
+		t.Fatalf("response=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestVersionHandlerResumesPersistedJobEventsAndCompletesTerminalStream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	id, err := domain.NewID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &fakeVersionService{job: versioningrelease.Job{ID: id, Status: versioningrelease.JobSucceeded}, events: []versioningrelease.Event{{JobID: id, Ordinal: 2, Phase: "SUCCEEDED", Progress: 100}}}
+	engine := gin.New()
+	NewVersionHandler(func() app.VersioningService { return service }).Register(engine)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+string(id)+"/events", nil)
+	request.Header.Set("Last-Event-ID", "1")
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "id: 2") || !strings.Contains(response.Body.String(), "event: terminal") {
+		t.Fatalf("stream response=%d body=%s", response.Code, response.Body.String())
+	}
+}

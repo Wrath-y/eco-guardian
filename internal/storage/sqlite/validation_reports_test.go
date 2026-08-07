@@ -235,10 +235,10 @@ func TestOpenMigratesV1DatabaseWithValidationConstraints(t *testing.T) {
 		t.Fatalf("project id changed: %s != %s", openedID, id)
 	}
 	var version int
-	if err = store.db.QueryRow(`SELECT db_schema_version FROM project_meta WHERE id=?`, id).Scan(&version); err != nil || version != 2 {
+	if err = store.db.QueryRow(`SELECT db_schema_version FROM project_meta WHERE id=?`, id).Scan(&version); err != nil || version != currentSchemaVersion {
 		t.Fatalf("schema version=%d err=%v", version, err)
 	}
-	for _, table := range []string{"compiled_ast", "formula_index", "revision_references", "validation_runs", "validation_issues"} {
+	for _, table := range []string{"compiled_ast", "formula_index", "revision_references", "validation_runs", "validation_issues", "revision_metadata", "release_policies", "jobs", "job_events", "release_intents", "releases", "active_release_pointer"} {
 		var found string
 		if err = store.db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&found); err != nil || found != table {
 			t.Fatalf("missing migrated table %q: %v", table, err)

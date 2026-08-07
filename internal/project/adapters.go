@@ -39,7 +39,14 @@ func (l *fileLock) Release() error {
 	return remove
 }
 
-type SQLiteFactory struct{ Registry *domain.Registry }
+// SQLiteFactory optionally invokes release recovery after SQLite has opened
+// the project. Composition supplies the recovery service with its registered
+// Graph adapter; keeping it a callback avoids coupling project lifecycle to a
+// concrete external capability implementation.
+type SQLiteFactory struct {
+	Registry *domain.Registry
+	Recover  func(context.Context, *store.Store) error
+}
 type sqliteHandle struct{ store *store.Store }
 
 func (h *sqliteHandle) Close() error        { return h.store.Close() }
@@ -53,10 +60,15 @@ func (f SQLiteFactory) Create(ctx context.Context, dir string) (ProjectHandle, e
 	return &sqliteHandle{s}, nil
 }
 func (f SQLiteFactory) Open(ctx context.Context, dir string) (ProjectHandle, error) {
-	_ = ctx
 	s, _, err := store.Open(dir, f.Registry)
 	if err != nil {
 		return nil, err
+	}
+	if f.Recover != nil {
+		if err := f.Recover(ctx, s); err != nil {
+			_ = s.Close()
+			return nil, err
+		}
 	}
 	return &sqliteHandle{s}, nil
 }

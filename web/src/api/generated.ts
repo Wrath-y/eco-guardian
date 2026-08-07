@@ -180,6 +180,166 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listRevisions"];
+        put?: never;
+        post: operations["createRevision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/revisions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getRevision"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/revisions/{id}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getRevisionDiff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/release-policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listReleasePolicies"];
+        put?: never;
+        post: operations["createReleasePolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/releases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listReleases"];
+        put?: never;
+        post: operations["createRelease"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/releases/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getRelease"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getJob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/{id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["streamJobEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancelJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runtime/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getRuntimeCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -376,6 +536,256 @@ export interface components {
             created_at: string;
             validation: components["schemas"]["LocalValidationSummary"];
         };
+        VersionContributor: {
+            capability_id: string;
+            contract_version: string;
+            /** @description Immutable implementation identity; null only when unavailable at revision creation. */
+            implementation_version?: string | null;
+            /** @enum {string} */
+            state: "registered" | "unregistered";
+        };
+        RevisionVersionManifest: {
+            entries: components["schemas"]["VersionContributor"][];
+            hash: components["schemas"]["Hash"];
+        };
+        RevisionMetadata: {
+            revision_id: components["schemas"]["UUIDv7"];
+            config_hash: components["schemas"]["Hash"];
+            name?: string | null;
+            description?: string | null;
+            parent_revision_id?: components["schemas"]["UUIDv7"] | null;
+            source_revision_id?: components["schemas"]["UUIDv7"] | null;
+            source_release_id?: components["schemas"]["UUIDv7"] | null;
+            version_manifest: components["schemas"]["RevisionVersionManifest"];
+            /** Format: date-time */
+            created_at: string;
+        };
+        /**
+         * @description Derived read model only; it never mutates immutable revision history.
+         * @enum {string}
+         */
+        RevisionStatus: "working" | "candidate" | "active_release" | "history";
+        RevisionHistoryItem: {
+            id: components["schemas"]["UUIDv7"];
+            display_revision: number;
+            config_hash: components["schemas"]["Hash"];
+            metadata: components["schemas"]["RevisionMetadata"];
+            status: components["schemas"]["RevisionStatus"][];
+        };
+        RevisionDetail: components["schemas"]["RevisionHistoryItem"] & {
+            timeline: components["schemas"]["RevisionTimeline"];
+        };
+        RevisionPage: {
+            items: components["schemas"]["RevisionHistoryItem"][];
+            /** @description Opaque stable cursor ordered by display revision and revision ID. */
+            next_cursor?: string | null;
+        };
+        RevisionTimelineEvent: {
+            id: string;
+            /** Format: date-time */
+            occurred_at: string;
+            /** @enum {string} */
+            type: "revision_created" | "validation_completed" | "gate_evaluated" | "release_queued" | "release_completed" | "active_pointer_changed";
+            revision_id: components["schemas"]["UUIDv7"];
+            subject_id?: string | null;
+            status?: string | null;
+        };
+        /** @description Stable chronological projection of immutable facts; revision status is not stored on the revision. */
+        RevisionTimeline: components["schemas"]["RevisionTimelineEvent"][];
+        CurrentWorkingPrecondition: {
+            revision_id: components["schemas"]["UUIDv7"];
+            /** @description Optional strong entity ETag when a single entity is the source of the operation. */
+            entity_etag?: string | null;
+        };
+        CreateCheckpointRevision: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "checkpoint";
+            current_working: components["schemas"]["CurrentWorkingPrecondition"];
+            name?: string;
+            description?: string;
+        };
+        RestoreReleaseRevision: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "restore_release";
+            current_working: components["schemas"]["CurrentWorkingPrecondition"];
+            source_release_id: components["schemas"]["UUIDv7"];
+        };
+        CreateRevisionRequest: components["schemas"]["CreateCheckpointRevision"] | components["schemas"]["RestoreReleaseRevision"];
+        /** @enum {string} */
+        FieldChangeKind: "ADD" | "DELETE" | "MOVE" | "MODIFY";
+        FieldChange: {
+            entity_id: components["schemas"]["UUIDv7"];
+            entity_kind: components["schemas"]["EntityKind"];
+            /** @description RFC 6901 JSON Pointer. */
+            path: string;
+            kind: components["schemas"]["FieldChangeKind"];
+            /** @description Canonical JSON value before the change. */
+            old_value?: unknown;
+            /** @description Canonical JSON value after the change. */
+            new_value?: unknown;
+            old_ordinal?: number;
+            new_ordinal?: number;
+        };
+        /** @enum {string} */
+        DiffBaselineState: "AVAILABLE" | "NO_BASELINE";
+        RevisionDiff: {
+            base_revision_id: components["schemas"]["UUIDv7"];
+            target_revision_id: components["schemas"]["UUIDv7"];
+            base_config_hash: components["schemas"]["Hash"];
+            target_config_hash: components["schemas"]["Hash"];
+            baseline_state: components["schemas"]["DiffBaselineState"];
+            changes: components["schemas"]["FieldChange"][];
+        };
+        ReleaseMetric: {
+            id: string;
+            required: boolean;
+        };
+        ReleaseScene: {
+            id: string;
+            required: boolean;
+            metrics: components["schemas"]["ReleaseMetric"][];
+        };
+        CapabilityGateRequirement: {
+            capability_id: string;
+            gate_id: string;
+            contract_version: string;
+            implementation_version?: string | null;
+        };
+        ReleasePolicyDefinition: {
+            scenes: components["schemas"]["ReleaseScene"][];
+            samples: number;
+            threshold_id: string;
+            /** @constant */
+            threshold_enabled: true;
+            capabilities: components["schemas"]["CapabilityGateRequirement"][];
+        };
+        CreateReleasePolicyRequest: components["schemas"]["ReleasePolicyDefinition"];
+        ReleasePolicy: components["schemas"]["ReleasePolicyDefinition"] & {
+            id: components["schemas"]["UUIDv7"];
+            display_version: number;
+            policy_hash: components["schemas"]["Hash"];
+            /** Format: date-time */
+            created_at: string;
+        };
+        ReleasePolicyPage: {
+            items: components["schemas"]["ReleasePolicy"][];
+            /** @description Opaque stable cursor ordered by display version and ID. */
+            next_cursor?: string | null;
+        };
+        GateEvidence: {
+            capability_id?: string;
+            gate_id: string;
+            result_id: components["schemas"]["UUIDv7"];
+            result_hash: components["schemas"]["Hash"];
+            /** @enum {string} */
+            state: "PASS" | "WARNING" | "BLOCK" | "UNAVAILABLE" | "STALE";
+            evidence_url?: string | null;
+        };
+        ReleaseConfirmation: {
+            /** @enum {string} */
+            kind: "establish_baseline" | "acknowledge_warning" | "numeric_override";
+            /** @constant */
+            confirmed: true;
+            reason?: string | null;
+        };
+        CreateReleaseRequest: {
+            candidate_revision_id: components["schemas"]["UUIDv7"];
+            config_hash: components["schemas"]["Hash"];
+            version_manifest_hash: components["schemas"]["Hash"];
+            policy_id: components["schemas"]["UUIDv7"];
+            /** @description Explicit null establishes a first-release baseline. */
+            expected_baseline_release_id: components["schemas"]["UUIDv7"] | null;
+            notes?: string;
+            confirmations: components["schemas"]["ReleaseConfirmation"][];
+            /** @description Read-only client echo for audit consistency; server remains authoritative. */
+            gate_evidence?: components["schemas"]["GateEvidence"][];
+        };
+        ActiveReleasePointer: {
+            release_id?: components["schemas"]["UUIDv7"] | null;
+            generation: number;
+        };
+        Release: {
+            id: components["schemas"]["UUIDv7"];
+            revision_id: components["schemas"]["UUIDv7"];
+            policy_id: components["schemas"]["UUIDv7"];
+            baseline_release_id?: components["schemas"]["UUIDv7"] | null;
+            intent_id: components["schemas"]["UUIDv7"];
+            notes?: string;
+            gate_evidence: components["schemas"]["GateEvidence"][];
+            confirmations: components["schemas"]["ReleaseConfirmation"][];
+            /** Format: date-time */
+            created_at: string;
+        };
+        ReleaseDetail: components["schemas"]["Release"] & {
+            active_pointer: components["schemas"]["ActiveReleasePointer"];
+        };
+        ReleasePage: {
+            items: components["schemas"]["Release"][];
+            next_cursor?: string | null;
+        };
+        ReleaseJobAccepted: {
+            job_id: components["schemas"]["UUIDv7"];
+            /** Format: uri-reference */
+            location: string;
+        };
+        /** @enum {string} */
+        JobStatus: "queued" | "running" | "succeeded" | "failed" | "canceled" | "interrupted";
+        JobEvent: {
+            job_id: components["schemas"]["UUIDv7"];
+            ordinal: number;
+            phase: string;
+            progress: number;
+            warning?: string | null;
+            error?: string | null;
+            result_type?: string | null;
+            result_id?: components["schemas"]["UUIDv7"] | null;
+            /** Format: uri-reference */
+            result_url?: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        Job: {
+            id: components["schemas"]["UUIDv7"];
+            /** @constant */
+            kind: "release";
+            status: components["schemas"]["JobStatus"];
+            request_hash: components["schemas"]["Hash"];
+            /** Format: uri-reference */
+            events_url: string;
+            /** @description Polling fallback cadence when SSE is unavailable. */
+            poll_after_ms: number;
+            latest_event_ordinal?: number;
+            result_type?: string | null;
+            result_id?: components["schemas"]["UUIDv7"] | null;
+            /** Format: uri-reference */
+            result_url?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        ReleaseDisabledReason: {
+            capability_id: string;
+            gate_id: string;
+            /** @enum {string} */
+            code: "MISSING" | "INCOMPATIBLE" | "UNAVAILABLE";
+            detail?: string | null;
+        };
+        ReleaseCapability: {
+            /** @description Server-authoritative release-entry state; it is never computed by the client. */
+            enabled: boolean;
+            disabled_reasons: components["schemas"]["ReleaseDisabledReason"][];
+        };
+        /** @description Safe runtime availability projection. It deliberately omits backup credentials, service endpoints, and client-computed Gate pass state. */
+        RuntimeCapabilities: {
+            release: components["schemas"]["ReleaseCapability"];
+        };
         LocalValidationSummary: {
             run_id: components["schemas"]["UUIDv7"];
             /** @constant */
@@ -483,7 +893,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "INVALID_SELECTION" | "PROJECT_LOCKED" | "ACTIVE_PROJECT_CONFLICT" | "CLOSE_BLOCKED" | "UNSUPPORTED_KIND" | "UNSUPPORTED_SCHEMA" | "DUPLICATE_KEY" | "PRECONDITION_REQUIRED" | "REVISION_CONFLICT" | "ENTITY_REFERENCED" | "VALIDATION_FAILED" | "PROJECT_NOT_OPEN" | "INVALID_VALIDATION_REQUEST" | "INVALID_VALIDATION_SOURCE" | "INVALID_VALIDATION_SCOPE" | "INVALID_VALIDATION_TARGET" | "VALIDATION_SOURCE_NOT_FOUND" | "VALIDATION_RUN_NOT_FOUND" | "VALIDATION_STORAGE_FAILURE";
+            code: "INVALID_SELECTION" | "PROJECT_LOCKED" | "ACTIVE_PROJECT_CONFLICT" | "CLOSE_BLOCKED" | "UNSUPPORTED_KIND" | "UNSUPPORTED_SCHEMA" | "DUPLICATE_KEY" | "PRECONDITION_REQUIRED" | "REVISION_CONFLICT" | "ENTITY_REFERENCED" | "VALIDATION_FAILED" | "PROJECT_NOT_OPEN" | "INVALID_VALIDATION_REQUEST" | "INVALID_VALIDATION_SOURCE" | "INVALID_VALIDATION_SCOPE" | "INVALID_VALIDATION_TARGET" | "VALIDATION_SOURCE_NOT_FOUND" | "VALIDATION_RUN_NOT_FOUND" | "VALIDATION_STORAGE_FAILURE" | "REVISION_NOT_FOUND" | "REVISION_IMMUTABLE" | "DIFF_BASE_INVALID" | "RELEASE_POLICY_INVALID" | "RELEASE_CAPABILITY_DISABLED" | "RELEASE_PREFLIGHT_FAILED" | "RELEASE_BASE_CONFLICT" | "IDEMPOTENCY_CONFLICT" | "MANDATORY_BACKUP_FAILED" | "MIGRATION_BACKUP_REQUIRED" | "INVALID_CONFIRMATION" | "HISTORY_NOT_FOUND" | "STORAGE_FAILURE" | "EXTERNAL_SERVICE_FAILURE";
             retryable: boolean;
             request_id: string;
             entity_id?: components["schemas"]["UUIDv7"];
@@ -509,6 +919,13 @@ export interface components {
         EntityID: components["schemas"]["UUIDv7"];
         ProjectID: components["schemas"]["UUIDv7"];
         ValidationRunID: components["schemas"]["UUIDv7"];
+        RevisionID: components["schemas"]["UUIDv7"];
+        ReleaseID: components["schemas"]["UUIDv7"];
+        JobID: components["schemas"]["UUIDv7"];
+        /** @description Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. */
+        IdempotencyKey: string;
+        /** @description Resume SSE delivery strictly after this persisted event ordinal. */
+        LastEventID: number;
         /** @description Strong ETag returned by GET/create/patch. */
         IfMatch: string;
     };
@@ -866,6 +1283,324 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ValidationRun"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listRevisions: {
+        parameters: {
+            query?: {
+                /** @description Opaque stable continuation cursor. */
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stable revision history page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionPage"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createRevision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRevisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Immutable checkpoint or forward-rollback revision created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionDetail"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getRevision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["RevisionID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable revision detail and derived status timeline */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionDetail"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getRevisionDiff: {
+        parameters: {
+            query: {
+                /** @description Immutable base revision; no server-side fallback is permitted. */
+                base: components["schemas"]["UUIDv7"];
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["RevisionID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deterministic structured revision diff */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionDiff"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listReleasePolicies: {
+        parameters: {
+            query?: {
+                /** @description Opaque stable continuation cursor. */
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable release-policy history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleasePolicyPage"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createReleasePolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateReleasePolicyRequest"];
+            };
+        };
+        responses: {
+            /** @description New immutable release-policy version */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleasePolicy"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listReleases: {
+        parameters: {
+            query?: {
+                /** @description Opaque stable continuation cursor. */
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read-only release history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleasePage"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createRelease: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateReleaseRequest"];
+            };
+        };
+        responses: {
+            /** @description Release preflight accepted and durable Job queued */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseJobAccepted"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getRelease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ReleaseID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable release detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseDetail"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Durable release Job state; clients may poll using poll_after_ms */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    streamJobEvents: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Resume SSE delivery strictly after this persisted event ordinal. */
+                "Last-Event-ID"?: components["parameters"]["LastEventID"];
+            };
+            path: {
+                id: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persisted Job events in ordinal order */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    cancelJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancellation accepted when the Job has not crossed an external-effect boundary */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getRuntimeCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-authoritative release capability state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeCapabilities"];
                 };
             };
             default: components["responses"]["Problem"];
