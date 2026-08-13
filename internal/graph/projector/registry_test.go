@@ -68,7 +68,7 @@ func TestProjectMaterializesStableNodesAndRegisteredEdgesOnly(t *testing.T) {
 	}
 }
 
-func TestManifestBytesAreJCSCanonicalAndSorted(t *testing.T) {
+func TestManifestBytesUseProviderOrderAndSortedRecords(t *testing.T) {
 	result := Result{Nodes: []Node{{ID: "b", Type: "tag", Label: "B", Text: "B", Properties: map[string]any{"z": "last", "a": "first"}, Provenance: NodeProvenance{}}, {ID: "a", Type: "tag", Label: "A", Text: "A", Properties: map[string]any{}, Provenance: NodeProvenance{}}}, Edges: []Edge{}}
 	bytes, hash, err := ManifestBytes(result)
 	if err != nil || len(hash) != 64 {

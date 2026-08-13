@@ -5,12 +5,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"sort"
-
-	"github.com/cyberphone/json-canonicalization/go/src/webpki.org/jsoncanonicalizer"
 )
 
-// ManifestBytes emits the exact local-rag v1 final manifest. JCS is pinned in
-// go.mod and hashes only schema_version/nodes/edges, never job or mode data.
+// ManifestBytes emits the exact local-rag v1 final manifest. Provider v1
+// fixes root member order; it hashes no job, mode, or base metadata.
 func ManifestBytes(result Result) ([]byte, string, error) {
 	nodes := append([]Node(nil), result.Nodes...)
 	edges := append([]Edge(nil), result.Edges...)
@@ -32,11 +30,11 @@ func ManifestBytes(result Result) ([]byte, string, error) {
 	for i, edge := range edges {
 		encodedEdges[i] = toEdge(edge)
 	}
-	raw, err := json.Marshal(map[string]any{"schema_version": "1.0", "nodes": encodedNodes, "edges": encodedEdges})
-	if err != nil {
-		return nil, "", err
-	}
-	canonical, err := jsoncanonicalizer.Transform(raw)
+	canonical, err := json.Marshal(struct {
+		SchemaVersion string           `json:"schema_version"`
+		Nodes         []map[string]any `json:"nodes"`
+		Edges         []map[string]any `json:"edges"`
+	}{"1.0", encodedNodes, encodedEdges})
 	if err != nil {
 		return nil, "", err
 	}
