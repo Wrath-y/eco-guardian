@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -74,7 +75,7 @@ func TestManifestBytesUseProviderOrderAndSortedRecords(t *testing.T) {
 	if err != nil || len(hash) != 64 {
 		t.Fatalf("bytes=%s hash=%q err=%v", bytes, hash, err)
 	}
-	if string(bytes) == "" || string(bytes)[0] != '{' || !reflect.DeepEqual(result.Nodes[0].ID, "b") {
+	if !strings.HasPrefix(string(bytes), `{"schema_version":"1.0","nodes":[{"id":"a","type":"tag"`) || !reflect.DeepEqual(result.Nodes[0].ID, "b") {
 		t.Fatalf("canonical=%s", bytes)
 	}
 	again, againHash, err := ManifestBytes(Result{Nodes: []Node{result.Nodes[1], result.Nodes[0]}, Edges: []Edge{}})
