@@ -70,6 +70,39 @@ func TestV1FormatterIsDeterministicAndExcludesExtensions(t *testing.T) {
 	}
 }
 
+func TestV1FormatterHasFrozenFieldsForEveryEntityKind(t *testing.T) {
+	formatter := V1Formatter{}
+	for _, sample := range []struct {
+		kind       domain.EntityKind
+		payload    map[string]json.RawMessage
+		property   string
+		want       any
+		collection string
+	}{
+		{domain.KindAttribute, map[string]json.RawMessage{"value_type": json.RawMessage(`"decimal"`), "default": json.RawMessage(`true`), "unknown": json.RawMessage(`"excluded"`)}, "default", true, ""},
+		{domain.KindTag, map[string]json.RawMessage{"category": json.RawMessage(`"element"`), "parent_tag_ids": json.RawMessage(`["z","a"]`)}, "category", "element", "parent_tag_ids"},
+		{domain.KindCharacter, map[string]json.RawMessage{"skill_ids": json.RawMessage(`["z","a"]`), "item_ids": json.RawMessage(`[]`)}, "", nil, "skill_ids"},
+		{domain.KindSkill, map[string]json.RawMessage{"cooldown": json.RawMessage(`"1.23"`), "effect_ids": json.RawMessage(`["z","a"]`)}, "cooldown", "1.23", "effect_ids"},
+		{domain.KindItem, map[string]json.RawMessage{"slot": json.RawMessage(`"hand"`), "effect_ids": json.RawMessage(`[]`), "enhance_tag_ids": json.RawMessage(`["z","a"]`)}, "slot", "hand", "enhance_tag_ids"},
+		{domain.KindEffect, map[string]json.RawMessage{"duration": json.RawMessage(`"2"`)}, "duration", "2", ""},
+	} {
+		entity := domain.Entity{ID: projectorTestID(t), Kind: sample.kind, Key: "key", Name: "Name", Status: domain.StatusActive, SchemaVersion: 1, Payload: sample.payload, Extensions: map[string]json.RawMessage{"unknown": json.RawMessage(`"excluded"`)}}
+		_, text, properties, err := formatter.Format(entity)
+		if err != nil {
+			t.Fatalf("%s: %v", sample.kind, err)
+		}
+		if sample.property != "" && properties[sample.property] != sample.want {
+			t.Fatalf("%s properties=%#v", sample.kind, properties)
+		}
+		if sample.collection != "" && !reflect.DeepEqual(properties[sample.collection], []string{"a", "z"}) {
+			t.Fatalf("%s collection=%#v", sample.kind, properties[sample.collection])
+		}
+		if _, exists := properties["unknown"]; exists || strings.Contains(text, "excluded") {
+			t.Fatalf("%s unknown data leaked: properties=%#v text=%q", sample.kind, properties, text)
+		}
+	}
+}
+
 func TestProjectMaterializesStableNodesAndRegisteredEdgesOnly(t *testing.T) {
 	project, character, skill, item := projectorTestID(t), projectorTestID(t), projectorTestID(t), projectorTestID(t)
 	descriptor := Descriptor{SchemaVersion: ProjectionSchemaV1, Version: ProjectorV1, Relations: V1Relations(), Formatter: V1Formatter{}}
@@ -85,6 +118,52 @@ func TestProjectMaterializesStableNodesAndRegisteredEdgesOnly(t *testing.T) {
 	}
 	if result.Nodes[0].ID > result.Nodes[1].ID || len(result.Edges[0].ID) != 52 {
 		t.Fatalf("unstable records=%#v", result)
+	}
+}
+
+func TestProjectionIsDeterministicAcrossInputOrderAndRegistryRestart(t *testing.T) {
+	project, revision, character, skill, tag := projectorTestID(t), projectorTestID(t), projectorTestID(t), projectorTestID(t), projectorTestID(t)
+	base := Revision{
+		ProjectID: project, RevisionID: revision, ConfigHash: strings.Repeat("a", 64),
+		Entities: []domain.Entity{
+			{ID: character, Kind: domain.KindCharacter, Key: "hero", Name: "Hero", TagIDs: []domain.ID{tag}, Status: domain.StatusActive, SchemaVersion: 1, Payload: map[string]json.RawMessage{"unknown": json.RawMessage(`"ignored"`)}},
+			{ID: skill, Kind: domain.KindSkill, Key: "heal", Name: "Heal", Status: domain.StatusActive, SchemaVersion: 1, Payload: map[string]json.RawMessage{"cooldown": json.RawMessage(`"1.23"`), "effect_ids": json.RawMessage(`[]`)}},
+			{ID: tag, Kind: domain.KindTag, Key: "water", Name: "Water", Status: domain.StatusActive, SchemaVersion: 1, Payload: map[string]json.RawMessage{"category": json.RawMessage(`"element"`), "parent_tag_ids": json.RawMessage(`[]`)}},
+		},
+		References: []Reference{
+			{SourceID: character, TargetID: skill, TargetKind: domain.KindSkill, FieldPath: "/payload/skill_ids/0", Ordinal: 1},
+			{SourceID: character, TargetID: tag, TargetKind: domain.KindTag, FieldPath: "/tag_ids/0", Ordinal: 0},
+		},
+	}
+	var want Result
+	var wantBytes, wantHash string
+	for iteration := 0; iteration < 4; iteration++ {
+		current := base
+		current.Entities = append([]domain.Entity(nil), base.Entities...)
+		current.References = append([]Reference(nil), base.References...)
+		if iteration%2 == 1 {
+			current.Entities[0], current.Entities[2] = current.Entities[2], current.Entities[0]
+			current.References[0], current.References[1] = current.References[1], current.References[0]
+		}
+		registry, err := NewRegistry(ProjectionSchemaV1, ProjectorV1, Descriptor{SchemaVersion: ProjectionSchemaV1, Version: ProjectorV1, Relations: V1Relations(), Formatter: V1Formatter{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := Project(registry.Default(), current)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bytes, hash, err := ManifestBytes(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if iteration == 0 {
+			want, wantBytes, wantHash = result, string(bytes), hash
+			continue
+		}
+		if !reflect.DeepEqual(result, want) || string(bytes) != wantBytes || hash != wantHash {
+			t.Fatalf("iteration %d drifted: result=%#v bytes=%s hash=%s", iteration, result, bytes, hash)
+		}
 	}
 }
 
