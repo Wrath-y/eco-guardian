@@ -35,6 +35,19 @@ func TestEligibleBaseRequiresExactIdentityAndCoreReadiness(t *testing.T) {
 	}
 }
 
+func TestOnlyBaseErrorsMayFallbackToFull(t *testing.T) {
+	for _, code := range []string{"BASE_SNAPSHOT_NOT_FOUND", "BASE_SNAPSHOT_NOT_READY"} {
+		if !MayFallbackToFull(code) {
+			t.Fatal(code)
+		}
+	}
+	for _, code := range []string{"CONTENT_HASH_CONFLICT", "CONTENT_HASH_MISMATCH", "INVALID_SNAPSHOT_REQUEST", "REIMPORT_REQUIRED"} {
+		if MayFallbackToFull(code) {
+			t.Fatal(code)
+		}
+	}
+}
+
 func TestSummaryBindsProjectionEvidence(t *testing.T) {
 	d := Descriptor{SchemaVersion: ProjectionSchemaV1, Version: ProjectorV1, Relations: V1Relations(), Formatter: V1Formatter{}}
 	summary, err := NewSummary("project", "revision", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", d, Result{}, "cache-1")
