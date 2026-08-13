@@ -57,7 +57,7 @@ func (s *Store) RestoreRelease(ctx context.Context, currentWorkingRevision, sour
 	if err = s.inject("restore_revision"); err != nil {
 		return domain.RevisionSummary{}, err
 	}
-	if err = writeRevisionMetadata(ctx, tx, revision, versions, revisionMetadataFields{parentRevisionID: currentWorkingRevision, sourceRevisionID: sourceRevisionID, sourceReleaseID: sourceReleaseID}); err != nil {
+	if err = s.writeRevisionMetadata(ctx, tx, revision, versions, revisionMetadataFields{parentRevisionID: currentWorkingRevision, sourceRevisionID: sourceRevisionID, sourceReleaseID: sourceReleaseID}); err != nil {
 		return domain.RevisionSummary{}, err
 	}
 	if err = s.inject("restore_metadata"); err != nil {

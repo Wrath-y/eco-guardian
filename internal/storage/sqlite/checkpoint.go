@@ -46,7 +46,7 @@ func (s *Store) CreateCheckpoint(ctx context.Context, currentWorkingRevision dom
 	if err = s.inject("checkpoint_revision"); err != nil {
 		return domain.RevisionSummary{}, err
 	}
-	if err = writeRevisionMetadata(ctx, tx, revision, versions, revisionMetadataFields{name: name, description: description, parentRevisionID: currentWorkingRevision}); err != nil {
+	if err = s.writeRevisionMetadata(ctx, tx, revision, versions, revisionMetadataFields{name: name, description: description, parentRevisionID: currentWorkingRevision}); err != nil {
 		return domain.RevisionSummary{}, err
 	}
 	if err = s.inject("metadata"); err != nil {

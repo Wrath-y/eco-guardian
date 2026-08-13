@@ -80,13 +80,31 @@ type ValidationError struct{ Issues []domain.FieldIssue }
 func (e ValidationError) Error() string { return "entity validation failed" }
 
 type Store struct {
-	db        *sql.DB
-	path      string
-	registry  *domain.Registry
-	writes    sync.Mutex
-	now       func() time.Time
-	projectID domain.ID
-	failStage func(string) error // test-only transaction fault injector
+	db           *sql.DB
+	path         string
+	registry     *domain.Registry
+	writes       sync.Mutex
+	now          func() time.Time
+	projectID    domain.ID
+	graphVersion versioningrevision.VersionEntry
+	failStage    func(string) error // test-only transaction fault injector
+}
+
+// RegisterGraphVersionContributor is startup composition glue. Its entry is
+// copied under the write lock and becomes part of every subsequently saved
+// immutable revision; existing records are never rewritten.
+func (s *Store) RegisterGraphVersionContributor(contributor versioningrevision.VersionContributor) error {
+	if contributor == nil || contributor.CapabilityID() != "graph-projector" {
+		return errors.New("invalid graph version contributor")
+	}
+	entry := versioningrevision.VersionEntry{CapabilityID: contributor.CapabilityID(), ContractVersion: contributor.ContractVersion(), ImplementationVersion: contributor.ImplementationVersion(), State: contributor.RegistrationState()}
+	if !entry.Valid() {
+		return errors.New("invalid graph version contributor")
+	}
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	s.graphVersion = entry
+	return nil
 }
 
 func Create(ctx context.Context, dir string, registry *domain.Registry) (*Store, domain.ID, error) {
@@ -381,6 +399,12 @@ func historicalVersionManifest(ctx context.Context, tx *sql.Tx, revisionID domai
 }
 
 func versionManifestFromValidation(versions validation.VersionManifest) (versioningrevision.VersionManifest, error) {
+	return versionManifestFromValidationWithGraph(versions, defaultGraphVersionEntry())
+}
+func defaultGraphVersionEntry() versioningrevision.VersionEntry {
+	return versioningrevision.VersionEntry{CapabilityID: "graph-projector", ContractVersion: "unavailable", State: versioningrevision.Unregistered}
+}
+func versionManifestFromValidationWithGraph(versions validation.VersionManifest, graph versioningrevision.VersionEntry) (versioningrevision.VersionManifest, error) {
 	if !versions.Valid() {
 		return versioningrevision.VersionManifest{}, errors.New("incomplete validation version manifest")
 	}
@@ -389,7 +413,7 @@ func versionManifestFromValidation(versions validation.VersionManifest) (version
 		{CapabilityID: "dsl", ContractVersion: "validation-v1", ImplementationVersion: versions.DSL, State: versioningrevision.Registered},
 		{CapabilityID: "validator-registry", ContractVersion: "validation-v1", ImplementationVersion: versions.Registry, State: versioningrevision.Registered},
 		{CapabilityID: "numeric-policy", ContractVersion: "validation-v1", ImplementationVersion: versions.NumericPolicy, State: versioningrevision.Registered},
-		{CapabilityID: "graph-projector", ContractVersion: "unavailable", State: versioningrevision.Unregistered},
+		graph,
 		{CapabilityID: "simulation-engine", ContractVersion: "unavailable", State: versioningrevision.Unregistered},
 	}}
 	if !manifest.Valid() {
@@ -404,8 +428,8 @@ type revisionMetadataFields struct {
 	sourceReleaseID                    domain.ID
 }
 
-func writeRevisionMetadata(ctx context.Context, tx *sql.Tx, revision domain.RevisionSummary, versions validation.VersionManifest, fields revisionMetadataFields) error {
-	manifest, err := versionManifestFromValidation(versions)
+func (s *Store) writeRevisionMetadata(ctx context.Context, tx *sql.Tx, revision domain.RevisionSummary, versions validation.VersionManifest, fields revisionMetadataFields) error {
+	manifest, err := versionManifestFromValidationWithGraph(versions, s.graphVersion)
 	if err != nil {
 		return err
 	}
@@ -444,7 +468,7 @@ func open(path string, registry *domain.Registry) (*Store, error) {
 			return nil, err
 		}
 	}
-	return &Store{db: db, path: path, registry: registry, now: time.Now}, nil
+	return &Store{db: db, path: path, registry: registry, now: time.Now, graphVersion: defaultGraphVersionEntry()}, nil
 }
 func (s *Store) Close() error         { return s.db.Close() }
 func (s *Store) ProjectID() domain.ID { return s.projectID }
@@ -776,7 +800,7 @@ func (s *Store) saveTx(ctx context.Context, tx *sql.Tx, e domain.Entity, create 
 	if err != nil {
 		return domain.RevisionSummary{}, err
 	}
-	if err = writeRevisionMetadata(ctx, tx, revision, versions, revisionMetadataFields{}); err != nil {
+	if err = s.writeRevisionMetadata(ctx, tx, revision, versions, revisionMetadataFields{}); err != nil {
 		return domain.RevisionSummary{}, err
 	}
 	if err = s.inject("metadata"); err != nil {
