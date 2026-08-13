@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"sort"
+
+	"github.com/gowebpki/jcs"
 )
 
 // ManifestBytes emits the exact local-rag v1 final manifest. Provider v1
@@ -48,11 +50,15 @@ func ManifestBytes(result Result) ([]byte, string, error) {
 	for i, edge := range edges {
 		encodedEdges[i] = toEdge(edge)
 	}
-	canonical, err := json.Marshal(struct {
+	payload, err := json.Marshal(struct {
 		SchemaVersion string         `json:"schema_version"`
 		Nodes         []manifestNode `json:"nodes"`
 		Edges         []manifestEdge `json:"edges"`
 	}{"1.0", encodedNodes, encodedEdges})
+	if err != nil {
+		return nil, "", err
+	}
+	canonical, err := jcs.Transform(payload)
 	if err != nil {
 		return nil, "", err
 	}

@@ -69,13 +69,13 @@ func TestProjectMaterializesStableNodesAndRegisteredEdgesOnly(t *testing.T) {
 	}
 }
 
-func TestManifestBytesUseProviderOrderAndSortedRecords(t *testing.T) {
+func TestManifestBytesUseProviderJCSOrderAndSortedRecords(t *testing.T) {
 	result := Result{Nodes: []Node{{ID: "b", Type: "tag", Label: "B", Text: "B", Properties: map[string]any{"z": "last", "a": "first"}, Provenance: NodeProvenance{}}, {ID: "a", Type: "tag", Label: "A", Text: "A", Properties: map[string]any{}, Provenance: NodeProvenance{}}}, Edges: []Edge{}}
 	bytes, hash, err := ManifestBytes(result)
 	if err != nil || len(hash) != 64 {
 		t.Fatalf("bytes=%s hash=%q err=%v", bytes, hash, err)
 	}
-	if !strings.HasPrefix(string(bytes), `{"schema_version":"1.0","nodes":[{"id":"a","type":"tag"`) || !reflect.DeepEqual(result.Nodes[0].ID, "b") {
+	if !strings.HasPrefix(string(bytes), `{"edges":[],"nodes":[{"id":"a","label":"A"`) || !reflect.DeepEqual(result.Nodes[0].ID, "b") {
 		t.Fatalf("canonical=%s", bytes)
 	}
 	again, againHash, err := ManifestBytes(Result{Nodes: []Node{result.Nodes[1], result.Nodes[0]}, Edges: []Edge{}})

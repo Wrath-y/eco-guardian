@@ -6,6 +6,7 @@ require (
 	github.com/cockroachdb/apd/v3 v3.2.1
 	github.com/gin-gonic/gin v1.11.0
 	github.com/google/uuid v1.6.0
+	github.com/gowebpki/jcs v1.0.1
 	github.com/sqweek/dialog v0.0.0-20260123140253-64c163d53aac
 	modernc.org/sqlite v1.38.2
 )
