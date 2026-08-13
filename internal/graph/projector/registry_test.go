@@ -37,6 +37,25 @@ func TestRegistryFreezesV1AndNeverFallsBack(t *testing.T) {
 	}
 }
 
+func TestRegistryResolvesHistoricalProjectorAfterDefaultChanges(t *testing.T) {
+	v1 := Descriptor{SchemaVersion: ProjectionSchemaV1, Version: ProjectorV1, Relations: V1Relations(), Formatter: V1Formatter{}}
+	v2 := Descriptor{SchemaVersion: ProjectionSchemaV1, Version: "v2", Relations: V1Relations(), Formatter: V1Formatter{}}
+	registry, err := NewRegistry(ProjectionSchemaV1, "v2", v1, v2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := registry.Default().Version; got != "v2" {
+		t.Fatalf("default=%q", got)
+	}
+	historical, err := registry.Resolve(ProjectionSchemaV1, ProjectorV1)
+	if err != nil || historical.Version != ProjectorV1 {
+		t.Fatalf("historical=%#v err=%v", historical, err)
+	}
+	if _, err = registry.Resolve(ProjectionSchemaV1, "retired"); !errors.Is(err, ErrProjectorVersionUnavailable) {
+		t.Fatalf("missing historical version fell back: %v", err)
+	}
+}
+
 func TestV1FormatterIsDeterministicAndExcludesExtensions(t *testing.T) {
 	entity := domain.Entity{ID: projectorTestID(t), Kind: domain.KindItem, Key: "sword", Name: "Sword", Description: "Reliable", TagIDs: []domain.ID{projectorTestID(t), projectorTestID(t)}, Status: domain.StatusActive, SchemaVersion: 1, Extensions: map[string]json.RawMessage{"vendor.example/private": json.RawMessage(`{"secret":"ignored"}`)}, EntityVersion: 1, CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	label, text, properties, err := (V1Formatter{}).Format(entity)

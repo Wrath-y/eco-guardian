@@ -24,6 +24,9 @@ func PlanFull(namespace, version string, target Result) (FullPlan, error) {
 	return PlanFullWithLimits(namespace, version, target, Limits{})
 }
 func PlanFullWithLimits(namespace, version string, target Result, limits Limits) (FullPlan, error) {
+	if err := validateResult(target); err != nil {
+		return FullPlan{}, err
+	}
 	bytes, hash, err := ManifestBytes(target)
 	_ = bytes
 	if err != nil {
@@ -49,6 +52,12 @@ func PlanFullWithLimits(namespace, version string, target Result, limits Limits)
 func PlanDelta(namespace, version, baseVersion string, base, target Result) (DeltaPlan, error) {
 	if namespace == "" || version == "" || baseVersion == "" {
 		return DeltaPlan{}, fmt.Errorf("snapshot identity is required")
+	}
+	if err := validateResult(base); err != nil {
+		return DeltaPlan{}, fmt.Errorf("invalid base manifest: %w", err)
+	}
+	if err := validateResult(target); err != nil {
+		return DeltaPlan{}, fmt.Errorf("invalid target manifest: %w", err)
 	}
 	_, hash, err := ManifestBytes(target)
 	if err != nil {
@@ -106,6 +115,12 @@ func PlanDelta(namespace, version, baseVersion string, base, target Result) (Del
 	return plan, nil
 }
 func ApplyDelta(base Result, plan DeltaPlan) (Result, error) {
+	if err := validateResult(base); err != nil {
+		return Result{}, fmt.Errorf("invalid base manifest: %w", err)
+	}
+	if err := validatePlan(plan); err != nil {
+		return Result{}, err
+	}
 	nodes := map[string]Node{}
 	edges := map[string]Edge{}
 	for _, node := range base.Nodes {
@@ -140,6 +155,86 @@ func ApplyDelta(base Result, plan DeltaPlan) (Result, error) {
 		result.Edges = append(result.Edges, edge)
 	}
 	return result, nil
+}
+
+func validateResult(result Result) error {
+	nodes := make(map[string]struct{}, len(result.Nodes))
+	for _, node := range result.Nodes {
+		if node.ID == "" {
+			return fmt.Errorf("node id is required")
+		}
+		if _, exists := nodes[node.ID]; exists {
+			return fmt.Errorf("duplicate node %s", node.ID)
+		}
+		nodes[node.ID] = struct{}{}
+	}
+	edges := make(map[string]struct{}, len(result.Edges))
+	for _, edge := range result.Edges {
+		if edge.ID == "" || edge.From == "" || edge.To == "" {
+			return fmt.Errorf("edge identity is required")
+		}
+		if _, exists := edges[edge.ID]; exists {
+			return fmt.Errorf("duplicate edge %s", edge.ID)
+		}
+		if _, exists := nodes[edge.From]; !exists {
+			return fmt.Errorf("dangling edge %s", edge.ID)
+		}
+		if _, exists := nodes[edge.To]; !exists {
+			return fmt.Errorf("dangling edge %s", edge.ID)
+		}
+		edges[edge.ID] = struct{}{}
+	}
+	return nil
+}
+
+func validatePlan(plan DeltaPlan) error {
+	nodeUpserts := make(map[string]struct{}, len(plan.NodeUpserts))
+	for _, node := range plan.NodeUpserts {
+		if node.ID == "" {
+			return fmt.Errorf("node upsert id is required")
+		}
+		if _, exists := nodeUpserts[node.ID]; exists {
+			return fmt.Errorf("duplicate node upsert %s", node.ID)
+		}
+		nodeUpserts[node.ID] = struct{}{}
+	}
+	nodeDeletes := make(map[string]struct{}, len(plan.NodeDeletes))
+	for _, id := range plan.NodeDeletes {
+		if id == "" {
+			return fmt.Errorf("node delete id is required")
+		}
+		if _, exists := nodeDeletes[id]; exists {
+			return fmt.Errorf("duplicate node delete %s", id)
+		}
+		if _, exists := nodeUpserts[id]; exists {
+			return fmt.Errorf("conflicting node operations for %s", id)
+		}
+		nodeDeletes[id] = struct{}{}
+	}
+	edgeUpserts := make(map[string]struct{}, len(plan.EdgeUpserts))
+	for _, edge := range plan.EdgeUpserts {
+		if edge.ID == "" {
+			return fmt.Errorf("edge upsert id is required")
+		}
+		if _, exists := edgeUpserts[edge.ID]; exists {
+			return fmt.Errorf("duplicate edge upsert %s", edge.ID)
+		}
+		edgeUpserts[edge.ID] = struct{}{}
+	}
+	edgeDeletes := make(map[string]struct{}, len(plan.EdgeDeletes))
+	for _, id := range plan.EdgeDeletes {
+		if id == "" {
+			return fmt.Errorf("edge delete id is required")
+		}
+		if _, exists := edgeDeletes[id]; exists {
+			return fmt.Errorf("duplicate edge delete %s", id)
+		}
+		if _, exists := edgeUpserts[id]; exists {
+			return fmt.Errorf("conflicting edge operations for %s", id)
+		}
+		edgeDeletes[id] = struct{}{}
+	}
+	return nil
 }
 func same(a, b any) bool {
 	left, _ := json.Marshal(a)
