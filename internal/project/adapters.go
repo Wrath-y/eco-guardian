@@ -8,6 +8,7 @@ import (
 
 	"github.com/zouyi/eco-guardian/internal/domain"
 	store "github.com/zouyi/eco-guardian/internal/storage/sqlite"
+	versioningrevision "github.com/zouyi/eco-guardian/internal/versioning/revision"
 )
 
 // FileLocker uses an exclusive lock file held for the active project lifetime.
@@ -44,8 +45,9 @@ func (l *fileLock) Release() error {
 // Graph adapter; keeping it a callback avoids coupling project lifecycle to a
 // concrete external capability implementation.
 type SQLiteFactory struct {
-	Registry *domain.Registry
-	Recover  func(context.Context, *store.Store) error
+	Registry                *domain.Registry
+	GraphVersionContributor versioningrevision.VersionContributor
+	Recover                 func(context.Context, *store.Store) error
 }
 type sqliteHandle struct{ store *store.Store }
 
@@ -57,11 +59,19 @@ func (f SQLiteFactory) Create(ctx context.Context, dir string) (ProjectHandle, e
 	if err != nil {
 		return nil, err
 	}
+	if err = f.configureGraphVersion(s); err != nil {
+		_ = s.Close()
+		return nil, err
+	}
 	return &sqliteHandle{s}, nil
 }
 func (f SQLiteFactory) Open(ctx context.Context, dir string) (ProjectHandle, error) {
 	s, _, err := store.Open(dir, f.Registry)
 	if err != nil {
+		return nil, err
+	}
+	if err = f.configureGraphVersion(s); err != nil {
+		_ = s.Close()
 		return nil, err
 	}
 	if f.Recover != nil {
@@ -71,4 +81,11 @@ func (f SQLiteFactory) Open(ctx context.Context, dir string) (ProjectHandle, err
 		}
 	}
 	return &sqliteHandle{s}, nil
+}
+
+func (f SQLiteFactory) configureGraphVersion(s *store.Store) error {
+	if f.GraphVersionContributor == nil {
+		return nil
+	}
+	return s.RegisterGraphVersionContributor(f.GraphVersionContributor)
 }

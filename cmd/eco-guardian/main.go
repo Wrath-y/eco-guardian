@@ -11,6 +11,7 @@ import (
 
 	"github.com/zouyi/eco-guardian/internal/app"
 	"github.com/zouyi/eco-guardian/internal/domain"
+	"github.com/zouyi/eco-guardian/internal/graph/projector"
 	"github.com/zouyi/eco-guardian/internal/httpapi"
 	"github.com/zouyi/eco-guardian/internal/project"
 )
@@ -24,7 +25,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	manager := project.NewManager(project.NewTokenStore(5*time.Minute, nil), project.FileLocker{}, project.SQLiteFactory{Registry: registry}, project.NoJobs{}, project.NewFileRecentProjects(appData))
+	graphDescriptor := projector.Descriptor{SchemaVersion: projector.ProjectionSchemaV1, Version: projector.ProjectorV1, Relations: projector.V1Relations(), Formatter: projector.V1Formatter{}}
+	manager := project.NewManager(project.NewTokenStore(5*time.Minute, nil), project.FileLocker{}, project.SQLiteFactory{Registry: registry, GraphVersionContributor: projector.VersionContributor{Descriptor: graphDescriptor}}, project.NoJobs{}, project.NewFileRecentProjects(appData))
 	runtime, err := httpapi.NewRuntime("127.0.0.1:0")
 	if err != nil {
 		log.Fatal(err)
