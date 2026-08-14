@@ -293,7 +293,7 @@ func TestMigrationStepsRollbackAndReplayWithoutDuplicates(t *testing.T) {
 	if _, err = db.Exec(`INSERT INTO project_meta(id,db_schema_version,created_at) VALUES(?,?,?)`, mustID(t), 1, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 		t.Fatal(err)
 	}
-	for _, failedStep := range []string{"validation-v2", "versioning-v3"} {
+	for _, failedStep := range []string{"validation-v2", "versioning-v3", "graph-sync-v5"} {
 		tx, txErr := db.BeginTx(context.Background(), nil)
 		if txErr != nil {
 			t.Fatal(txErr)
@@ -327,7 +327,7 @@ func TestMigrationStepsRollbackAndReplayWithoutDuplicates(t *testing.T) {
 		t.Fatal(err)
 	}
 	var count int
-	if err = db.QueryRow(`SELECT count(*) FROM schema_migration_steps`).Scan(&count); err != nil || count != 3 {
+	if err = db.QueryRow(`SELECT count(*) FROM schema_migration_steps`).Scan(&count); err != nil || count != 4 {
 		t.Fatalf("migration steps=%d err=%v", count, err)
 	}
 }

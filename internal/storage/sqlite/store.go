@@ -24,7 +24,7 @@ import (
 )
 
 const databaseName = "project.db"
-const currentSchemaVersion = 4
+const currentSchemaVersion = 5
 
 func DBSchemaVersion() int { return currentSchemaVersion }
 
@@ -267,6 +267,17 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 		}
 		version = 4
 	}
+	if version == 4 {
+		if err := applyMigrationV5(ctx, tx); err != nil {
+			return err
+		}
+		if hook != nil {
+			if err := hook("graph-sync-v5"); err != nil {
+				return err
+			}
+		}
+		version = 5
+	}
 	if version != currentSchemaVersion {
 		return fmt.Errorf("unsupported schema version %d", version)
 	}
@@ -274,16 +285,24 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 }
 func verifyMigrationSteps(ctx context.Context, db *sql.DB) error {
 	var count int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM schema_migration_steps WHERE step_id IN ('validation-v2','versioning-v3','release-audit-v4')`).Scan(&count); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM schema_migration_steps WHERE step_id IN ('validation-v2','versioning-v3','release-audit-v4','graph-sync-v5')`).Scan(&count); err != nil {
 		return err
 	}
-	if count != 3 {
+	if count != 4 {
 		return errors.New("missing committed migration step")
 	}
 	return nil
 }
 func applyMigrationV4(ctx context.Context, tx *sql.Tx) error {
 	body, err := root.Assets.ReadFile("migrations/0004_release_audit.sql")
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, string(body))
+	return err
+}
+func applyMigrationV5(ctx context.Context, tx *sql.Tx) error {
+	body, err := root.Assets.ReadFile("migrations/0005_graph_sync.sql")
 	if err != nil {
 		return err
 	}
