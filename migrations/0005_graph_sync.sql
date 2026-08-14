@@ -38,4 +38,9 @@ CREATE TABLE graph_impact_handoffs (
 
 CREATE INDEX projection_summaries_graph_hash_lookup ON projection_summaries(graph_manifest_hash);
 CREATE INDEX graph_sync_states_recovery_lookup ON graph_sync_states(pipeline_state,updated_at);
+CREATE TRIGGER projection_summaries_immutable_update BEFORE UPDATE ON projection_summaries BEGIN SELECT RAISE(ABORT, 'projection summary is immutable'); END;
+CREATE TRIGGER projection_summaries_immutable_delete BEFORE DELETE ON projection_summaries BEGIN SELECT RAISE(ABORT, 'projection summary is immutable'); END;
+CREATE TRIGGER graph_sync_states_generation_monotonic BEFORE UPDATE ON graph_sync_states
+WHEN NEW.revision_id != OLD.revision_id OR NEW.generation <= OLD.generation
+BEGIN SELECT RAISE(ABORT, 'graph sync state transition is invalid'); END;
 INSERT INTO schema_migration_steps(step_id,schema_version,committed_at) VALUES('graph-sync-v5',5,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
