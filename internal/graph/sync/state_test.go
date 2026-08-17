@@ -7,3 +7,9 @@ func TestPipelineStatesAreClosed(t *testing.T) {
 		t.Fatal("pipeline state validation drift")
 	}
 }
+
+func TestPipelineTransitionsAreClosed(t *testing.T) {
+	if !StateQueued.CanTransitionTo(StateBuilding) || StateQueued.CanTransitionTo(StateReady) || StateReady.CanTransitionTo(StateBuilding) {
+		t.Fatal("pipeline transition drift")
+	}
+}

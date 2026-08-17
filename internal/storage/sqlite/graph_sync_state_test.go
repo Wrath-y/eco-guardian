@@ -30,6 +30,11 @@ func TestGraphSyncStateUsesGenerationCAS(t *testing.T) {
 	if _, swapped, err = store.CompareAndSwapGraphSyncState(context.Background(), loaded, next); err != nil || swapped {
 		t.Fatalf("stale CAS: %v %v", swapped, err)
 	}
+	illegal := loaded
+	illegal.Pipeline, illegal.Generation = graphsync.StateReady, 1
+	if _, _, err = store.CompareAndSwapGraphSyncState(context.Background(), loaded, illegal); err == nil {
+		t.Fatal("illegal pipeline jump accepted")
+	}
 	loaded, found, err = store.GetGraphSyncState(context.Background(), revision.ID)
 	if err != nil || !found || len(loaded.Warnings) != 1 || loaded.Warnings[0] != "VECTOR_DEGRADED" {
 		t.Fatalf("%#v %v", loaded, err)
