@@ -109,3 +109,29 @@ func (s *Store) MarkGraphReady(ctx context.Context, expected graphsync.SyncState
 	}
 	return next, true, nil
 }
+
+// ListRecoverableGraphSyncStates returns only nonterminal work in durable
+// update order; recovery never discovers work from mutable business state.
+func (s *Store) ListRecoverableGraphSyncStates(ctx context.Context, limit int) ([]graphsync.SyncState, error) {
+	if limit < 1 || limit > 1000 {
+		return nil, ErrGraphSyncStateInvalid
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT revision_id,pipeline_state,COALESCE(latest_job_id,''),COALESCE(external_task_id,''),generation,COALESCE(safe_error,''),warnings FROM graph_sync_states WHERE pipeline_state IN ('graph_queued','graph_building') ORDER BY updated_at,revision_id LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []graphsync.SyncState{}
+	for rows.Next() {
+		var state graphsync.SyncState
+		var warnings string
+		if err = rows.Scan(&state.RevisionID, &state.Pipeline, &state.LatestJobID, &state.ExternalTaskID, &state.Generation, &state.SafeError, &warnings); err != nil {
+			return nil, err
+		}
+		if json.Unmarshal([]byte(warnings), &state.Warnings) != nil || !state.Valid() {
+			return nil, ErrGraphSyncStateInvalid
+		}
+		out = append(out, state)
+	}
+	return out, rows.Err()
+}
