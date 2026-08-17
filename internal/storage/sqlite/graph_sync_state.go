@@ -50,7 +50,7 @@ func (s *Store) CreateGraphSyncState(ctx context.Context, state graphsync.SyncSt
 
 // CompareAndSwapGraphSyncState applies one monotonic-generation transition.
 func (s *Store) CompareAndSwapGraphSyncState(ctx context.Context, expected graphsync.SyncState, next graphsync.SyncState) (graphsync.SyncState, bool, error) {
-	if !expected.Valid() || !next.Valid() || expected.RevisionID != next.RevisionID || next.Generation != expected.Generation+1 {
+	if !expected.Valid() || !next.Valid() || expected.RevisionID != next.RevisionID || !expected.Pipeline.CanTransitionTo(next.Pipeline) || next.Generation != expected.Generation+1 {
 		return graphsync.SyncState{}, false, ErrGraphSyncStateInvalid
 	}
 	warnings, err := json.Marshal(next.Warnings)

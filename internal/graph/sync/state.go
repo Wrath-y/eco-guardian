@@ -23,6 +23,24 @@ func (s PipelineState) Valid() bool {
 	}
 }
 
+func (s PipelineState) CanTransitionTo(next PipelineState) bool {
+	if s == next {
+		return true
+	}
+	switch s {
+	case StateSaved:
+		return next == StateValidating
+	case StateValidating:
+		return next == StateBlockedValidation || next == StateQueued || next == StateFailed
+	case StateQueued:
+		return next == StateBuilding || next == StateFailed
+	case StateBuilding:
+		return next == StateReady || next == StateFailed
+	default:
+		return false
+	}
+}
+
 type SyncState struct {
 	RevisionID     string
 	Pipeline       PipelineState
