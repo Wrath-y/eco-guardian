@@ -35,3 +35,26 @@ func TestGraphSyncStateUsesGenerationCAS(t *testing.T) {
 		t.Fatalf("%#v %v", loaded, err)
 	}
 }
+
+func TestMarkGraphReadyCommitsOneHandoff(t *testing.T) {
+	store := newStore(t)
+	_, revision, err := store.Create(context.Background(), "tag", tagDraft("ready"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := graphsync.SyncState{RevisionID: string(revision.ID), Pipeline: graphsync.StateBuilding, Warnings: []string{}}
+	if err = store.CreateGraphSyncState(context.Background(), state); err != nil {
+		t.Fatal(err)
+	}
+	ready, swapped, err := store.MarkGraphReady(context.Background(), state, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	if err != nil || !swapped || ready.Pipeline != graphsync.StateReady || ready.Generation != 1 {
+		t.Fatalf("%#v %v %v", ready, swapped, err)
+	}
+	if _, swapped, err = store.MarkGraphReady(context.Background(), state, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); err != nil || swapped {
+		t.Fatalf("stale=%v err=%v", swapped, err)
+	}
+	var count int
+	if err = store.db.QueryRow(`SELECT count(*) FROM graph_impact_handoffs WHERE revision_id=?`, revision.ID).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("count=%d err=%v", count, err)
+	}
+}
