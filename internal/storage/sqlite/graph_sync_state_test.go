@@ -58,3 +58,25 @@ func TestMarkGraphReadyCommitsOneHandoff(t *testing.T) {
 		t.Fatalf("count=%d err=%v", count, err)
 	}
 }
+
+func TestListRecoverableGraphSyncStatesFiltersTerminalStates(t *testing.T) {
+	store := newStore(t)
+	_, queuedRevision, err := store.Create(context.Background(), "tag", tagDraft("queued"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, readyRevision, err := store.Create(context.Background(), "tag", tagDraft("terminal"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.CreateGraphSyncState(context.Background(), graphsync.SyncState{RevisionID: string(queuedRevision.ID), Pipeline: graphsync.StateQueued, Warnings: []string{}}); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.CreateGraphSyncState(context.Background(), graphsync.SyncState{RevisionID: string(readyRevision.ID), Pipeline: graphsync.StateReady, Warnings: []string{}}); err != nil {
+		t.Fatal(err)
+	}
+	states, err := store.ListRecoverableGraphSyncStates(context.Background(), 10)
+	if err != nil || len(states) != 1 || states[0].RevisionID != string(queuedRevision.ID) {
+		t.Fatalf("%#v %v", states, err)
+	}
+}
