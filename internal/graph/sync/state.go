@@ -1,5 +1,7 @@
 package sync
 
+import "strings"
+
 type PipelineState string
 
 const (
@@ -31,4 +33,14 @@ type SyncState struct {
 	Warnings       []string
 }
 
-func (s SyncState) Valid() bool { return s.RevisionID != "" && s.Pipeline.Valid() && s.Generation >= 0 }
+func (s SyncState) Valid() bool {
+	if s.RevisionID == "" || !s.Pipeline.Valid() || s.Generation < 0 || len(s.SafeError) > 1024 || len(s.Warnings) > 32 {
+		return false
+	}
+	for _, warning := range s.Warnings {
+		if strings.TrimSpace(warning) == "" || len(warning) > 256 {
+			return false
+		}
+	}
+	return true
+}
