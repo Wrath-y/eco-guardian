@@ -72,3 +72,40 @@ func (s *Store) CompareAndSwapGraphSyncState(ctx context.Context, expected graph
 	}
 	return next, true, nil
 }
+
+// MarkGraphReady atomically advances the state and records the one durable
+// downstream handoff. Callers may replay the same expected generation safely.
+func (s *Store) MarkGraphReady(ctx context.Context, expected graphsync.SyncState, graphHash string) (graphsync.SyncState, bool, error) {
+	next := expected
+	next.Pipeline, next.Generation = graphsync.StateReady, expected.Generation+1
+	if !hash64(graphHash) {
+		return graphsync.SyncState{}, false, ErrGraphSyncStateInvalid
+	}
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return graphsync.SyncState{}, false, err
+	}
+	defer tx.Rollback()
+	warnings, err := json.Marshal(next.Warnings)
+	if err != nil {
+		return graphsync.SyncState{}, false, ErrGraphSyncStateInvalid
+	}
+	write, err := tx.ExecContext(ctx, `UPDATE graph_sync_states SET pipeline_state=?,generation=?,warnings=?,updated_at=? WHERE revision_id=? AND generation=?`, next.Pipeline, next.Generation, string(warnings), s.now().UTC().Format(time.RFC3339Nano), next.RevisionID, expected.Generation)
+	if err != nil {
+		return graphsync.SyncState{}, false, err
+	}
+	n, err := write.RowsAffected()
+	if err != nil || n == 0 {
+		return graphsync.SyncState{}, false, err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO graph_impact_handoffs(revision_id,graph_manifest_hash,stage,status,created_at) VALUES(?,?, 'impact','queued',?) ON CONFLICT(revision_id,stage,graph_manifest_hash) DO NOTHING`, next.RevisionID, graphHash, s.now().UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return graphsync.SyncState{}, false, err
+	}
+	if err = tx.Commit(); err != nil {
+		return graphsync.SyncState{}, false, err
+	}
+	return next, true, nil
+}
