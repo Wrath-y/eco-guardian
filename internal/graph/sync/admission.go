@@ -39,6 +39,21 @@ func (j GraphJob) Valid() bool {
 	return j.ID.Valid() && j.ProjectID.Valid() && j.RevisionID.Valid() && len(j.InputHash) == 64
 }
 
+type AdmissionService struct {
+	Validation FullValidationGate
+	Jobs       JobAdmission
+}
+
+func (s AdmissionService) Admit(ctx context.Context, request GraphJobRequest, versions validation.VersionManifest) (GraphJob, bool, error) {
+	if !request.Valid() || s.Jobs == nil {
+		return GraphJob{}, false, ErrValidationNotPassed
+	}
+	if err := RequireFullValidation(ctx, s.Validation, request.RevisionID, request.InputHash, versions); err != nil {
+		return GraphJob{}, false, err
+	}
+	return s.Jobs.CreateOrGetGraphJob(ctx, request)
+}
+
 func RequireFullValidation(ctx context.Context, gate FullValidationGate, revisionID domain.ID, configHash string, versions validation.VersionManifest) error {
 	if gate == nil || !revisionID.Valid() || configHash == "" || !versions.Valid() {
 		return ErrValidationNotPassed
