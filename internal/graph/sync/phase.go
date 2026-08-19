@@ -22,3 +22,16 @@ func (p WorkerPhase) Valid() bool {
 	}
 	return false
 }
+
+func (p WorkerPhase) CanAdvanceTo(next WorkerPhase) bool {
+	if p == next {
+		return true
+	}
+	order := []WorkerPhase{PhaseQueued, PhaseValidationConfirmed, PhaseProjected, PhaseProviderCompatible, PhaseSubmitting, PhaseTaskAccepted, PhasePolling, PhaseVerifying, PhaseReady, PhaseImpactHandoffRecorded}
+	for i, current := range order {
+		if p == current {
+			return i+1 < len(order) && next == order[i+1]
+		}
+	}
+	return false
+}
