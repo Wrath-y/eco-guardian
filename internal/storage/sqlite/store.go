@@ -24,7 +24,7 @@ import (
 )
 
 const databaseName = "project.db"
-const currentSchemaVersion = 6
+const currentSchemaVersion = 7
 
 func DBSchemaVersion() int { return currentSchemaVersion }
 
@@ -284,6 +284,12 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 		}
 		version = 6
 	}
+	if version == 6 {
+		if err := applyMigrationV7(ctx, tx); err != nil {
+			return err
+		}
+		version = 7
+	}
 	if version != currentSchemaVersion {
 		return fmt.Errorf("unsupported schema version %d", version)
 	}
@@ -291,10 +297,10 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 }
 func verifyMigrationSteps(ctx context.Context, db *sql.DB) error {
 	var count int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM schema_migration_steps WHERE step_id IN ('validation-v2','versioning-v3','release-audit-v4','graph-sync-v5','graph-checkpoints-v6')`).Scan(&count); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM schema_migration_steps WHERE step_id IN ('validation-v2','versioning-v3','release-audit-v4','graph-sync-v5','graph-checkpoints-v6','graph-sync-indexes-v7')`).Scan(&count); err != nil {
 		return err
 	}
-	if count != 5 {
+	if count != 6 {
 		return errors.New("missing committed migration step")
 	}
 	return nil
@@ -317,6 +323,14 @@ func applyMigrationV5(ctx context.Context, tx *sql.Tx) error {
 }
 func applyMigrationV6(ctx context.Context, tx *sql.Tx) error {
 	body, err := root.Assets.ReadFile("migrations/0006_graph_checkpoints.sql")
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, string(body))
+	return err
+}
+func applyMigrationV7(ctx context.Context, tx *sql.Tx) error {
+	body, err := root.Assets.ReadFile("migrations/0007_graph_sync_indexes.sql")
 	if err != nil {
 		return err
 	}

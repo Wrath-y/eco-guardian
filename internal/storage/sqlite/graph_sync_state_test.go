@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	graphsync "github.com/zouyi/eco-guardian/internal/graph/sync"
@@ -39,6 +40,42 @@ func TestGraphSyncStateUsesGenerationCAS(t *testing.T) {
 	loaded, found, err = store.GetGraphSyncState(context.Background(), revision.ID)
 	if err != nil || !found || len(loaded.Warnings) != 1 || loaded.Warnings[0] != "VECTOR_DEGRADED" || loaded.ProviderRequestID != "request-1" || loaded.ProviderTaskID != "task-1" {
 		t.Fatalf("%#v %v", loaded, err)
+	}
+}
+
+func TestProviderTaskIdentityIsUniqueAcrossRecoverableStates(t *testing.T) {
+	store := newStore(t)
+	_, firstRevision, err := store.Create(context.Background(), "tag", tagDraft("firsttask"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, secondRevision, err := store.Create(context.Background(), "tag", tagDraft("secondtask"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := graphsync.SyncState{RevisionID: string(firstRevision.ID), Pipeline: graphsync.StateQueued, Warnings: []string{}}
+	second := graphsync.SyncState{RevisionID: string(secondRevision.ID), Pipeline: graphsync.StateQueued, Warnings: []string{}}
+	if err = store.CreateGraphSyncState(context.Background(), first); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.CreateGraphSyncState(context.Background(), second); err != nil {
+		t.Fatal(err)
+	}
+	first.Pipeline, first.Generation, first.ProviderTaskID = graphsync.StateBuilding, 1, "provider-task"
+	if _, swapped, swapErr := store.CompareAndSwapGraphSyncState(context.Background(), graphsync.SyncState{RevisionID: string(firstRevision.ID), Pipeline: graphsync.StateQueued, Warnings: []string{}}, first); swapErr != nil || !swapped {
+		t.Fatalf("first swapped=%v err=%v", swapped, swapErr)
+	}
+	second.Pipeline, second.Generation, second.ProviderTaskID = graphsync.StateBuilding, 1, "provider-task"
+	if _, _, err = store.CompareAndSwapGraphSyncState(context.Background(), graphsync.SyncState{RevisionID: string(secondRevision.ID), Pipeline: graphsync.StateQueued, Warnings: []string{}}, second); err == nil {
+		t.Fatal("duplicate provider task identity accepted")
+	}
+	jobRequest := graphsync.GraphJobRequest{ProjectID: store.ProjectID(), RevisionID: firstRevision.ID, InputHash: firstRevision.ConfigHash, IdempotencyKey: "retry-foreign-key", RequestHash: strings.Repeat("a", 64)}
+	job, _, err := store.CreateOrGetGraphJob(context.Background(), jobRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.db.Exec(`UPDATE jobs SET retry_of_job_id=? WHERE id=?`, "missing-job", job.ID); err == nil {
+		t.Fatal("retry link accepted a missing job")
 	}
 }
 
