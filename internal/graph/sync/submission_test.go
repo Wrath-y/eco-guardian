@@ -6,22 +6,25 @@ import (
 )
 
 type submissionProviderFake struct {
-	calls    int
-	snapshot Snapshot
+	calls, taskCalls, inspectCalls int
+	snapshot                       Snapshot
+	task                           Task
 }
 
 func (f *submissionProviderFake) Health(context.Context, string) (Health, error) {
 	return Health{}, nil
 }
 func (f *submissionProviderFake) InspectSnapshot(context.Context, string, string, string) (Snapshot, error) {
-	return Snapshot{}, nil
+	f.inspectCalls++
+	return f.snapshot, nil
 }
 func (f *submissionProviderFake) PutSnapshot(_ context.Context, namespace, version string, request PutSnapshotRequest, _ string) (Snapshot, error) {
 	f.calls++
 	return f.snapshot, nil
 }
 func (f *submissionProviderFake) GetTask(context.Context, string, string) (Task, error) {
-	return Task{}, nil
+	f.taskCalls++
+	return f.task, nil
 }
 func (f *submissionProviderFake) ActivateSnapshot(context.Context, string, string, string) (Activation, error) {
 	return Activation{}, nil
