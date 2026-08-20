@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 
 	"github.com/zouyi/eco-guardian/internal/domain"
+	graphsync "github.com/zouyi/eco-guardian/internal/graph/sync"
 	store "github.com/zouyi/eco-guardian/internal/storage/sqlite"
+	"github.com/zouyi/eco-guardian/internal/validation"
 	versioningrevision "github.com/zouyi/eco-guardian/internal/versioning/revision"
 )
 
@@ -87,9 +89,37 @@ func (f SQLiteFactory) Open(ctx context.Context, dir string) (ProjectHandle, err
 func (f SQLiteFactory) configureGraphVersion(s *store.Store) error {
 	if f.AfterRevision != nil {
 		s.RegisterRevisionObserver(func(ctx context.Context, revision domain.RevisionSummary) { f.AfterRevision(ctx, s, revision) })
+	} else if f.GraphVersionContributor != nil {
+		s.RegisterRevisionObserver(func(ctx context.Context, revision domain.RevisionSummary) {
+			startGraphValidationPipeline(ctx, s, revision)
+		})
 	}
 	if f.GraphVersionContributor == nil {
 		return nil
 	}
 	return s.RegisterGraphVersionContributor(f.GraphVersionContributor)
+}
+
+func startGraphValidationPipeline(ctx context.Context, s *store.Store, revision domain.RevisionSummary) {
+	record, err := s.GetRevisionRecord(ctx, revision.ID)
+	if err != nil {
+		return
+	}
+	versions, ok := validationVersions(record.Metadata.Manifest)
+	if !ok {
+		return
+	}
+	pipeline := graphsync.ValidationPipeline{States: s, Validation: validation.NewValidationGate(s), Runner: s}
+	_, _ = pipeline.Start(ctx, graphsync.ValidationPipelineRequest{RevisionID: revision.ID, ConfigHash: revision.ConfigHash, Versions: versions})
+}
+
+func validationVersions(manifest versioningrevision.VersionManifest) (validation.VersionManifest, bool) {
+	values := map[string]string{}
+	for _, entry := range manifest.Entries {
+		if entry.State == versioningrevision.Registered {
+			values[entry.CapabilityID] = entry.ImplementationVersion
+		}
+	}
+	versions := validation.VersionManifest{Schema: values["schema"], DSL: values["dsl"], Registry: values["validator-registry"], NumericPolicy: values["numeric-policy"]}
+	return versions, versions.Valid()
 }
