@@ -34,7 +34,7 @@ func (s *Store) CreateOrGetGraphJob(ctx context.Context, request graphsync.Graph
 		return graphsync.GraphJob{}, false, err
 	}
 	if found {
-		if existing.RequestHash != request.RequestHash {
+		if existing.RequestHash != request.RequestHash || existing.Evidence != request.Evidence {
 			return graphsync.GraphJob{}, false, ErrGraphJobConflict
 		}
 		return existing, true, tx.Commit()
@@ -44,11 +44,11 @@ func (s *Store) CreateOrGetGraphJob(ctx context.Context, request graphsync.Graph
 		return graphsync.GraphJob{}, false, err
 	}
 	now := s.now().UTC()
-	job := graphsync.GraphJob{ID: idValue, ProjectID: request.ProjectID, RevisionID: request.RevisionID, InputHash: request.InputHash, IdempotencyKey: request.IdempotencyKey, RequestHash: request.RequestHash, Status: graphsync.JobQueued}
+	job := graphsync.GraphJob{ID: idValue, ProjectID: request.ProjectID, RevisionID: request.RevisionID, InputHash: request.InputHash, IdempotencyKey: request.IdempotencyKey, RequestHash: request.RequestHash, Evidence: request.Evidence, Status: graphsync.JobQueued}
 	if !job.Valid() {
 		return graphsync.GraphJob{}, false, ErrGraphSyncStateInvalid
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO jobs(id,project_uuid,kind,revision_id,input_hash,idempotency_key,request_hash,status,created_at,updated_at) VALUES(?,?, 'graph_sync',?,?,?,?,'queued',?,?)`, idValue, request.ProjectID, request.RevisionID, request.InputHash, request.IdempotencyKey, request.RequestHash, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
+	_, err = tx.ExecContext(ctx, `INSERT INTO jobs(id,project_uuid,kind,revision_id,input_hash,idempotency_key,request_hash,graph_evidence,status,created_at,updated_at) VALUES(?,?, 'graph_sync',?,?,?,?,?,'queued',?,?)`, idValue, request.ProjectID, request.RevisionID, request.InputHash, request.IdempotencyKey, request.RequestHash, nullString(request.Evidence), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	if err != nil {
 		return graphsync.GraphJob{}, false, err
 	}
@@ -63,7 +63,7 @@ func (s *Store) GetGraphJob(ctx context.Context, jobID domain.ID) (graphsync.Gra
 	if !jobID.Valid() {
 		return graphsync.GraphJob{}, ErrGraphJobNotFound
 	}
-	job, err := scanGraphJob(s.db.QueryRowContext(ctx, `SELECT id,project_uuid,revision_id,input_hash,idempotency_key,request_hash,status,result_type,result_id,result_url FROM jobs WHERE id=? AND project_uuid=? AND kind='graph_sync'`, jobID, s.projectID))
+	job, err := scanGraphJob(s.db.QueryRowContext(ctx, `SELECT id,project_uuid,revision_id,input_hash,idempotency_key,request_hash,COALESCE(graph_evidence,''),status,result_type,result_id,result_url FROM jobs WHERE id=? AND project_uuid=? AND kind='graph_sync'`, jobID, s.projectID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return graphsync.GraphJob{}, ErrGraphJobNotFound
 	}
@@ -170,7 +170,7 @@ func (s *Store) ListGraphJobEvents(ctx context.Context, jobID domain.ID, after i
 }
 
 func findGraphJobByKey(ctx context.Context, tx *sql.Tx, projectID domain.ID, key string) (graphsync.GraphJob, bool, error) {
-	job, err := scanGraphJob(tx.QueryRowContext(ctx, `SELECT id,project_uuid,revision_id,input_hash,idempotency_key,request_hash,status,result_type,result_id,result_url FROM jobs WHERE project_uuid=? AND idempotency_key=? AND kind='graph_sync'`, projectID, key))
+	job, err := scanGraphJob(tx.QueryRowContext(ctx, `SELECT id,project_uuid,revision_id,input_hash,idempotency_key,request_hash,COALESCE(graph_evidence,''),status,result_type,result_id,result_url FROM jobs WHERE project_uuid=? AND idempotency_key=? AND kind='graph_sync'`, projectID, key))
 	if errors.Is(err, sql.ErrNoRows) {
 		return graphsync.GraphJob{}, false, nil
 	}
@@ -180,12 +180,12 @@ func findGraphJobByKey(ctx context.Context, tx *sql.Tx, projectID domain.ID, key
 type graphJobScanner interface{ Scan(...any) error }
 
 func scanGraphJob(scanner graphJobScanner) (graphsync.GraphJob, error) {
-	var id, projectID, revisionID, inputHash, key, requestHash, status string
+	var id, projectID, revisionID, inputHash, key, requestHash, evidence, status string
 	var resultType, resultID, resultURL sql.NullString
-	if err := scanner.Scan(&id, &projectID, &revisionID, &inputHash, &key, &requestHash, &status, &resultType, &resultID, &resultURL); err != nil {
+	if err := scanner.Scan(&id, &projectID, &revisionID, &inputHash, &key, &requestHash, &evidence, &status, &resultType, &resultID, &resultURL); err != nil {
 		return graphsync.GraphJob{}, err
 	}
-	job := graphsync.GraphJob{ID: domain.ID(id), ProjectID: domain.ID(projectID), RevisionID: domain.ID(revisionID), InputHash: inputHash, IdempotencyKey: key, RequestHash: requestHash, Status: graphsync.JobStatus(status)}
+	job := graphsync.GraphJob{ID: domain.ID(id), ProjectID: domain.ID(projectID), RevisionID: domain.ID(revisionID), InputHash: inputHash, IdempotencyKey: key, RequestHash: requestHash, Evidence: evidence, Status: graphsync.JobStatus(status)}
 	if resultType.Valid || resultID.Valid || resultURL.Valid {
 		if !resultType.Valid || !resultID.Valid || !resultURL.Valid {
 			return graphsync.GraphJob{}, fmt.Errorf("partial stored graph job result")

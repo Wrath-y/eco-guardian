@@ -26,6 +26,7 @@ type JobAdmission interface {
 type GraphJobRequest struct {
 	ProjectID, RevisionID                  domain.ID
 	InputHash, IdempotencyKey, RequestHash string
+	Evidence                               string
 }
 type GraphJob struct {
 	ID                    domain.ID
@@ -33,15 +34,16 @@ type GraphJob struct {
 	InputHash             string
 	IdempotencyKey        string
 	RequestHash           string
+	Evidence              string
 	Status                JobStatus
 	Result                *GraphJobResult
 }
 
 func (r GraphJobRequest) Valid() bool {
-	return r.ProjectID.Valid() && r.RevisionID.Valid() && validHash(r.InputHash) && validIdempotencyKey(r.IdempotencyKey) && validHash(r.RequestHash)
+	return r.ProjectID.Valid() && r.RevisionID.Valid() && validHash(r.InputHash) && validIdempotencyKey(r.IdempotencyKey) && validHash(r.RequestHash) && len(r.Evidence) <= 4096
 }
 func (j GraphJob) Valid() bool {
-	return j.ID.Valid() && j.ProjectID.Valid() && j.RevisionID.Valid() && validHash(j.InputHash) && validIdempotencyKey(j.IdempotencyKey) && validHash(j.RequestHash) && j.Status.Valid() && (j.Result == nil || j.Result.Valid()) && (j.Status != JobSucceeded || j.Result != nil)
+	return j.ID.Valid() && j.ProjectID.Valid() && j.RevisionID.Valid() && validHash(j.InputHash) && validIdempotencyKey(j.IdempotencyKey) && validHash(j.RequestHash) && len(j.Evidence) <= 4096 && j.Status.Valid() && (j.Result == nil || j.Result.Valid()) && (j.Status != JobSucceeded || j.Result != nil)
 }
 
 func validHash(value string) bool {

@@ -14,7 +14,7 @@ func TestGraphJobAdmissionIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := graphsync.GraphJobRequest{ProjectID: store.ProjectID(), RevisionID: revision.ID, InputHash: revision.ConfigHash, IdempotencyKey: "graph-job-key", RequestHash: strings.Repeat("b", 64)}
+	request := graphsync.GraphJobRequest{ProjectID: store.ProjectID(), RevisionID: revision.ID, InputHash: revision.ConfigHash, IdempotencyKey: "graph-job-key", RequestHash: strings.Repeat("b", 64), Evidence: `{"validation_scope":"FULL"}`}
 	first, replay, err := store.CreateOrGetGraphJob(context.Background(), request)
 	if err != nil || replay {
 		t.Fatalf("%#v %v %v", first, replay, err)
@@ -22,6 +22,9 @@ func TestGraphJobAdmissionIsIdempotent(t *testing.T) {
 	second, replay, err := store.CreateOrGetGraphJob(context.Background(), request)
 	if err != nil || !replay || second.ID != first.ID {
 		t.Fatalf("%#v %v %v", second, replay, err)
+	}
+	if second.Evidence != request.Evidence {
+		t.Fatalf("evidence=%q", second.Evidence)
 	}
 	request.RequestHash = strings.Repeat("c", 64)
 	if _, _, err = store.CreateOrGetGraphJob(context.Background(), request); err != ErrGraphJobConflict {

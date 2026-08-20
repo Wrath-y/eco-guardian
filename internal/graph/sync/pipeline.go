@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -87,7 +88,7 @@ func (p ValidationPipeline) queue(ctx context.Context, state SyncState, request 
 	if p.Jobs == nil {
 		return p.finish(ctx, state, StateQueued, "")
 	}
-	job, _, err := p.Jobs.CreateOrGetGraphJob(ctx, AutomaticGraphJobRequest(request.ProjectID, request.RevisionID, request.ConfigHash))
+	job, _, err := p.Jobs.CreateOrGetGraphJob(ctx, AutomaticGraphJobRequest(request.ProjectID, request.RevisionID, request.ConfigHash, request.Versions))
 	if err != nil {
 		return SyncState{}, err
 	}
@@ -100,10 +101,15 @@ func (p ValidationPipeline) queue(ctx context.Context, state SyncState, request 
 	return updated, nil
 }
 
-func AutomaticGraphJobRequest(projectID, revisionID domain.ID, inputHash string) GraphJobRequest {
+func AutomaticGraphJobRequest(projectID, revisionID domain.ID, inputHash string, versions validation.VersionManifest) GraphJobRequest {
 	key := fmt.Sprintf("graph:auto:%s:sync:%s", revisionID, inputHash)
-	digest := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|sync|%s|automatic", projectID, revisionID, inputHash)))
-	return GraphJobRequest{ProjectID: projectID, RevisionID: revisionID, InputHash: inputHash, IdempotencyKey: key, RequestHash: fmt.Sprintf("%x", digest)}
+	evidence, _ := json.Marshal(struct {
+		Intent   string                     `json:"intent"`
+		Scope    string                     `json:"validation_scope"`
+		Versions validation.VersionManifest `json:"validation_versions"`
+	}{Intent: "automatic", Scope: string(validation.ScopeFull), Versions: versions})
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|sync|%s|%s", projectID, revisionID, inputHash, evidence)))
+	return GraphJobRequest{ProjectID: projectID, RevisionID: revisionID, InputHash: inputHash, IdempotencyKey: key, RequestHash: fmt.Sprintf("%x", digest), Evidence: string(evidence)}
 }
 
 func (p ValidationPipeline) finish(ctx context.Context, state SyncState, pipeline PipelineState, safeError string) (SyncState, error) {

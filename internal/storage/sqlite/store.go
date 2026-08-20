@@ -24,7 +24,7 @@ import (
 )
 
 const databaseName = "project.db"
-const currentSchemaVersion = 8
+const currentSchemaVersion = 9
 
 func DBSchemaVersion() int { return currentSchemaVersion }
 
@@ -312,6 +312,12 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 		}
 		version = 8
 	}
+	if version == 8 {
+		if err := applyMigrationV9(ctx, tx); err != nil {
+			return err
+		}
+		version = 9
+	}
 	if version != currentSchemaVersion {
 		return fmt.Errorf("unsupported schema version %d", version)
 	}
@@ -373,6 +379,21 @@ func applyMigrationV8(ctx context.Context, tx *sql.Tx) error {
 	if _, err = tx.ExecContext(ctx, string(body)); err != nil {
 		return err
 	}
+	return recordMigrationChecksums(ctx, tx)
+}
+
+func applyMigrationV9(ctx context.Context, tx *sql.Tx) error {
+	body, err := root.Assets.ReadFile("migrations/0009_graph_job_evidence.sql")
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, string(body)); err != nil {
+		return err
+	}
+	return recordMigrationChecksums(ctx, tx)
+}
+
+func recordMigrationChecksums(ctx context.Context, tx *sql.Tx) error {
 	checksums, err := migrationStepChecksums()
 	if err != nil {
 		return err
@@ -382,8 +403,10 @@ func applyMigrationV8(ctx context.Context, tx *sql.Tx) error {
 		if updateErr != nil {
 			return updateErr
 		}
-		if rows, rowsErr := write.RowsAffected(); rowsErr != nil || rows != 1 {
+		if rows, rowsErr := write.RowsAffected(); rowsErr != nil {
 			return errors.New("missing migration step while recording checksum")
+		} else if rows == 0 {
+			continue
 		}
 	}
 	return nil
@@ -398,6 +421,7 @@ func migrationStepChecksums() (map[string]string, error) {
 		"graph-checkpoints-v6":         "migrations/0006_graph_checkpoints.sql",
 		"graph-sync-indexes-v7":        "migrations/0007_graph_sync_indexes.sql",
 		"graph-migration-checksums-v8": "migrations/0008_graph_migration_checksums.sql",
+		"graph-job-evidence-v9":        "migrations/0009_graph_job_evidence.sql",
 	}
 	checksums := make(map[string]string, len(files))
 	for stepID, path := range files {

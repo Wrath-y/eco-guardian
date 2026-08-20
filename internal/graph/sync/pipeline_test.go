@@ -70,6 +70,9 @@ func TestValidationPipelineRequiresExactPassBeforeQueueing(t *testing.T) {
 			if err != nil || got.Pipeline != test.want || runner.calls != test.calls || jobs.calls != wantJobs {
 				t.Fatalf("state=%#v runner=%d jobs=%d err=%v", got, runner.calls, jobs.calls, err)
 			}
+			if wantJobs == 1 && AutomaticGraphJobRequest(id, id, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", versions).Evidence == "" {
+				t.Fatal("automatic admission omitted validation evidence")
+			}
 			if got.Pipeline == StateBlockedValidation && got.SafeError != "VALIDATION_NOT_PASSED" {
 				t.Fatalf("state=%#v", got)
 			}
