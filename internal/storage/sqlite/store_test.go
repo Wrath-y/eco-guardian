@@ -327,8 +327,29 @@ func TestMigrationStepsRollbackAndReplayWithoutDuplicates(t *testing.T) {
 		t.Fatal(err)
 	}
 	var count int
-	if err = db.QueryRow(`SELECT count(*) FROM schema_migration_steps`).Scan(&count); err != nil || count != 6 {
+	if err = db.QueryRow(`SELECT count(*) FROM schema_migration_steps`).Scan(&count); err != nil || count != 7 {
 		t.Fatalf("migration steps=%d err=%v", count, err)
+	}
+}
+
+func TestMigrationLedgerRejectsChecksumDriftOnReopen(t *testing.T) {
+	registry, err := domain.NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	store, _, err := Create(context.Background(), dir, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.db.Exec(`UPDATE schema_migration_steps SET checksum='tampered' WHERE step_id='graph-sync-v5'`); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = Open(dir, registry); !errors.Is(err, ErrProjectInvalid) {
+		t.Fatalf("checksum drift err=%v", err)
 	}
 }
 

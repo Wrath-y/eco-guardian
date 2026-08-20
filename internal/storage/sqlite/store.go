@@ -24,7 +24,7 @@ import (
 )
 
 const databaseName = "project.db"
-const currentSchemaVersion = 7
+const currentSchemaVersion = 8
 
 func DBSchemaVersion() int { return currentSchemaVersion }
 
@@ -290,18 +290,30 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 		}
 		version = 7
 	}
+	if version == 7 {
+		if err := applyMigrationV8(ctx, tx); err != nil {
+			return err
+		}
+		version = 8
+	}
 	if version != currentSchemaVersion {
 		return fmt.Errorf("unsupported schema version %d", version)
 	}
 	return nil
 }
 func verifyMigrationSteps(ctx context.Context, db *sql.DB) error {
-	var count int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM schema_migration_steps WHERE step_id IN ('validation-v2','versioning-v3','release-audit-v4','graph-sync-v5','graph-checkpoints-v6','graph-sync-indexes-v7')`).Scan(&count); err != nil {
+	checksums, err := migrationStepChecksums()
+	if err != nil {
 		return err
 	}
-	if count != 6 {
-		return errors.New("missing committed migration step")
+	for stepID, want := range checksums {
+		var got sql.NullString
+		if err = db.QueryRowContext(ctx, `SELECT checksum FROM schema_migration_steps WHERE step_id=?`, stepID).Scan(&got); err != nil {
+			return errors.New("missing committed migration step")
+		}
+		if !got.Valid || got.String != want {
+			return errors.New("migration checksum mismatch")
+		}
 	}
 	return nil
 }
@@ -336,6 +348,51 @@ func applyMigrationV7(ctx context.Context, tx *sql.Tx) error {
 	}
 	_, err = tx.ExecContext(ctx, string(body))
 	return err
+}
+func applyMigrationV8(ctx context.Context, tx *sql.Tx) error {
+	body, err := root.Assets.ReadFile("migrations/0008_graph_migration_checksums.sql")
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, string(body)); err != nil {
+		return err
+	}
+	checksums, err := migrationStepChecksums()
+	if err != nil {
+		return err
+	}
+	for stepID, checksum := range checksums {
+		write, updateErr := tx.ExecContext(ctx, `UPDATE schema_migration_steps SET checksum=? WHERE step_id=?`, checksum, stepID)
+		if updateErr != nil {
+			return updateErr
+		}
+		if rows, rowsErr := write.RowsAffected(); rowsErr != nil || rows != 1 {
+			return errors.New("missing migration step while recording checksum")
+		}
+	}
+	return nil
+}
+
+func migrationStepChecksums() (map[string]string, error) {
+	files := map[string]string{
+		"validation-v2":                "migrations/0002_validation.sql",
+		"versioning-v3":                "migrations/0003_versioning.sql",
+		"release-audit-v4":             "migrations/0004_release_audit.sql",
+		"graph-sync-v5":                "migrations/0005_graph_sync.sql",
+		"graph-checkpoints-v6":         "migrations/0006_graph_checkpoints.sql",
+		"graph-sync-indexes-v7":        "migrations/0007_graph_sync_indexes.sql",
+		"graph-migration-checksums-v8": "migrations/0008_graph_migration_checksums.sql",
+	}
+	checksums := make(map[string]string, len(files))
+	for stepID, path := range files {
+		body, err := root.Assets.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		digest := sha256.Sum256(body)
+		checksums[stepID] = fmt.Sprintf("%x", digest)
+	}
+	return checksums, nil
 }
 func hasProjectData(ctx context.Context, db *sql.DB) (bool, error) {
 	var count int
