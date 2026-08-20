@@ -84,6 +84,12 @@ func TestValidationPipelineRequiresExactPassBeforeQueueing(t *testing.T) {
 				t.Fatalf("state=%#v runner=%d jobs=%d err=%v", got, runner.calls, jobs.calls, err)
 			}
 			if wantJobs == 1 {
+				replayed, replayErr := pipeline.Start(context.Background(), ValidationPipelineRequest{ProjectID: id, RevisionID: id, ConfigHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Versions: versions})
+				if replayErr != nil || replayed.Pipeline != StateQueued || jobs.calls != 1 {
+					t.Fatalf("duplicate state=%#v jobs=%d err=%v", replayed, jobs.calls, replayErr)
+				}
+			}
+			if wantJobs == 1 {
 				var evidence struct {
 					Warnings []string `json:"validation_warning_codes"`
 				}

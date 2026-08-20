@@ -169,3 +169,23 @@ func TestListRecoverableGraphSyncStatesFiltersTerminalStates(t *testing.T) {
 		t.Fatalf("%#v %v", states, err)
 	}
 }
+
+func TestGraphFailureDoesNotBlockConfigurationEditing(t *testing.T) {
+	store := newStore(t)
+	_, revision, err := store.Create(context.Background(), "tag", tagDraft("graphfailure"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := graphsync.SyncState{RevisionID: string(revision.ID), Pipeline: graphsync.StateQueued, Warnings: []string{}}
+	if err = store.CreateGraphSyncState(context.Background(), state); err != nil {
+		t.Fatal(err)
+	}
+	failed := state
+	failed.Pipeline, failed.Generation, failed.SafeError = graphsync.StateFailed, 1, "PROVIDER_UNAVAILABLE"
+	if _, swapped, err := store.CompareAndSwapGraphSyncState(context.Background(), state, failed); err != nil || !swapped {
+		t.Fatalf("failed swap=%v err=%v", swapped, err)
+	}
+	if _, next, err := store.Create(context.Background(), "tag", tagDraft("stilleditable")); err != nil || !next.ID.Valid() {
+		t.Fatalf("revision=%#v err=%v", next, err)
+	}
+}
