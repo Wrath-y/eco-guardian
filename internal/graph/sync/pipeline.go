@@ -34,12 +34,20 @@ type FullValidationRunner interface {
 	RunFullValidation(context.Context, domain.ID) error
 }
 
+// FullValidationEvidenceReader exposes only stable warning codes from the
+// exact FULL validation report used for admission. It deliberately excludes
+// issue paths, parameters, and raw validation evidence from Graph Job records.
+type FullValidationEvidenceReader interface {
+	FullValidationWarningCodes(context.Context, domain.ID, string, validation.VersionManifest) ([]string, error)
+}
+
 // ValidationPipeline runs only the exact #6 FULL validation seam. It never
 // projects, creates a Graph Job, or calls a provider before a recorded PASS.
 type ValidationPipeline struct {
 	States     SyncStateStore
 	Validation FullValidationGate
 	Runner     FullValidationRunner
+	Evidence   FullValidationEvidenceReader
 	Jobs       JobAdmission
 }
 
@@ -88,7 +96,14 @@ func (p ValidationPipeline) queue(ctx context.Context, state SyncState, request 
 	if p.Jobs == nil {
 		return p.finish(ctx, state, StateQueued, "")
 	}
-	job, _, err := p.Jobs.CreateOrGetGraphJob(ctx, AutomaticGraphJobRequest(request.ProjectID, request.RevisionID, request.ConfigHash, request.Versions))
+	if p.Evidence == nil {
+		return p.finish(ctx, state, StateBlockedValidation, "VALIDATION_EVIDENCE_UNAVAILABLE")
+	}
+	warnings, err := p.Evidence.FullValidationWarningCodes(ctx, request.RevisionID, request.ConfigHash, request.Versions)
+	if err != nil {
+		return p.finish(ctx, state, StateBlockedValidation, "VALIDATION_EVIDENCE_UNAVAILABLE")
+	}
+	job, _, err := p.Jobs.CreateOrGetGraphJob(ctx, AutomaticGraphJobRequest(request.ProjectID, request.RevisionID, request.ConfigHash, request.Versions, warnings))
 	if err != nil {
 		return SyncState{}, err
 	}
@@ -101,13 +116,14 @@ func (p ValidationPipeline) queue(ctx context.Context, state SyncState, request 
 	return updated, nil
 }
 
-func AutomaticGraphJobRequest(projectID, revisionID domain.ID, inputHash string, versions validation.VersionManifest) GraphJobRequest {
+func AutomaticGraphJobRequest(projectID, revisionID domain.ID, inputHash string, versions validation.VersionManifest, warnings []string) GraphJobRequest {
 	key := fmt.Sprintf("graph:auto:%s:sync:%s", revisionID, inputHash)
 	evidence, _ := json.Marshal(struct {
 		Intent   string                     `json:"intent"`
 		Scope    string                     `json:"validation_scope"`
 		Versions validation.VersionManifest `json:"validation_versions"`
-	}{Intent: "automatic", Scope: string(validation.ScopeFull), Versions: versions})
+		Warnings []string                   `json:"validation_warning_codes"`
+	}{Intent: "automatic", Scope: string(validation.ScopeFull), Versions: versions, Warnings: append([]string(nil), warnings...)})
 	digest := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|sync|%s|%s", projectID, revisionID, inputHash, evidence)))
 	return GraphJobRequest{ProjectID: projectID, RevisionID: revisionID, InputHash: inputHash, IdempotencyKey: key, RequestHash: fmt.Sprintf("%x", digest), Evidence: string(evidence)}
 }

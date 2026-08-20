@@ -144,6 +144,33 @@ func (s *Store) FindMatchingFullRun(ctx context.Context, revisionID domain.ID, c
 	report, err := s.GetValidationReport(ctx, id)
 	return report.Run, err == nil, err
 }
+
+// FullValidationWarningCodes returns only the stable warning codes recorded
+// with the exact FULL validation report. Graph orchestration must not persist
+// paths, issue parameters, or raw validation evidence in its Job evidence.
+func (s *Store) FullValidationWarningCodes(ctx context.Context, revisionID domain.ID, configHash string, versions validation.VersionManifest) ([]string, error) {
+	run, found, err := s.FindMatchingFullRun(ctx, revisionID, configHash, versions)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, ErrNotFound
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT code FROM validation_issues WHERE run_id=? AND severity='WARNING' ORDER BY code`, run.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var codes []string
+	for rows.Next() {
+		var code string
+		if err = rows.Scan(&code); err != nil {
+			return nil, err
+		}
+		codes = append(codes, code)
+	}
+	return codes, rows.Err()
+}
 func nullID(value domain.ID) any {
 	if value == "" {
 		return nil

@@ -60,6 +60,36 @@ func TestCompletedValidationReportsAreImmutableAndExact(t *testing.T) {
 	}
 }
 
+func TestFullValidationWarningCodesReturnsOnlyStableCodes(t *testing.T) {
+	store := newStore(t)
+	run, issues := validationRunFixture(t, store)
+	newIssue := func(code, path string, severity validation.Severity) validation.Issue {
+		issue, err := validation.NewIssue(validation.SeverityBlock, code, issues[0].EntityID, path, nil, nil, nil, nil, run.Versions.Registry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		issue.Severity = severity
+		return issue
+	}
+	warnings := []validation.Issue{
+		newIssue("STATIC_FORMULA_CYCLE", "/payload/z", validation.SeverityWarning),
+		newIssue("REFERENCE_NOT_FOUND", "/payload/a", validation.SeverityWarning),
+		newIssue("STATIC_FORMULA_CYCLE", "/payload/b", validation.SeverityWarning),
+		newIssue("REFERENCE_NOT_FOUND", "/payload/c", validation.SeverityInfo),
+	}
+	run, err := validation.NewCompletedRun(run.ID, run.Source, validation.ScopeFull, run.Versions, warnings, run.CreatedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.InsertCompletedValidationRun(context.Background(), run, warnings); err != nil {
+		t.Fatal(err)
+	}
+	codes, err := store.FullValidationWarningCodes(context.Background(), run.Source.RevisionID, run.Source.InputHash, run.Versions)
+	if err != nil || !reflect.DeepEqual(codes, []string{"REFERENCE_NOT_FOUND", "STATIC_FORMULA_CYCLE"}) {
+		t.Fatalf("codes=%#v err=%v", codes, err)
+	}
+}
+
 func TestValidationReportBulkInsertRollsBackAtEveryStage(t *testing.T) {
 	for _, stage := range []string{"validation_run", "validation_issue"} {
 		t.Run(stage, func(t *testing.T) {

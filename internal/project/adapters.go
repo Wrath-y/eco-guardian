@@ -109,7 +109,7 @@ func startGraphValidationPipeline(ctx context.Context, s *store.Store, revision 
 	if !ok {
 		return
 	}
-	pipeline := graphsync.ValidationPipeline{States: s, Validation: validation.NewValidationGate(s), Runner: s, Jobs: s}
+	pipeline := graphsync.ValidationPipeline{States: s, Validation: validation.NewValidationGate(s), Runner: s, Evidence: s, Jobs: s}
 	_, _ = pipeline.Start(ctx, graphsync.ValidationPipelineRequest{ProjectID: s.ProjectID(), RevisionID: revision.ID, ConfigHash: revision.ConfigHash, Versions: versions})
 }
 
