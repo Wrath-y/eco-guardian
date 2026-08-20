@@ -65,3 +65,25 @@ func TestSQLiteFactoryOptionallyRegistersGraphVersionContributor(t *testing.T) {
 	}
 	t.Fatalf("Graph contributor missing from manifest: %#v", record.Metadata.Manifest)
 }
+
+func TestSQLiteFactoryInvokesRevisionObserverOnlyAfterSave(t *testing.T) {
+	registry, err := domain.NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var observed domain.ID
+	factory := SQLiteFactory{Registry: registry, AfterRevision: func(_ context.Context, opened *store.Store, revision domain.RevisionSummary) {
+		if opened.ProjectID().Valid() {
+			observed = revision.ID
+		}
+	}}
+	handle, err := factory.Create(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer handle.Close()
+	_, revision, err := handle.(*sqliteHandle).Store().Create(context.Background(), domain.KindTag, domain.EntityDraft{Key: "observed", Name: "Observed", Payload: map[string]json.RawMessage{"category": json.RawMessage(`"element"`), "parent_tag_ids": json.RawMessage(`[]`)}})
+	if err != nil || observed != revision.ID {
+		t.Fatalf("observed=%s revision=%s err=%v", observed, revision.ID, err)
+	}
+}

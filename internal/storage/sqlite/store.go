@@ -80,14 +80,15 @@ type ValidationError struct{ Issues []domain.FieldIssue }
 func (e ValidationError) Error() string { return "entity validation failed" }
 
 type Store struct {
-	db           *sql.DB
-	path         string
-	registry     *domain.Registry
-	writes       sync.Mutex
-	now          func() time.Time
-	projectID    domain.ID
-	graphVersion versioningrevision.VersionEntry
-	failStage    func(string) error // test-only transaction fault injector
+	db            *sql.DB
+	path          string
+	registry      *domain.Registry
+	writes        sync.Mutex
+	now           func() time.Time
+	projectID     domain.ID
+	graphVersion  versioningrevision.VersionEntry
+	afterRevision func(context.Context, domain.RevisionSummary)
+	failStage     func(string) error // test-only transaction fault injector
 }
 
 // RegisterGraphVersionContributor is startup composition glue. Its entry is
@@ -105,6 +106,21 @@ func (s *Store) RegisterGraphVersionContributor(contributor versioningrevision.V
 	defer s.writes.Unlock()
 	s.graphVersion = entry
 	return nil
+}
+
+// RegisterRevisionObserver installs a post-commit lifecycle seam. Observers
+// run only after the immutable revision transaction commits, so derived Graph
+// work cannot roll back user configuration facts.
+func (s *Store) RegisterRevisionObserver(observer func(context.Context, domain.RevisionSummary)) {
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	s.afterRevision = observer
+}
+
+func (s *Store) notifyRevisionCommitted(ctx context.Context, revision domain.RevisionSummary) {
+	if s.afterRevision != nil && revision.ID.Valid() {
+		s.afterRevision(ctx, revision)
+	}
 }
 
 func Create(ctx context.Context, dir string, registry *domain.Registry) (*Store, domain.ID, error) {
@@ -724,6 +740,9 @@ func (s *Store) Patch(ctx context.Context, kind domain.EntityKind, id domain.ID,
 		if errors.Is(txErr, errLocalPreflightChanged) && attempt == 0 {
 			continue
 		}
+		if txErr == nil {
+			s.notifyRevisionCommitted(ctx, revision)
+		}
 		return next, revision, txErr
 	}
 	return domain.Entity{}, domain.RevisionSummary{}, ErrRevisionConflict
@@ -741,12 +760,19 @@ func (s *Store) validateProspective(entity domain.Entity) (domain.Entity, error)
 }
 func (s *Store) Delete(ctx context.Context, kind domain.EntityKind, id domain.ID, version int64) (domain.Entity, domain.RevisionSummary, error) {
 	s.writes.Lock()
-	defer s.writes.Unlock()
 	tx, e := s.db.BeginTx(ctx, nil)
 	if e != nil {
+		s.writes.Unlock()
 		return domain.Entity{}, domain.RevisionSummary{}, e
 	}
+	var r domain.RevisionSummary
 	defer tx.Rollback()
+	defer func() {
+		s.writes.Unlock()
+		if e == nil {
+			s.notifyRevisionCommitted(ctx, r)
+		}
+	}()
 	entity, e := s.getTx(ctx, tx, kind, id)
 	if e != nil {
 		return domain.Entity{}, domain.RevisionSummary{}, e
@@ -774,7 +800,7 @@ func (s *Store) Delete(ctx context.Context, kind domain.EntityKind, id domain.ID
 	entity.Status = domain.StatusArchived
 	entity.EntityVersion++
 	entity.UpdatedAt = s.now().UTC()
-	r, e := s.saveTx(ctx, tx, entity, false)
+	r, e = s.saveTx(ctx, tx, entity, false)
 	if e == nil {
 		e = tx.Commit()
 	}
@@ -812,6 +838,9 @@ func (s *Store) save(ctx context.Context, e domain.Entity, create bool) (domain.
 		s.writes.Unlock()
 		if errors.Is(err, errLocalPreflightChanged) && attempt == 0 {
 			continue
+		}
+		if err == nil {
+			s.notifyRevisionCommitted(ctx, revision)
 		}
 		return e, revision, err
 	}

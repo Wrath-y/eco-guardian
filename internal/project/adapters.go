@@ -48,6 +48,7 @@ type SQLiteFactory struct {
 	Registry                *domain.Registry
 	GraphVersionContributor versioningrevision.VersionContributor
 	Recover                 func(context.Context, *store.Store) error
+	AfterRevision           func(context.Context, *store.Store, domain.RevisionSummary)
 }
 type sqliteHandle struct{ store *store.Store }
 
@@ -84,6 +85,9 @@ func (f SQLiteFactory) Open(ctx context.Context, dir string) (ProjectHandle, err
 }
 
 func (f SQLiteFactory) configureGraphVersion(s *store.Store) error {
+	if f.AfterRevision != nil {
+		s.RegisterRevisionObserver(func(ctx context.Context, revision domain.RevisionSummary) { f.AfterRevision(ctx, s, revision) })
+	}
 	if f.GraphVersionContributor == nil {
 		return nil
 	}
