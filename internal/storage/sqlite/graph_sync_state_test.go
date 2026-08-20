@@ -102,6 +102,32 @@ func TestMarkGraphReadyCommitsOneHandoff(t *testing.T) {
 	}
 }
 
+func TestMarkGraphReadyCompletesLinkedRunningJob(t *testing.T) {
+	store := newStore(t)
+	_, revision, err := store.Create(context.Background(), "tag", tagDraft("readyjob"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, _, err := store.CreateOrGetGraphJob(context.Background(), graphsync.GraphJobRequest{ProjectID: store.ProjectID(), RevisionID: revision.ID, InputHash: revision.ConfigHash, IdempotencyKey: "ready-job", RequestHash: strings.Repeat("b", 64)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, swapped, err := store.TransitionGraphJob(context.Background(), job.ID, graphsync.JobQueued, graphsync.JobRunning, nil); err != nil || !swapped {
+		t.Fatalf("job start swapped=%v err=%v", swapped, err)
+	}
+	state := graphsync.SyncState{RevisionID: string(revision.ID), Pipeline: graphsync.StateBuilding, LatestJobID: string(job.ID), Warnings: []string{}}
+	if err = store.CreateGraphSyncState(context.Background(), state); err != nil {
+		t.Fatal(err)
+	}
+	if _, swapped, err := store.MarkGraphReady(context.Background(), state, strings.Repeat("a", 64)); err != nil || !swapped {
+		t.Fatalf("ready swapped=%v err=%v", swapped, err)
+	}
+	stored, err := store.GetGraphJob(context.Background(), job.ID)
+	if err != nil || stored.Status != graphsync.JobSucceeded || stored.Result == nil || stored.Result.ID != revision.ID {
+		t.Fatalf("job=%#v err=%v", stored, err)
+	}
+}
+
 func TestListRecoverableGraphSyncStatesFiltersTerminalStates(t *testing.T) {
 	store := newStore(t)
 	_, queuedRevision, err := store.Create(context.Background(), "tag", tagDraft("queued"))

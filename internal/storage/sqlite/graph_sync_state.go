@@ -100,6 +100,22 @@ func (s *Store) MarkGraphReady(ctx context.Context, expected graphsync.SyncState
 	if err != nil || n == 0 {
 		return graphsync.SyncState{}, false, err
 	}
+	if next.LatestJobID != "" {
+		if !domain.ID(next.LatestJobID).Valid() {
+			return graphsync.SyncState{}, false, ErrGraphSyncStateInvalid
+		}
+		resultURL := "/api/v1/revisions/" + next.RevisionID + "/graph-status"
+		jobWrite, jobErr := tx.ExecContext(ctx, `UPDATE jobs SET status='succeeded',result_type='graph_sync',result_id=?,result_url=?,updated_at=? WHERE id=? AND project_uuid=? AND kind='graph_sync' AND status IN ('running','interrupted')`, next.RevisionID, resultURL, s.now().UTC().Format(time.RFC3339Nano), next.LatestJobID, s.projectID)
+		if jobErr != nil {
+			return graphsync.SyncState{}, false, jobErr
+		}
+		if rows, rowsErr := jobWrite.RowsAffected(); rowsErr != nil || rows != 1 {
+			if rowsErr != nil {
+				return graphsync.SyncState{}, false, rowsErr
+			}
+			return graphsync.SyncState{}, false, ErrGraphJobTransition
+		}
+	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO graph_impact_handoffs(revision_id,graph_manifest_hash,stage,status,created_at) VALUES(?,?, 'impact','queued',?) ON CONFLICT(revision_id,stage,graph_manifest_hash) DO NOTHING`, next.RevisionID, graphHash, s.now().UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return graphsync.SyncState{}, false, err
