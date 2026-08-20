@@ -353,6 +353,56 @@ func TestMigrationLedgerRejectsChecksumDriftOnReopen(t *testing.T) {
 	}
 }
 
+func TestV7ProjectUpgradesToChecksummedV8OnReopen(t *testing.T) {
+	registry, err := domain.NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, databaseName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial, err := root.Assets.ReadFile("migrations/0001_initial.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(string(initial)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(`INSERT INTO project_meta(id,db_schema_version,created_at) VALUES(?,?,?)`, mustID(t), 1, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, migration := range []func(context.Context, *sql.Tx) error{applyMigrationV2, applyMigrationV3, applyMigrationV4, applyMigrationV5, applyMigrationV6, applyMigrationV7} {
+		if err = migration(context.Background(), tx); err != nil {
+			_ = tx.Rollback()
+			t.Fatal(err)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, _, err := Open(dir, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	var version, checksummed int
+	if err = store.db.QueryRow(`SELECT db_schema_version FROM project_meta`).Scan(&version); err != nil || version != currentSchemaVersion {
+		t.Fatalf("version=%d err=%v", version, err)
+	}
+	if err = store.db.QueryRow(`SELECT count(*) FROM schema_migration_steps WHERE checksum IS NOT NULL`).Scan(&checksummed); err != nil || checksummed != 7 {
+		t.Fatalf("checksummed=%d err=%v", checksummed, err)
+	}
+}
+
 func TestUnresolvedHistoricalRevisionAndCloseReopenEquivalence(t *testing.T) {
 	registry, err := domain.NewRegistry()
 	if err != nil {
