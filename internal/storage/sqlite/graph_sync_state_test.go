@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zouyi/eco-guardian/internal/graph/projector"
 	graphsync "github.com/zouyi/eco-guardian/internal/graph/sync"
 )
 
@@ -125,6 +126,25 @@ func TestMarkGraphReadyCompletesLinkedRunningJob(t *testing.T) {
 	stored, err := store.GetGraphJob(context.Background(), job.ID)
 	if err != nil || stored.Status != graphsync.JobSucceeded || stored.Result == nil || stored.Result.ID != revision.ID {
 		t.Fatalf("job=%#v err=%v", stored, err)
+	}
+}
+
+func TestCommitGraphReadyAtomicallyStoresProjectionEvidence(t *testing.T) {
+	store := newStore(t)
+	_, revision, err := store.Create(context.Background(), "tag", tagDraft("summaryready"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := graphsync.SyncState{RevisionID: string(revision.ID), Pipeline: graphsync.StateBuilding, Warnings: []string{}}
+	if err = store.CreateGraphSyncState(context.Background(), state); err != nil {
+		t.Fatal(err)
+	}
+	summary := projector.Summary{ProjectID: string(store.ProjectID()), RevisionID: string(revision.ID), ConfigHash: revision.ConfigHash, SchemaVersion: projector.ProjectionSchemaV1, ProjectorVersion: projector.ProjectorV1, ManifestHash: strings.Repeat("a", 64)}
+	if _, swapped, err := store.CommitGraphReady(context.Background(), state, summary, `{"verified":true}`); err != nil || !swapped {
+		t.Fatalf("ready swapped=%v err=%v", swapped, err)
+	}
+	if stored, found, err := store.GetProjectionSummary(context.Background(), revision.ID, projector.ProjectionSchemaV1, projector.ProjectorV1); err != nil || !found || stored.ManifestHash != summary.ManifestHash {
+		t.Fatalf("summary=%#v found=%v err=%v", stored, found, err)
 	}
 }
 

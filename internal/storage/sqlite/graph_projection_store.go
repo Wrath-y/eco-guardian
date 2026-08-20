@@ -28,15 +28,26 @@ func (s *Store) InsertProjectionSummary(ctx context.Context, summary projector.S
 		return false, err
 	}
 	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, `INSERT INTO projection_summaries(revision_id,projection_schema_version,projector_version,config_hash,graph_manifest_hash,node_count,edge_count,evidence,cache_identity,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, summary.RevisionID, summary.SchemaVersion, summary.ProjectorVersion, summary.ConfigHash, summary.ManifestHash, summary.NodeCount, summary.EdgeCount, evidence, nullString(summary.CacheIdentity), s.now().UTC().Format(time.RFC3339Nano))
+	inserted, err := s.insertProjectionSummaryTx(ctx, tx, summary, evidence)
+	if err != nil {
+		return false, err
+	}
+	if err = tx.Commit(); err != nil {
+		return false, err
+	}
+	return inserted, nil
+}
+
+func (s *Store) insertProjectionSummaryTx(ctx context.Context, tx *sql.Tx, summary projector.Summary, evidence string) (bool, error) {
+	_, err := tx.ExecContext(ctx, `INSERT INTO projection_summaries(revision_id,projection_schema_version,projector_version,config_hash,graph_manifest_hash,node_count,edge_count,evidence,cache_identity,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, summary.RevisionID, summary.SchemaVersion, summary.ProjectorVersion, summary.ConfigHash, summary.ManifestHash, summary.NodeCount, summary.EdgeCount, evidence, nullString(summary.CacheIdentity), s.now().UTC().Format(time.RFC3339Nano))
 	if err == nil {
-		return true, tx.Commit()
+		return true, nil
 	}
 	var existingHash, existingConfig string
 	var nodes, edges int
 	readErr := tx.QueryRowContext(ctx, `SELECT config_hash,graph_manifest_hash,node_count,edge_count FROM projection_summaries WHERE revision_id=? AND projection_schema_version=? AND projector_version=?`, summary.RevisionID, summary.SchemaVersion, summary.ProjectorVersion).Scan(&existingConfig, &existingHash, &nodes, &edges)
 	if readErr == nil && existingConfig == summary.ConfigHash && existingHash == summary.ManifestHash && nodes == summary.NodeCount && edges == summary.EdgeCount {
-		return false, tx.Commit()
+		return false, nil
 	}
 	if readErr == sql.ErrNoRows {
 		return false, err

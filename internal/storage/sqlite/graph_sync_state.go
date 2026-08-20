@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/zouyi/eco-guardian/internal/domain"
+	"github.com/zouyi/eco-guardian/internal/graph/projector"
 	graphsync "github.com/zouyi/eco-guardian/internal/graph/sync"
 )
 
@@ -76,9 +77,20 @@ func (s *Store) CompareAndSwapGraphSyncState(ctx context.Context, expected graph
 // MarkGraphReady atomically advances the state and records the one durable
 // downstream handoff. Callers may replay the same expected generation safely.
 func (s *Store) MarkGraphReady(ctx context.Context, expected graphsync.SyncState, graphHash string) (graphsync.SyncState, bool, error) {
+	return s.commitGraphReady(ctx, expected, graphHash, nil, "")
+}
+
+func (s *Store) CommitGraphReady(ctx context.Context, expected graphsync.SyncState, summary projector.Summary, evidence string) (graphsync.SyncState, bool, error) {
+	if !summary.Valid() || summary.ProjectID != string(s.projectID) || summary.RevisionID != expected.RevisionID || evidence == "" {
+		return graphsync.SyncState{}, false, ErrGraphSyncStateInvalid
+	}
+	return s.commitGraphReady(ctx, expected, summary.ManifestHash, &summary, evidence)
+}
+
+func (s *Store) commitGraphReady(ctx context.Context, expected graphsync.SyncState, graphHash string, summary *projector.Summary, evidence string) (graphsync.SyncState, bool, error) {
 	next := expected
 	next.Pipeline, next.Generation = graphsync.StateReady, expected.Generation+1
-	if !hash64(graphHash) {
+	if !expected.Valid() || expected.Pipeline != graphsync.StateBuilding || !hash64(graphHash) {
 		return graphsync.SyncState{}, false, ErrGraphSyncStateInvalid
 	}
 	s.writes.Lock()
@@ -99,6 +111,11 @@ func (s *Store) MarkGraphReady(ctx context.Context, expected graphsync.SyncState
 	n, err := write.RowsAffected()
 	if err != nil || n == 0 {
 		return graphsync.SyncState{}, false, err
+	}
+	if summary != nil {
+		if _, err = s.insertProjectionSummaryTx(ctx, tx, *summary, evidence); err != nil {
+			return graphsync.SyncState{}, false, err
+		}
 	}
 	if next.LatestJobID != "" {
 		if !domain.ID(next.LatestJobID).Valid() {
