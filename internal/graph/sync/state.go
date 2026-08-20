@@ -42,13 +42,15 @@ func (s PipelineState) CanTransitionTo(next PipelineState) bool {
 }
 
 type SyncState struct {
-	RevisionID     string
-	Pipeline       PipelineState
-	LatestJobID    string
-	ExternalTaskID string
-	Generation     int64
-	SafeError      string
-	Warnings       []string
+	RevisionID        string
+	Pipeline          PipelineState
+	LatestJobID       string
+	ExternalTaskID    string
+	ProviderRequestID string
+	ProviderTaskID    string
+	Generation        int64
+	SafeError         string
+	Warnings          []string
 }
 
 func (s SyncState) Valid() bool {

@@ -19,7 +19,7 @@ func (s *Store) GetGraphSyncState(ctx context.Context, revisionID domain.ID) (gr
 	}
 	var state graphsync.SyncState
 	var warnings string
-	err := s.db.QueryRowContext(ctx, `SELECT pipeline_state,COALESCE(latest_job_id,''),COALESCE(external_task_id,''),generation,COALESCE(safe_error,''),warnings FROM graph_sync_states WHERE revision_id=?`, revisionID).Scan(&state.Pipeline, &state.LatestJobID, &state.ExternalTaskID, &state.Generation, &state.SafeError, &warnings)
+	err := s.db.QueryRowContext(ctx, `SELECT pipeline_state,COALESCE(latest_job_id,''),COALESCE(external_task_id,''),COALESCE(provider_request_id,''),COALESCE(provider_task_id,''),generation,COALESCE(safe_error,''),warnings FROM graph_sync_states WHERE revision_id=?`, revisionID).Scan(&state.Pipeline, &state.LatestJobID, &state.ExternalTaskID, &state.ProviderRequestID, &state.ProviderTaskID, &state.Generation, &state.SafeError, &warnings)
 	if errors.Is(err, sql.ErrNoRows) {
 		return graphsync.SyncState{}, false, nil
 	}
@@ -44,7 +44,7 @@ func (s *Store) CreateGraphSyncState(ctx context.Context, state graphsync.SyncSt
 	}
 	s.writes.Lock()
 	defer s.writes.Unlock()
-	_, err = s.db.ExecContext(ctx, `INSERT INTO graph_sync_states(revision_id,pipeline_state,latest_job_id,external_task_id,generation,safe_error,warnings,updated_at) VALUES(?,?,?,?,?,?,?,?)`, revisionID, state.Pipeline, nullString(state.LatestJobID), nullString(state.ExternalTaskID), 0, nullString(state.SafeError), string(warnings), s.now().UTC().Format(time.RFC3339Nano))
+	_, err = s.db.ExecContext(ctx, `INSERT INTO graph_sync_states(revision_id,pipeline_state,latest_job_id,external_task_id,provider_request_id,provider_task_id,generation,safe_error,warnings,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, revisionID, state.Pipeline, nullString(state.LatestJobID), nullString(state.ExternalTaskID), nullString(state.ProviderRequestID), nullString(state.ProviderTaskID), 0, nullString(state.SafeError), string(warnings), s.now().UTC().Format(time.RFC3339Nano))
 	return err
 }
 
@@ -59,7 +59,7 @@ func (s *Store) CompareAndSwapGraphSyncState(ctx context.Context, expected graph
 	}
 	s.writes.Lock()
 	defer s.writes.Unlock()
-	write, err := s.db.ExecContext(ctx, `UPDATE graph_sync_states SET pipeline_state=?,latest_job_id=?,external_task_id=?,generation=?,safe_error=?,warnings=?,updated_at=? WHERE revision_id=? AND generation=?`, next.Pipeline, nullString(next.LatestJobID), nullString(next.ExternalTaskID), next.Generation, nullString(next.SafeError), string(warnings), s.now().UTC().Format(time.RFC3339Nano), next.RevisionID, expected.Generation)
+	write, err := s.db.ExecContext(ctx, `UPDATE graph_sync_states SET pipeline_state=?,latest_job_id=?,external_task_id=?,provider_request_id=?,provider_task_id=?,generation=?,safe_error=?,warnings=?,updated_at=? WHERE revision_id=? AND generation=?`, next.Pipeline, nullString(next.LatestJobID), nullString(next.ExternalTaskID), nullString(next.ProviderRequestID), nullString(next.ProviderTaskID), next.Generation, nullString(next.SafeError), string(warnings), s.now().UTC().Format(time.RFC3339Nano), next.RevisionID, expected.Generation)
 	if err != nil {
 		return graphsync.SyncState{}, false, err
 	}
@@ -116,7 +116,7 @@ func (s *Store) ListRecoverableGraphSyncStates(ctx context.Context, limit int) (
 	if limit < 1 || limit > 1000 {
 		return nil, ErrGraphSyncStateInvalid
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT revision_id,pipeline_state,COALESCE(latest_job_id,''),COALESCE(external_task_id,''),generation,COALESCE(safe_error,''),warnings FROM graph_sync_states WHERE pipeline_state IN ('graph_queued','graph_building') ORDER BY updated_at,revision_id LIMIT ?`, limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT revision_id,pipeline_state,COALESCE(latest_job_id,''),COALESCE(external_task_id,''),COALESCE(provider_request_id,''),COALESCE(provider_task_id,''),generation,COALESCE(safe_error,''),warnings FROM graph_sync_states WHERE pipeline_state IN ('graph_queued','graph_building') ORDER BY updated_at,revision_id LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (s *Store) ListRecoverableGraphSyncStates(ctx context.Context, limit int) (
 	for rows.Next() {
 		var state graphsync.SyncState
 		var warnings string
-		if err = rows.Scan(&state.RevisionID, &state.Pipeline, &state.LatestJobID, &state.ExternalTaskID, &state.Generation, &state.SafeError, &warnings); err != nil {
+		if err = rows.Scan(&state.RevisionID, &state.Pipeline, &state.LatestJobID, &state.ExternalTaskID, &state.ProviderRequestID, &state.ProviderTaskID, &state.Generation, &state.SafeError, &warnings); err != nil {
 			return nil, err
 		}
 		if json.Unmarshal([]byte(warnings), &state.Warnings) != nil || !state.Valid() {

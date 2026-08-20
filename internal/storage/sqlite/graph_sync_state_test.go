@@ -23,6 +23,7 @@ func TestGraphSyncStateUsesGenerationCAS(t *testing.T) {
 	}
 	next := loaded
 	next.Pipeline, next.Generation, next.Warnings = graphsync.StateBuilding, 1, []string{"VECTOR_DEGRADED"}
+	next.ProviderRequestID, next.ProviderTaskID = "request-1", "task-1"
 	updated, swapped, err := store.CompareAndSwapGraphSyncState(context.Background(), loaded, next)
 	if err != nil || !swapped || updated.Generation != 1 {
 		t.Fatalf("%#v %v %v", updated, swapped, err)
@@ -36,7 +37,7 @@ func TestGraphSyncStateUsesGenerationCAS(t *testing.T) {
 		t.Fatal("illegal pipeline jump accepted")
 	}
 	loaded, found, err = store.GetGraphSyncState(context.Background(), revision.ID)
-	if err != nil || !found || len(loaded.Warnings) != 1 || loaded.Warnings[0] != "VECTOR_DEGRADED" {
+	if err != nil || !found || len(loaded.Warnings) != 1 || loaded.Warnings[0] != "VECTOR_DEGRADED" || loaded.ProviderRequestID != "request-1" || loaded.ProviderTaskID != "task-1" {
 		t.Fatalf("%#v %v", loaded, err)
 	}
 }
@@ -74,14 +75,14 @@ func TestListRecoverableGraphSyncStatesFiltersTerminalStates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = store.CreateGraphSyncState(context.Background(), graphsync.SyncState{RevisionID: string(queuedRevision.ID), Pipeline: graphsync.StateQueued, Warnings: []string{}}); err != nil {
+	if err = store.CreateGraphSyncState(context.Background(), graphsync.SyncState{RevisionID: string(queuedRevision.ID), Pipeline: graphsync.StateQueued, ProviderRequestID: "request-queued", ProviderTaskID: "task-queued", Warnings: []string{}}); err != nil {
 		t.Fatal(err)
 	}
 	if err = store.CreateGraphSyncState(context.Background(), graphsync.SyncState{RevisionID: string(readyRevision.ID), Pipeline: graphsync.StateReady, Warnings: []string{}}); err != nil {
 		t.Fatal(err)
 	}
 	states, err := store.ListRecoverableGraphSyncStates(context.Background(), 10)
-	if err != nil || len(states) != 1 || states[0].RevisionID != string(queuedRevision.ID) {
+	if err != nil || len(states) != 1 || states[0].RevisionID != string(queuedRevision.ID) || states[0].ProviderRequestID != "request-queued" || states[0].ProviderTaskID != "task-queued" {
 		t.Fatalf("%#v %v", states, err)
 	}
 }
