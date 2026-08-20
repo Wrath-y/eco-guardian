@@ -119,6 +119,13 @@ func (s *Store) RunValidation(ctx context.Context, kind validation.SourceKind, r
 	}
 	return ValidationReport{Run: run, Issues: validation.SortIssues(issues)}, nil
 }
+
+// RunFullValidation is the narrow Graph orchestration adapter over the
+// existing revision-scoped #6 validation runner.
+func (s *Store) RunFullValidation(ctx context.Context, revisionID domain.ID) error {
+	_, err := s.RunValidation(ctx, validation.SourceRevision, revisionID, validation.ScopeFull)
+	return err
+}
 func toPointer(path string) string {
 	if path == "" {
 		return "/"
