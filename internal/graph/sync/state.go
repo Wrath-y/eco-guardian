@@ -1,6 +1,15 @@
 package sync
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
+
+const (
+	maxSafeDiagnosticLength = 1024
+	maxProviderIdentitySize = 256
+	maxWarningLength        = 256
+)
 
 type PipelineState string
 
@@ -54,13 +63,21 @@ type SyncState struct {
 }
 
 func (s SyncState) Valid() bool {
-	if s.RevisionID == "" || !s.Pipeline.Valid() || s.Generation < 0 || len(s.SafeError) > 1024 || len(s.Warnings) > 32 {
+	if s.RevisionID == "" || !s.Pipeline.Valid() || s.Generation < 0 || !safeDiagnostic(s.SafeError) || !safeProviderIdentity(s.ExternalTaskID) || !safeProviderIdentity(s.ProviderRequestID) || !safeProviderIdentity(s.ProviderTaskID) || len(s.Warnings) > 32 {
 		return false
 	}
 	for _, warning := range s.Warnings {
-		if strings.TrimSpace(warning) == "" || len(warning) > 256 {
+		if !utf8.ValidString(warning) || strings.TrimSpace(warning) == "" || len(warning) > maxWarningLength {
 			return false
 		}
 	}
 	return true
+}
+
+func safeDiagnostic(value string) bool {
+	return utf8.ValidString(value) && len(value) <= maxSafeDiagnosticLength
+}
+
+func safeProviderIdentity(value string) bool {
+	return value == "" || (utf8.ValidString(value) && value == strings.TrimSpace(value) && len(value) <= maxProviderIdentitySize)
 }
