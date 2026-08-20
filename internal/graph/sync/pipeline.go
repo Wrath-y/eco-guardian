@@ -2,7 +2,9 @@ package sync
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 
 	"github.com/zouyi/eco-guardian/internal/domain"
 	"github.com/zouyi/eco-guardian/internal/validation"
@@ -11,13 +13,14 @@ import (
 var ErrPipelineInvalid = errors.New("graph validation pipeline request is invalid")
 
 type ValidationPipelineRequest struct {
+	ProjectID  domain.ID
 	RevisionID domain.ID
 	ConfigHash string
 	Versions   validation.VersionManifest
 }
 
 func (r ValidationPipelineRequest) Valid() bool {
-	return r.RevisionID.Valid() && validHash(r.ConfigHash) && r.Versions.Valid()
+	return r.ProjectID.Valid() && r.RevisionID.Valid() && validHash(r.ConfigHash) && r.Versions.Valid()
 }
 
 type SyncStateStore interface {
@@ -36,6 +39,7 @@ type ValidationPipeline struct {
 	States     SyncStateStore
 	Validation FullValidationGate
 	Runner     FullValidationRunner
+	Jobs       JobAdmission
 }
 
 func (p ValidationPipeline) Start(ctx context.Context, request ValidationPipelineRequest) (SyncState, error) {
@@ -65,7 +69,7 @@ func (p ValidationPipeline) Start(ctx context.Context, request ValidationPipelin
 	}
 	result, checkErr := p.Validation.Check(ctx, request.RevisionID, request.ConfigHash, request.Versions)
 	if checkErr == nil && result == validation.GatePass {
-		return p.finish(ctx, state, StateQueued, "")
+		return p.queue(ctx, state, request)
 	}
 	if checkErr == nil && result == validation.GateRequiresValidation {
 		checkErr = p.Runner.RunFullValidation(ctx, request.RevisionID)
@@ -76,7 +80,30 @@ func (p ValidationPipeline) Start(ctx context.Context, request ValidationPipelin
 	if checkErr != nil || result != validation.GatePass {
 		return p.finish(ctx, state, StateBlockedValidation, "VALIDATION_NOT_PASSED")
 	}
-	return p.finish(ctx, state, StateQueued, "")
+	return p.queue(ctx, state, request)
+}
+
+func (p ValidationPipeline) queue(ctx context.Context, state SyncState, request ValidationPipelineRequest) (SyncState, error) {
+	if p.Jobs == nil {
+		return p.finish(ctx, state, StateQueued, "")
+	}
+	job, _, err := p.Jobs.CreateOrGetGraphJob(ctx, AutomaticGraphJobRequest(request.ProjectID, request.RevisionID, request.ConfigHash))
+	if err != nil {
+		return SyncState{}, err
+	}
+	next := state
+	next.Pipeline, next.Generation, next.LatestJobID = StateQueued, state.Generation+1, string(job.ID)
+	updated, swapped, err := p.States.CompareAndSwapGraphSyncState(ctx, state, next)
+	if err != nil || !swapped {
+		return SyncState{}, err
+	}
+	return updated, nil
+}
+
+func AutomaticGraphJobRequest(projectID, revisionID domain.ID, inputHash string) GraphJobRequest {
+	key := fmt.Sprintf("graph:auto:%s:sync:%s", revisionID, inputHash)
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|sync|%s|automatic", projectID, revisionID, inputHash)))
+	return GraphJobRequest{ProjectID: projectID, RevisionID: revisionID, InputHash: inputHash, IdempotencyKey: key, RequestHash: fmt.Sprintf("%x", digest)}
 }
 
 func (p ValidationPipeline) finish(ctx context.Context, state SyncState, pipeline PipelineState, safeError string) (SyncState, error) {

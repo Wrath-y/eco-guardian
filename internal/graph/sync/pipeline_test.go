@@ -32,8 +32,19 @@ type fullRunnerFake struct{ calls int }
 
 func (f *fullRunnerFake) RunFullValidation(context.Context, domain.ID) error { f.calls++; return nil }
 
+type pipelineJobsFake struct {
+	calls int
+	job   GraphJob
+}
+
+func (f *pipelineJobsFake) CreateOrGetGraphJob(context.Context, GraphJobRequest) (GraphJob, bool, error) {
+	f.calls++
+	return f.job, false, nil
+}
+
 func TestValidationPipelineRequiresExactPassBeforeQueueing(t *testing.T) {
 	id, _ := domain.NewID()
+	jobID, _ := domain.NewID()
 	versions := validation.VersionManifest{Schema: "s", DSL: "d", Registry: "r", NumericPolicy: "n"}
 	for _, test := range []struct {
 		name    string
@@ -48,11 +59,16 @@ func TestValidationPipelineRequiresExactPassBeforeQueueing(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			states, runner := &pipelineStateFake{}, &fullRunnerFake{}
+			jobs := &pipelineJobsFake{job: GraphJob{ID: jobID, ProjectID: id, RevisionID: id, InputHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", IdempotencyKey: "automatic", RequestHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Status: JobQueued}}
 			gate := &pipelineGateFake{results: []validation.GateResult{test.initial, test.final}}
-			pipeline := ValidationPipeline{States: states, Validation: gate, Runner: runner}
-			got, err := pipeline.Start(context.Background(), ValidationPipelineRequest{RevisionID: id, ConfigHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Versions: versions})
-			if err != nil || got.Pipeline != test.want || runner.calls != test.calls {
-				t.Fatalf("state=%#v calls=%d err=%v", got, runner.calls, err)
+			pipeline := ValidationPipeline{States: states, Validation: gate, Runner: runner, Jobs: jobs}
+			got, err := pipeline.Start(context.Background(), ValidationPipelineRequest{ProjectID: id, RevisionID: id, ConfigHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Versions: versions})
+			wantJobs := 0
+			if test.want == StateQueued {
+				wantJobs = 1
+			}
+			if err != nil || got.Pipeline != test.want || runner.calls != test.calls || jobs.calls != wantJobs {
+				t.Fatalf("state=%#v runner=%d jobs=%d err=%v", got, runner.calls, jobs.calls, err)
 			}
 			if got.Pipeline == StateBlockedValidation && got.SafeError != "VALIDATION_NOT_PASSED" {
 				t.Fatalf("state=%#v", got)

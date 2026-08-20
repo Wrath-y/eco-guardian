@@ -84,8 +84,11 @@ func TestGraphContributorStartsPostRevisionValidationPipeline(t *testing.T) {
 		t.Fatal(err)
 	}
 	state, found, err := opened.GetGraphSyncState(context.Background(), revision.ID)
-	if err != nil || !found || state.Pipeline != graphsync.StateQueued {
+	if err != nil || !found || state.Pipeline != graphsync.StateQueued || state.LatestJobID == "" {
 		t.Fatalf("state=%#v found=%v err=%v", state, found, err)
+	}
+	if job, err := opened.GetGraphJob(context.Background(), domain.ID(state.LatestJobID)); err != nil || job.RevisionID != revision.ID {
+		t.Fatalf("job=%#v err=%v", job, err)
 	}
 }
 
