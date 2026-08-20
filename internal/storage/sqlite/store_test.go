@@ -327,7 +327,7 @@ func TestMigrationStepsRollbackAndReplayWithoutDuplicates(t *testing.T) {
 		t.Fatal(err)
 	}
 	var count int
-	if err = db.QueryRow(`SELECT count(*) FROM schema_migration_steps`).Scan(&count); err != nil || count != 4 {
+	if err = db.QueryRow(`SELECT count(*) FROM schema_migration_steps`).Scan(&count); err != nil || count != 5 {
 		t.Fatalf("migration steps=%d err=%v", count, err)
 	}
 }
