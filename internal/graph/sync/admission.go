@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/zouyi/eco-guardian/internal/domain"
 	"github.com/zouyi/eco-guardian/internal/validation"
@@ -30,13 +31,28 @@ type GraphJob struct {
 	ID                    domain.ID
 	ProjectID, RevisionID domain.ID
 	InputHash             string
+	IdempotencyKey        string
+	RequestHash           string
+	Status                JobStatus
+	Result                *GraphJobResult
 }
 
 func (r GraphJobRequest) Valid() bool {
-	return r.ProjectID.Valid() && r.RevisionID.Valid() && len(r.InputHash) == 64 && r.IdempotencyKey != "" && len(r.RequestHash) == 64
+	return r.ProjectID.Valid() && r.RevisionID.Valid() && validHash(r.InputHash) && validIdempotencyKey(r.IdempotencyKey) && validHash(r.RequestHash)
 }
 func (j GraphJob) Valid() bool {
-	return j.ID.Valid() && j.ProjectID.Valid() && j.RevisionID.Valid() && len(j.InputHash) == 64
+	return j.ID.Valid() && j.ProjectID.Valid() && j.RevisionID.Valid() && validHash(j.InputHash) && validIdempotencyKey(j.IdempotencyKey) && validHash(j.RequestHash) && j.Status.Valid() && (j.Result == nil || j.Result.Valid()) && (j.Status != JobSucceeded || j.Result != nil)
+}
+
+func validHash(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	return strings.Trim(value, "0123456789abcdef") == ""
+}
+
+func validIdempotencyKey(key string) bool {
+	return key != "" && key == strings.TrimSpace(key) && len(key) <= 256
 }
 
 type AdmissionService struct {
