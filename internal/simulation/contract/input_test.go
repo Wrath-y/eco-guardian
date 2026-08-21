@@ -19,6 +19,20 @@ func TestNormalizeInputExpandsDefaultsAndOrdersMetrics(t *testing.T) {
 	}
 }
 
+func TestNormalizeInputOnlyAllowsTighterBudgets(t *testing.T) {
+	template := scenario.BuiltinTemplates()[0]
+	revision := Revision{ID: "revision", ProjectID: "project", ConfigHash: "config", ManifestHash: "manifest"}
+	events, runtime := 10, 100
+	input, err := NormalizeInput(InputRequest{Revision: revision, Scene: template, Budget: &BudgetOverride{MaxEvents: &events, MaxRuntimeMS: &runtime}, Metrics: []MetricIdentity{{ID: "metric-dps", Version: "v1"}}})
+	if err != nil || input.Budgets.MaxEvents != events || input.Budgets.MaxRuntimeMS != runtime || input.Budgets.MaxSteps != template.Definition.Budgets.MaxSteps {
+		t.Fatalf("input=%#v err=%v", input, err)
+	}
+	over := template.Definition.Budgets.MaxEvents + 1
+	if _, err = NormalizeInput(InputRequest{Revision: revision, Scene: template, Budget: &BudgetOverride{MaxEvents: &over}, Metrics: []MetricIdentity{{ID: "metric-dps", Version: "v1"}}}); !errors.Is(err, ErrInputInvalid) {
+		t.Fatalf("expected budget rejection, got %v", err)
+	}
+}
+
 func TestNormalizeInputRejectsNoncanonicalSceneAndBudgetViolations(t *testing.T) {
 	template := scenario.BuiltinTemplates()[0]
 	revision := Revision{ID: "revision", ProjectID: "project", ConfigHash: "config", ManifestHash: "manifest"}

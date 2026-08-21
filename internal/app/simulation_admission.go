@@ -26,6 +26,7 @@ type SimulationAdmission struct {
 	SampleCount    int
 	Seed           *uint64
 	Parameters     []scenario.ParameterOverlay
+	Budget         *contract.BudgetOverride
 	IdempotencyKey string
 }
 
@@ -68,7 +69,7 @@ func (s SimulationAdmissionApplication) AdmitSimulation(ctx context.Context, req
 			return SimulationAdmissionResult{}, err
 		}
 	}
-	input, err := contract.NormalizeInput(contract.InputRequest{Revision: revision, Scene: template, SampleCount: request.SampleCount, Seed: request.Seed, Metrics: request.Metrics})
+	input, err := contract.NormalizeInput(contract.InputRequest{Revision: revision, Scene: template, SampleCount: request.SampleCount, Seed: request.Seed, Budget: request.Budget, Metrics: request.Metrics})
 	if err != nil {
 		return SimulationAdmissionResult{}, err
 	}

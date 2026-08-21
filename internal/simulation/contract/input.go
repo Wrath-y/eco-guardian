@@ -29,7 +29,16 @@ type InputRequest struct {
 	Scene       scenario.Template
 	SampleCount int
 	Seed        *uint64
+	Budget      *BudgetOverride
 	Metrics     []MetricIdentity
+}
+
+// BudgetOverride can only tighten the versioned scenario limits. Nil leaves
+// the captured scene budget intact; zero is never a sentinel value.
+type BudgetOverride struct {
+	MaxEvents    *int
+	MaxSteps     *int
+	MaxRuntimeMS *int
 }
 
 // SimulationInputV1 contains only immutable, fully expanded semantic facts.
@@ -84,7 +93,31 @@ func NormalizeInput(request InputRequest) (SimulationInputV1, error) {
 	if err != nil {
 		return SimulationInputV1{}, err
 	}
-	return SimulationInputV1{SchemaVersion: SimulationInputSchemaV1, ProjectID: request.Revision.ProjectID, RevisionID: request.Revision.ID, ConfigHash: request.Revision.ConfigHash, ManifestHash: request.Revision.ManifestHash, SceneID: definition.ID, SceneVersion: definition.Version, SceneBodyHash: request.Scene.BodyHash, Participants: append([]scenario.Participant(nil), definition.Participants...), Actions: append([]scenario.Action(nil), definition.Actions...), DurationMS: definition.DurationMS, Budgets: definition.Budgets, SampleCount: sampleCount, Seed: seed, Metrics: metrics}, nil
+	budgets, err := normalizeBudgets(definition.Budgets, request.Budget)
+	if err != nil {
+		return SimulationInputV1{}, err
+	}
+	return SimulationInputV1{SchemaVersion: SimulationInputSchemaV1, ProjectID: request.Revision.ProjectID, RevisionID: request.Revision.ID, ConfigHash: request.Revision.ConfigHash, ManifestHash: request.Revision.ManifestHash, SceneID: definition.ID, SceneVersion: definition.Version, SceneBodyHash: request.Scene.BodyHash, Participants: append([]scenario.Participant(nil), definition.Participants...), Actions: append([]scenario.Action(nil), definition.Actions...), DurationMS: definition.DurationMS, Budgets: budgets, SampleCount: sampleCount, Seed: seed, Metrics: metrics}, nil
+}
+
+func normalizeBudgets(base scenario.Budgets, override *BudgetOverride) (scenario.Budgets, error) {
+	if override == nil {
+		return base, nil
+	}
+	result := base
+	for _, value := range []struct {
+		value *int
+		limit *int
+	}{{override.MaxEvents, &result.MaxEvents}, {override.MaxSteps, &result.MaxSteps}, {override.MaxRuntimeMS, &result.MaxRuntimeMS}} {
+		if value.value == nil {
+			continue
+		}
+		if *value.value < 1 || *value.value > *value.limit {
+			return scenario.Budgets{}, fmt.Errorf("%w: budget", ErrInputInvalid)
+		}
+		*value.limit = *value.value
+	}
+	return result, nil
 }
 
 func normalizeMetrics(metrics []MetricIdentity) ([]MetricIdentity, error) {

@@ -77,10 +77,14 @@ func (h *SimulationAdmissionHandler) create(c *gin.Context) {
 		SampleCount  int                        `json:"sample_count"`
 		Seed         *uint64                    `json:"seed"`
 		Parameters   map[string]json.RawMessage `json:"parameters"`
-		Budget       map[string]any             `json:"budget"`
-		VerifyRunID  domain.ID                  `json:"verify_run_id"`
+		Budget       *struct {
+			MaxEvents    *int `json:"max_events"`
+			MaxSteps     *int `json:"max_steps"`
+			MaxRuntimeMS *int `json:"max_runtime_ms"`
+		} `json:"budget"`
+		VerifyRunID domain.ID `json:"verify_run_id"`
 	}
-	if err := c.ShouldBindJSON(&request); err != nil || len(request.Budget) != 0 || request.VerifyRunID != "" {
+	if err := c.ShouldBindJSON(&request); err != nil || request.VerifyRunID != "" {
 		problem(c, http.StatusBadRequest, "SIMULATION_INPUT_INVALID", "Simulation request is invalid")
 		return
 	}
@@ -102,7 +106,11 @@ func (h *SimulationAdmissionHandler) create(c *gin.Context) {
 	for _, path := range paths {
 		parameters = append(parameters, scenario.ParameterOverlay{Path: path, Value: append(json.RawMessage(nil), request.Parameters[path]...)})
 	}
-	result, err := h.service().AdmitSimulation(c.Request.Context(), app.SimulationAdmission{ProjectID: projectID, RevisionID: request.Source.RevisionID, ReleaseID: request.Source.ReleaseID, SceneID: request.SceneID, SceneVersion: request.SceneVersion, Metrics: request.Metrics, SampleCount: request.SampleCount, Seed: request.Seed, Parameters: parameters, IdempotencyKey: key})
+	var budget *contract.BudgetOverride
+	if request.Budget != nil {
+		budget = &contract.BudgetOverride{MaxEvents: request.Budget.MaxEvents, MaxSteps: request.Budget.MaxSteps, MaxRuntimeMS: request.Budget.MaxRuntimeMS}
+	}
+	result, err := h.service().AdmitSimulation(c.Request.Context(), app.SimulationAdmission{ProjectID: projectID, RevisionID: request.Source.RevisionID, ReleaseID: request.Source.ReleaseID, SceneID: request.SceneID, SceneVersion: request.SceneVersion, Metrics: request.Metrics, SampleCount: request.SampleCount, Seed: request.Seed, Parameters: parameters, Budget: budget, IdempotencyKey: key})
 	if err != nil {
 		writeSimulationAdmissionError(c, err)
 		return
