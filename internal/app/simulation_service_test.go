@@ -43,8 +43,9 @@ func TestSimulationApplicationPersistsCapturedInputWithJob(t *testing.T) {
 		t.Fatal(err)
 	}
 	jobs, materializations := &simulationJobsFake{}, &simulationMaterializationsFake{}
-	job, replay, err := (SimulationApplication{Jobs: jobs, Materializations: materializations}).SubmitSimulation(context.Background(), SimulationSubmission{Input: input, ScenarioDefinitionID: sceneID, FingerprintHash: strings.Repeat("c", 64), IdempotencyKey: "simulation"})
-	if err != nil || replay || materializations.value.JobID != job.ID || materializations.value.InputHash != job.InputHash {
+	verifyRunID := mustSimulationID()
+	job, replay, err := (SimulationApplication{Jobs: jobs, Materializations: materializations}).SubmitSimulation(context.Background(), SimulationSubmission{Input: input, ScenarioDefinitionID: sceneID, VerifyRunID: verifyRunID, FingerprintHash: strings.Repeat("c", 64), IdempotencyKey: "simulation"})
+	if err != nil || replay || materializations.value.JobID != job.ID || materializations.value.InputHash != job.InputHash || materializations.value.VerifySourceRunID != verifyRunID {
 		t.Fatalf("job=%#v materialization=%#v err=%v", job, materializations.value, err)
 	}
 }
