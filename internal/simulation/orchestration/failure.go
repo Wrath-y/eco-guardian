@@ -1,10 +1,13 @@
 package orchestration
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/zouyi/eco-guardian/internal/domain"
+	sharedjob "github.com/zouyi/eco-guardian/internal/job"
 	"github.com/zouyi/eco-guardian/internal/simulation/contract"
 	"github.com/zouyi/eco-guardian/internal/simulation/engine"
 )
@@ -15,6 +18,13 @@ const (
 )
 
 var ErrExecutionFailure = errors.New("simulation execution failed")
+
+// FailureStore commits a terminal failure together with its durable Job event.
+// Keeping this as one narrow port prevents orchestration from depending on
+// SQLite while prohibiting split terminal writes.
+type FailureStore interface {
+	FailSimulationJob(context.Context, domain.ID, int64, string, string) (sharedjob.Record, bool, error)
+}
 
 // ExecutionFailure is a transport-neutral diagnostic. It is intentionally
 // excluded from immutable result hashes because terminal failures never seal.
@@ -54,4 +64,15 @@ func RuntimeDeadlineCheck(clock contract.Clock, startedAt time.Time, maxRuntimeM
 		}
 		return nil
 	}, nil
+}
+
+func PersistExecutionFailure(ctx context.Context, store FailureStore, jobID domain.ID, generation int64, failure error) (sharedjob.Record, bool, error) {
+	if store == nil || !jobID.Valid() || generation < 0 {
+		return sharedjob.Record{}, false, ErrSimulationJobInvalid
+	}
+	var diagnostic ExecutionFailure
+	if !errors.As(failure, &diagnostic) || (diagnostic.Code != FailureBudgetExceeded && diagnostic.Code != FailureTimeout) || diagnostic.Detail == "" {
+		return sharedjob.Record{}, false, ErrSimulationJobInvalid
+	}
+	return store.FailSimulationJob(ctx, jobID, generation, diagnostic.Code, diagnostic.Detail)
 }

@@ -9,11 +9,13 @@ import (
 	"time"
 
 	"github.com/zouyi/eco-guardian/internal/domain"
+	sharedjob "github.com/zouyi/eco-guardian/internal/job"
 )
 
 var (
 	ErrSimulationRunInvalid = errors.New("simulation run is invalid")
 	ErrSimulationSeal       = errors.New("simulation run cannot be sealed")
+	ErrSimulationFailure    = errors.New("simulation job cannot be failed")
 )
 
 type SimulationRun struct {
@@ -21,6 +23,57 @@ type SimulationRun struct {
 	InputHash, FingerprintHash, ResultHash, CanonicalResult string
 	CreatedAt                                               time.Time
 }
+
+// FailSimulationJob atomically persists the terminal Job failure and its
+// diagnostic event. It never writes a run, metric, or checkpoint fact.
+func (s *Store) FailSimulationJob(ctx context.Context, jobID domain.ID, cancelGeneration int64, code, detail string) (sharedjob.Record, bool, error) {
+	if !jobID.Valid() || cancelGeneration < 0 || (code != "BUDGET_EXCEEDED" && code != "TIMEOUT") || detail == "" || len(code)+len(detail)+2 > 1024 {
+		return sharedjob.Record{}, false, ErrSimulationFailure
+	}
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return sharedjob.Record{}, false, err
+	}
+	defer tx.Rollback()
+	record, err := scanSharedJob(tx.QueryRowContext(ctx, sharedJobSelect+` WHERE id=? AND project_uuid=?`, jobID, s.projectID))
+	if err != nil || record.Kind != "simulation" || record.CancelGeneration != cancelGeneration || record.CancelGeneration != 0 {
+		return sharedjob.Record{}, false, ErrSimulationFailure
+	}
+	if record.Status == sharedjob.Failed {
+		var stored sql.NullString
+		if err = tx.QueryRowContext(ctx, `SELECT error FROM job_events WHERE job_id=? ORDER BY event_ordinal DESC LIMIT 1`, jobID).Scan(&stored); err != nil || !stored.Valid || stored.String != code+": "+detail {
+			return sharedjob.Record{}, false, ErrSimulationFailure
+		}
+		return record, true, tx.Commit()
+	}
+	if record.Status.Terminal() || (record.Status != sharedjob.Queued && record.Status != sharedjob.Running && record.Status != sharedjob.Interrupted) {
+		return sharedjob.Record{}, false, ErrSimulationFailure
+	}
+	now := s.now().UTC()
+	write, err := tx.ExecContext(ctx, `UPDATE jobs SET status='failed',updated_at=? WHERE id=? AND project_uuid=? AND kind='simulation' AND status=? AND cancel_generation=0`, now.Format(time.RFC3339Nano), jobID, s.projectID, record.Status)
+	if err != nil {
+		return sharedjob.Record{}, false, err
+	}
+	if changed, _ := write.RowsAffected(); changed != 1 {
+		return sharedjob.Record{}, false, ErrSimulationFailure
+	}
+	var lastOrdinal int64
+	var progress int
+	if err = tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(event_ordinal),0),COALESCE(MAX(progress),0) FROM job_events WHERE job_id=?`, jobID).Scan(&lastOrdinal, &progress); err != nil {
+		return sharedjob.Record{}, false, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO job_events(job_id,event_ordinal,phase,progress,error,created_at) VALUES(?,?,?,?,?,?)`, jobID, lastOrdinal+1, "FAILED", progress, code+": "+detail, now.Format(time.RFC3339Nano)); err != nil {
+		return sharedjob.Record{}, false, err
+	}
+	if err = tx.Commit(); err != nil {
+		return sharedjob.Record{}, false, err
+	}
+	updated, err := s.GetJob(ctx, jobID)
+	return updated, false, err
+}
+
 type SimulationMetricResult struct{ MetricID, MetricVersion, Status, CanonicalResult string }
 type SimulationVerification struct {
 	ID, SourceRunID, ReproductionRunID                                           domain.ID

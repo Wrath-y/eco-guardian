@@ -1,10 +1,13 @@
 package orchestration
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
 
+	"github.com/zouyi/eco-guardian/internal/domain"
+	sharedjob "github.com/zouyi/eco-guardian/internal/job"
 	"github.com/zouyi/eco-guardian/internal/simulation/engine"
 )
 
@@ -31,5 +34,30 @@ func TestExecutionFailureMapsBudgetsAndInjectedRuntimeDeadline(t *testing.T) {
 	failure = check()
 	if !errors.As(failure, &diagnostic) || diagnostic.Code != FailureTimeout {
 		t.Fatalf("failure=%v", failure)
+	}
+}
+
+type failureStoreFake struct {
+	record sharedjob.Record
+	code   string
+	detail string
+}
+
+func (store *failureStoreFake) FailSimulationJob(_ context.Context, _ domain.ID, _ int64, code, detail string) (sharedjob.Record, bool, error) {
+	store.code, store.detail = code, detail
+	return store.record, false, nil
+}
+
+func TestPersistExecutionFailureUsesOnlyStableDiagnostics(t *testing.T) {
+	id, err := domain.NewID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &failureStoreFake{}
+	if _, _, err = PersistExecutionFailure(context.Background(), store, id, 0, ExecutionFailure{Code: FailureTimeout, Detail: "runtime deadline exceeded"}); err != nil || store.code != FailureTimeout {
+		t.Fatalf("code=%q detail=%q err=%v", store.code, store.detail, err)
+	}
+	if _, _, err = PersistExecutionFailure(context.Background(), store, id, 0, errors.New("unclassified")); !errors.Is(err, ErrSimulationJobInvalid) {
+		t.Fatalf("expected invalid failure rejection, got %v", err)
 	}
 }

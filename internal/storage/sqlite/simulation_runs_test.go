@@ -107,3 +107,35 @@ func TestSimulationSealIsAtomicAndRejectsNewCancellationGeneration(t *testing.T)
 		t.Fatalf("canceled run visible err=%v", err)
 	}
 }
+
+func TestSimulationFailureAtomicallyRetainsDiagnosticWithoutRun(t *testing.T) {
+	store := newStore(t)
+	_, revision, err := store.Create(context.Background(), "tag", tagDraft("simulationfailure"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, _, err := store.CreateOrGet(context.Background(), sharedjob.Request{ProjectID: store.ProjectID(), Kind: "simulation", RevisionID: revision.ID, InputHash: strings.Repeat("a", 64), IdempotencyKey: "simulation-failure", RequestHash: strings.Repeat("b", 64)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, changed, err := store.Transition(context.Background(), job.ID, sharedjob.Queued, sharedjob.Running, nil, 0); err != nil || !changed {
+		t.Fatalf("start changed=%v err=%v", changed, err)
+	}
+	failed, replay, err := store.FailSimulationJob(context.Background(), job.ID, 0, "BUDGET_EXCEEDED", "event budget exceeded")
+	if err != nil || replay || failed.Status != sharedjob.Failed {
+		t.Fatalf("failed=%#v replay=%v err=%v", failed, replay, err)
+	}
+	events, err := store.ListEvents(context.Background(), job.ID, 0)
+	if err != nil || len(events) != 1 || events[0].Phase != "FAILED" || events[0].SafeError != "BUDGET_EXCEEDED: event budget exceeded" {
+		t.Fatalf("events=%#v err=%v", events, err)
+	}
+	if _, replay, err = store.FailSimulationJob(context.Background(), job.ID, 0, "BUDGET_EXCEEDED", "event budget exceeded"); err != nil || !replay {
+		t.Fatalf("replay=%v err=%v", replay, err)
+	}
+	if _, _, err = store.FailSimulationJob(context.Background(), job.ID, 0, "TIMEOUT", "runtime deadline exceeded"); !errors.Is(err, ErrSimulationFailure) {
+		t.Fatalf("expected mismatched failure rejection, got %v", err)
+	}
+	if _, _, err = store.GetSimulationRun(context.Background(), job.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("failure created visible run err=%v", err)
+	}
+}
