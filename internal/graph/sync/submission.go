@@ -24,11 +24,16 @@ type SubmissionRequest struct {
 	Namespace, Version string
 	Snapshot           PutSnapshotRequest
 	RequestID          string
+	Resubmission       bool
 }
 
 func (s SubmissionService) Submit(ctx context.Context, request SubmissionRequest) (SyncState, bool, error) {
 	if s.States == nil || s.Provider == nil || !request.JobID.Valid() || !request.RevisionID.Valid() || strings.TrimSpace(request.Namespace) == "" || strings.TrimSpace(request.Version) == "" || strings.TrimSpace(request.RequestID) == "" || request.Snapshot.SchemaVersion != SnapshotSchemaVersion || !validHash(request.Snapshot.ContentHash) {
 		return SyncState{}, false, ErrSubmissionInvalid
+	}
+	acceptedProgress := 60
+	if request.Resubmission {
+		acceptedProgress = 80
 	}
 	state, found, err := s.States.GetGraphSyncState(ctx, request.RevisionID)
 	if err != nil || !found || state.Pipeline != StateBuilding || state.LatestJobID != string(request.JobID) {
@@ -38,12 +43,16 @@ func (s SubmissionService) Submit(ctx context.Context, request SubmissionRequest
 		if state.ProviderTaskID == "" || state.ExternalTaskID == "" || state.ProviderRequestID != request.RequestID {
 			return SyncState{}, false, ErrSubmissionInvalid
 		}
-		if _, _, err = s.Worker.Checkpoint(ctx, request.JobID, PhaseTaskAccepted, 60, "", "", nil); err != nil {
+		if _, _, err = s.Worker.Checkpoint(ctx, request.JobID, PhaseTaskAccepted, acceptedProgress, "", "", nil); err != nil {
 			return SyncState{}, false, err
 		}
 		return state, true, nil
 	}
-	if _, _, err = s.Worker.Checkpoint(ctx, request.JobID, PhaseSubmitting, 50, "", "", nil); err != nil {
+	submittingProgress := 50
+	if request.Resubmission {
+		submittingProgress = 75
+	}
+	if _, _, err = s.Worker.Checkpoint(ctx, request.JobID, PhaseSubmitting, submittingProgress, "", "", nil); err != nil {
 		return SyncState{}, false, err
 	}
 	snapshot, err := s.Provider.PutSnapshot(ctx, request.Namespace, request.Version, request.Snapshot, request.RequestID)
@@ -60,7 +69,7 @@ func (s SubmissionService) Submit(ctx context.Context, request SubmissionRequest
 	if err != nil || !swapped {
 		return SyncState{}, false, err
 	}
-	if _, _, err = s.Worker.Checkpoint(ctx, request.JobID, PhaseTaskAccepted, 60, "", "", nil); err != nil {
+	if _, _, err = s.Worker.Checkpoint(ctx, request.JobID, PhaseTaskAccepted, acceptedProgress, "", "", nil); err != nil {
 		return SyncState{}, false, err
 	}
 	return updated, false, nil

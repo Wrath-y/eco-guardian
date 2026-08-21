@@ -9,6 +9,8 @@ type submissionProviderFake struct {
 	calls, taskCalls, inspectCalls int
 	snapshot                       Snapshot
 	task                           Task
+	inspectErr                     error
+	taskErr                        error
 }
 
 func (f *submissionProviderFake) Health(context.Context, string) (Health, error) {
@@ -16,7 +18,7 @@ func (f *submissionProviderFake) Health(context.Context, string) (Health, error)
 }
 func (f *submissionProviderFake) InspectSnapshot(context.Context, string, string, string) (Snapshot, error) {
 	f.inspectCalls++
-	return f.snapshot, nil
+	return f.snapshot, f.inspectErr
 }
 func (f *submissionProviderFake) PutSnapshot(_ context.Context, namespace, version string, request PutSnapshotRequest, _ string) (Snapshot, error) {
 	f.calls++
@@ -24,7 +26,7 @@ func (f *submissionProviderFake) PutSnapshot(_ context.Context, namespace, versi
 }
 func (f *submissionProviderFake) GetTask(context.Context, string, string) (Task, error) {
 	f.taskCalls++
-	return f.task, nil
+	return f.task, f.taskErr
 }
 func (f *submissionProviderFake) ActivateSnapshot(context.Context, string, string, string) (Activation, error) {
 	return Activation{}, nil

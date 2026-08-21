@@ -27,6 +27,12 @@ func (p WorkerPhase) CanAdvanceTo(next WorkerPhase) bool {
 	if p == next {
 		return true
 	}
+	// A provider may have forgotten an accepted Task while also having no
+	// target Snapshot. The only safe recovery is a replay of the same
+	// content-addressed PUT, which deliberately returns to SUBMITTING.
+	if p == PhasePolling && next == PhaseSubmitting {
+		return true
+	}
 	order := []WorkerPhase{PhaseQueued, PhaseValidationConfirmed, PhaseProjected, PhaseProviderCompatible, PhaseSubmitting, PhaseTaskAccepted, PhasePolling, PhaseVerifying, PhaseReady, PhaseImpactHandoffRecorded}
 	for i, current := range order {
 		if p == current {
