@@ -974,14 +974,37 @@ export interface components {
             /** Format: uri-reference */
             location: string;
         };
+        SimulationMetricResult: {
+            id: string;
+            version: string;
+            /** @enum {string} */
+            status: "available" | "unavailable";
+            canonical_result: string;
+        };
+        SimulationVerificationRef: {
+            id: components["schemas"]["UUIDv7"];
+            source_run_id: components["schemas"]["UUIDv7"];
+            reproduction_run_id: components["schemas"]["UUIDv7"];
+            /** @enum {string} */
+            status: "verified" | "mismatch";
+            input_hash: components["schemas"]["Hash"];
+            fingerprint_hash: components["schemas"]["Hash"];
+            source_result_hash: components["schemas"]["Hash"];
+            reproduction_result_hash: components["schemas"]["Hash"];
+            /** Format: date-time */
+            created_at: string;
+        };
         SimulationRun: {
             id: components["schemas"]["UUIDv7"];
             job_id: components["schemas"]["UUIDv7"];
             revision_id: components["schemas"]["UUIDv7"];
+            scenario_definition_id: components["schemas"]["UUIDv7"];
             input_hash: components["schemas"]["Hash"];
             fingerprint_hash: components["schemas"]["Hash"];
             result_hash: components["schemas"]["Hash"];
             canonical_result: string;
+            metrics: components["schemas"]["SimulationMetricResult"][];
+            verification_refs: components["schemas"]["SimulationVerificationRef"][];
             reproducible: boolean;
             reasons: string[];
             /** Format: date-time */

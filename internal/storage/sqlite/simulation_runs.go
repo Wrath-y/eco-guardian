@@ -326,6 +326,32 @@ func (s *Store) GetSimulationRun(ctx context.Context, id domain.ID) (SimulationR
 	return run, metrics, rows.Err()
 }
 
+// ListSimulationVerifications returns immutable comparisons involving a scoped
+// run. Callers use it only after resolving the run itself in this project.
+func (s *Store) ListSimulationVerifications(ctx context.Context, runID domain.ID) ([]SimulationVerification, error) {
+	if !runID.Valid() {
+		return nil, ErrSimulationRunInvalid
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id,source_run_id,reproduction_run_id,input_hash,fingerprint_hash,source_result_hash,reproduction_result_hash,status,created_at FROM simulation_verifications WHERE source_run_id=? OR reproduction_run_id=? ORDER BY created_at,id`, runID, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	verifications := []SimulationVerification{}
+	for rows.Next() {
+		var verification SimulationVerification
+		var createdAt string
+		if err = rows.Scan(&verification.ID, &verification.SourceRunID, &verification.ReproductionRunID, &verification.InputHash, &verification.FingerprintHash, &verification.SourceResultHash, &verification.ReproductionResultHash, &verification.Status, &createdAt); err != nil {
+			return nil, err
+		}
+		if verification.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt); err != nil || !verification.ID.Valid() || !verification.SourceRunID.Valid() || !verification.ReproductionRunID.Valid() || !validSimulationHash(verification.InputHash) || !validSimulationHash(verification.FingerprintHash) || !validSimulationHash(verification.SourceResultHash) || !validSimulationHash(verification.ReproductionResultHash) || (verification.Status != "verified" && verification.Status != "mismatch") {
+			return nil, ErrSimulationRunInvalid
+		}
+		verifications = append(verifications, verification)
+	}
+	return verifications, rows.Err()
+}
+
 func (s *Store) SaveSimulationCheckpoint(ctx context.Context, checkpoint SimulationCheckpoint) error {
 	if !checkpoint.JobID.Valid() || checkpoint.SampleOrdinal > uint64(^uint64(0)>>1) || !validSimulationHash(checkpoint.InputHash) || !validSimulationHash(checkpoint.FingerprintHash) || checkpoint.CancelGeneration < 0 || checkpoint.Accumulator == "" || checkpoint.AccumulatorHash != SimulationAccumulatorHash(checkpoint.Accumulator) || checkpoint.CompletedAt.IsZero() {
 		return ErrSimulationRunInvalid

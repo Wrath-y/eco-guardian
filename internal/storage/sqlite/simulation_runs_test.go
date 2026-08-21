@@ -59,6 +59,10 @@ func TestSimulationRunAndMetricFactsAreInsertOnlyWhileCheckpointIsRecoverable(t 
 	if err != nil || verification.Status != "verified" || verification.SourceResultHash != run.ResultHash {
 		t.Fatalf("verification=%#v err=%v", verification, err)
 	}
+	links, err := store.ListSimulationVerifications(context.Background(), run.ID)
+	if err != nil || len(links) != 1 || links[0].ID != verification.ID || links[0].ReproductionRunID != secondRun.ID {
+		t.Fatalf("verification links=%#v err=%v", links, err)
+	}
 	checkpoint := SimulationCheckpoint{JobID: job.ID, SampleOrdinal: 0, InputHash: run.InputHash, FingerprintHash: run.FingerprintHash, CancelGeneration: 0, Accumulator: `{"sample":0}`, AccumulatorHash: SimulationAccumulatorHash(`{"sample":0}`), CompletedAt: time.Now().UTC()}
 	if err = store.SaveSimulationCheckpoint(context.Background(), checkpoint); err != nil {
 		t.Fatal(err)

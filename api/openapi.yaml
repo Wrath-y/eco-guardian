@@ -889,17 +889,41 @@ components:
       properties:
         job: { $ref: '#/components/schemas/Job' }
         location: { type: string, format: uri-reference }
+    SimulationMetricResult:
+      type: object
+      required: [id, version, status, canonical_result]
+      properties:
+        id: { type: string, minLength: 1 }
+        version: { type: string, minLength: 1 }
+        status: { type: string, enum: [available, unavailable] }
+        canonical_result: { type: string, minLength: 1 }
+    SimulationVerificationRef:
+      type: object
+      required: [id, source_run_id, reproduction_run_id, status, input_hash, fingerprint_hash, source_result_hash, reproduction_result_hash, created_at]
+      properties:
+        id: { $ref: '#/components/schemas/UUIDv7' }
+        source_run_id: { $ref: '#/components/schemas/UUIDv7' }
+        reproduction_run_id: { $ref: '#/components/schemas/UUIDv7' }
+        status: { type: string, enum: [verified, mismatch] }
+        input_hash: { $ref: '#/components/schemas/Hash' }
+        fingerprint_hash: { $ref: '#/components/schemas/Hash' }
+        source_result_hash: { $ref: '#/components/schemas/Hash' }
+        reproduction_result_hash: { $ref: '#/components/schemas/Hash' }
+        created_at: { type: string, format: date-time }
     SimulationRun:
       type: object
-      required: [id, job_id, revision_id, input_hash, fingerprint_hash, result_hash, canonical_result, reproducible, reasons, created_at]
+      required: [id, job_id, revision_id, scenario_definition_id, input_hash, fingerprint_hash, result_hash, canonical_result, metrics, verification_refs, reproducible, reasons, created_at]
       properties:
         id: { $ref: '#/components/schemas/UUIDv7' }
         job_id: { $ref: '#/components/schemas/UUIDv7' }
         revision_id: { $ref: '#/components/schemas/UUIDv7' }
+        scenario_definition_id: { $ref: '#/components/schemas/UUIDv7' }
         input_hash: { $ref: '#/components/schemas/Hash' }
         fingerprint_hash: { $ref: '#/components/schemas/Hash' }
         result_hash: { $ref: '#/components/schemas/Hash' }
         canonical_result: { type: string, minLength: 1 }
+        metrics: { type: array, items: { $ref: '#/components/schemas/SimulationMetricResult' } }
+        verification_refs: { type: array, items: { $ref: '#/components/schemas/SimulationVerificationRef' } }
         reproducible: { type: boolean }
         reasons: { type: array, items: { type: string } }
         created_at: { type: string, format: date-time }
