@@ -35,6 +35,19 @@ func (s *Store) ResolveSimulationScenario(ctx context.Context, sceneID, version 
 	return contract.CapturedScenario{DefinitionID: definition.ID, Template: definition.Template}, nil
 }
 
+func (s *Store) ResolveSimulationVerificationSource(ctx context.Context, runID domain.ID) (contract.VerificationSource, error) {
+	run, _, err := s.GetSimulationRun(ctx, runID)
+	if err != nil {
+		return contract.VerificationSource{}, err
+	}
+	materialization, err := s.GetSimulationJobMaterialization(ctx, run.JobID)
+	if err != nil || materialization.InputHash != run.InputHash || materialization.FingerprintHash != run.FingerprintHash {
+		return contract.VerificationSource{}, ErrSimulationRunInvalid
+	}
+	return contract.VerificationSource{RunID: run.ID, ProjectID: run.ProjectID, RevisionID: run.RevisionID, ScenarioDefinitionID: run.ScenarioDefinitionID, InputHash: run.InputHash, FingerprintHash: run.FingerprintHash}, nil
+}
+
 var _ contract.RevisionSource = (*Store)(nil)
 var _ contract.ReleaseSource = (*Store)(nil)
 var _ contract.ScenarioSource = (*Store)(nil)
+var _ contract.VerificationSourceReader = (*Store)(nil)

@@ -20,9 +20,9 @@ type simulationMaterializationStore interface {
 	SaveSimulationJobMaterialization(context.Context, contract.JobMaterialization) error
 }
 type SimulationSubmission struct {
-	Input                           contract.SimulationInputV1
-	ScenarioDefinitionID            domain.ID
-	FingerprintHash, IdempotencyKey string
+	Input                             contract.SimulationInputV1
+	ScenarioDefinitionID, VerifyRunID domain.ID
+	FingerprintHash, IdempotencyKey   string
 }
 type SimulationApplication struct {
 	Jobs             sharedjob.Store
@@ -50,7 +50,7 @@ func (s SimulationApplication) SubmitSimulation(ctx context.Context, submission 
 	if s.Clock != nil {
 		now = s.Clock().UTC()
 	}
-	materialization := contract.JobMaterialization{JobID: job.ID, ProjectID: job.ProjectID, RevisionID: job.RevisionID, ScenarioDefinitionID: submission.ScenarioDefinitionID, CanonicalInput: canonical, InputHash: inputHash, FingerprintHash: submission.FingerprintHash, CreatedAt: now}
+	materialization := contract.JobMaterialization{JobID: job.ID, ProjectID: job.ProjectID, RevisionID: job.RevisionID, ScenarioDefinitionID: submission.ScenarioDefinitionID, VerifySourceRunID: submission.VerifyRunID, CanonicalInput: canonical, InputHash: inputHash, FingerprintHash: submission.FingerprintHash, CreatedAt: now}
 	if err = s.Materializations.SaveSimulationJobMaterialization(ctx, materialization); err != nil {
 		return sharedjob.Record{}, false, err
 	}

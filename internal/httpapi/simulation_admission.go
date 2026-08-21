@@ -39,7 +39,7 @@ func SimulationAdmissionServiceFromProjectManager(manager *project.Manager) Simu
 		if err != nil {
 			return nil
 		}
-		return app.SimulationAdmissionApplication{Revisions: s, Releases: s, Gate: simulationgate.FullValidationAdapter{Revisions: s, Gate: validation.NewValidationGate(s)}, Scenarios: s, Fingerprints: app.SimulationFingerprintResolver{Revisions: s, Registry: registry}, Jobs: app.SimulationApplication{Jobs: s, Materializations: s}}
+		return app.SimulationAdmissionApplication{Revisions: s, Releases: s, Gate: simulationgate.FullValidationAdapter{Revisions: s, Gate: validation.NewValidationGate(s)}, Scenarios: s, Fingerprints: app.SimulationFingerprintResolver{Revisions: s, Registry: registry}, Verifications: s, Jobs: app.SimulationApplication{Jobs: s, Materializations: s}}
 	}
 }
 
@@ -84,7 +84,7 @@ func (h *SimulationAdmissionHandler) create(c *gin.Context) {
 		} `json:"budget"`
 		VerifyRunID domain.ID `json:"verify_run_id"`
 	}
-	if err := c.ShouldBindJSON(&request); err != nil || request.VerifyRunID != "" {
+	if err := c.ShouldBindJSON(&request); err != nil {
 		problem(c, http.StatusBadRequest, "SIMULATION_INPUT_INVALID", "Simulation request is invalid")
 		return
 	}
@@ -110,7 +110,7 @@ func (h *SimulationAdmissionHandler) create(c *gin.Context) {
 	if request.Budget != nil {
 		budget = &contract.BudgetOverride{MaxEvents: request.Budget.MaxEvents, MaxSteps: request.Budget.MaxSteps, MaxRuntimeMS: request.Budget.MaxRuntimeMS}
 	}
-	result, err := h.service().AdmitSimulation(c.Request.Context(), app.SimulationAdmission{ProjectID: projectID, RevisionID: request.Source.RevisionID, ReleaseID: request.Source.ReleaseID, SceneID: request.SceneID, SceneVersion: request.SceneVersion, Metrics: request.Metrics, SampleCount: request.SampleCount, Seed: request.Seed, Parameters: parameters, Budget: budget, IdempotencyKey: key})
+	result, err := h.service().AdmitSimulation(c.Request.Context(), app.SimulationAdmission{ProjectID: projectID, RevisionID: request.Source.RevisionID, ReleaseID: request.Source.ReleaseID, SceneID: request.SceneID, SceneVersion: request.SceneVersion, Metrics: request.Metrics, SampleCount: request.SampleCount, Seed: request.Seed, Parameters: parameters, Budget: budget, VerifyRunID: request.VerifyRunID, IdempotencyKey: key})
 	if err != nil {
 		writeSimulationAdmissionError(c, err)
 		return

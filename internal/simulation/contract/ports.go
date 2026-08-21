@@ -45,6 +45,17 @@ type ScenarioSource interface {
 	ResolveSimulationScenario(context.Context, string, string) (CapturedScenario, error)
 }
 
+// VerificationSource is the immutable identity a distinct reproduction Job
+// must match before it can claim to verify a historical run.
+type VerificationSource struct {
+	RunID, ProjectID, RevisionID, ScenarioDefinitionID domain.ID
+	InputHash, FingerprintHash                         string
+}
+
+type VerificationSourceReader interface {
+	ResolveSimulationVerificationSource(context.Context, domain.ID) (VerificationSource, error)
+}
+
 type ScenarioStore interface {
 	GetScenario(context.Context, ID) ([]byte, error)
 }
