@@ -4,6 +4,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -33,5 +35,50 @@ func TestFormulaAndValidationHaveNoAdapterDependencies(t *testing.T) {
 				_ = ast.File{}
 			}
 		}
+	}
+}
+
+func TestRuntimeUsesOnlyPortsForModulesAndHTTP(t *testing.T) {
+	assertImports(t, "../app/runtime", func(importPath string) bool {
+		return strings.HasPrefix(importPath, "github.com/zouyi/eco-guardian/internal/storage/") ||
+			importPath == "github.com/zouyi/eco-guardian/internal/httpapi" ||
+			strings.HasPrefix(importPath, "github.com/zouyi/eco-guardian/internal/httpapi/")
+	}, "runtime must receive module repositories and handlers through ports")
+}
+
+func TestBusinessModulesDoNotDependOnWindowsProcessImplementations(t *testing.T) {
+	for _, dir := range []string{"../domain", "../formula", "../project", "../validation", "../versioning"} {
+		assertImports(t, dir, func(importPath string) bool {
+			return importPath == "github.com/zouyi/eco-guardian/internal/platform/windows" ||
+				strings.HasPrefix(importPath, "github.com/zouyi/eco-guardian/internal/platform/windows/") ||
+				importPath == "github.com/zouyi/eco-guardian/internal/platform/process/windows" ||
+				strings.HasPrefix(importPath, "github.com/zouyi/eco-guardian/internal/platform/process/windows/")
+		}, "business modules must depend on platform-neutral process ports")
+	}
+}
+
+func assertImports(t *testing.T, dir string, forbidden func(string) bool, message string) {
+	t.Helper()
+	err := filepath.WalkDir(dir, func(name string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			return nil
+		}
+		f, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, imp := range f.Imports {
+			importPath := strings.Trim(imp.Path.Value, "\"")
+			if forbidden(importPath) {
+				t.Errorf("%s imports %s: %s", path.Clean(name), importPath, message)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
