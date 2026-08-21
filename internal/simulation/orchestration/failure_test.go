@@ -62,6 +62,19 @@ func TestPersistExecutionFailureUsesOnlyStableDiagnostics(t *testing.T) {
 	}
 }
 
+func TestClassifyExecutionErrorPersistsStableEvaluatorDiagnostic(t *testing.T) {
+	classified := ClassifyExecutionError(engine.EvaluatorDiagnostic("FORMULA_DIVISION_BY_ZERO"))
+	var diagnostic ExecutionFailure
+	if !errors.As(classified, &diagnostic) || diagnostic.Code != string(engine.DiagnosticDivisionByZero) || diagnostic.Detail != "evaluator execution failed" {
+		t.Fatalf("classified=%v", classified)
+	}
+	store := &failureStoreFake{}
+	id := domain.ID("01948c1e-0000-7000-8000-000000000000")
+	if _, _, err := PersistExecutionFailure(context.Background(), store, id, 0, classified); err != nil || store.code != string(engine.DiagnosticDivisionByZero) {
+		t.Fatalf("code=%q err=%v", store.code, err)
+	}
+}
+
 func TestPersistRecoveryRefusalMapsDriftAndCorruptionToStableFailures(t *testing.T) {
 	id, err := domain.NewID()
 	if err != nil {

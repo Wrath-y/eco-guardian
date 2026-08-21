@@ -43,11 +43,14 @@ func (failure ExecutionFailure) Unwrap() error { return ErrExecutionFailure }
 // ClassifyExecutionError turns bounded engine failures into stable, safe
 // diagnostics rather than allowing a caller to publish a partial result.
 func ClassifyExecutionError(err error) error {
+	var diagnostic engine.Diagnostic
 	switch {
 	case errors.Is(err, engine.ErrEventBudget):
 		return ExecutionFailure{Code: FailureBudgetExceeded, Detail: "event budget exceeded"}
 	case errors.Is(err, engine.ErrStepBudget):
 		return ExecutionFailure{Code: FailureBudgetExceeded, Detail: "step budget exceeded"}
+	case errors.As(err, &diagnostic):
+		return ExecutionFailure{Code: string(diagnostic.Code), Detail: "evaluator execution failed"}
 	default:
 		return err
 	}
@@ -88,5 +91,12 @@ func PersistRecoveryRefusal(ctx context.Context, store FailureStore, jobID domai
 }
 
 func stableFailureCode(code string) bool {
-	return code == FailureBudgetExceeded || code == FailureTimeout || code == FailureRecoveryMismatch || code == FailureRecoveryUnavailable
+	switch code {
+	case FailureBudgetExceeded, FailureTimeout, FailureRecoveryMismatch, FailureRecoveryUnavailable,
+		string(engine.DiagnosticNumericNonFinite), string(engine.DiagnosticDivisionByZero), string(engine.DiagnosticNumericOutOfRange),
+		string(engine.DiagnosticUnitOrScope), string(engine.DiagnosticMissingEvaluator), string(engine.DiagnosticContractDrift):
+		return true
+	default:
+		return false
+	}
 }
