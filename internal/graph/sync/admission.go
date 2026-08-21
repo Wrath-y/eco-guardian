@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/zouyi/eco-guardian/internal/domain"
 	"github.com/zouyi/eco-guardian/internal/validation"
@@ -40,6 +41,7 @@ type GraphJob struct {
 	Evidence              string
 	Status                JobStatus
 	Result                *GraphJobResult
+	CreatedAt, UpdatedAt  time.Time
 }
 
 func (r GraphJobRequest) Valid() bool {

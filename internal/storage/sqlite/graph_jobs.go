@@ -54,7 +54,7 @@ func (s *Store) CreateOrGetGraphJob(ctx context.Context, request graphsync.Graph
 		return graphsync.GraphJob{}, false, err
 	}
 	now := s.now().UTC()
-	job := graphsync.GraphJob{ID: idValue, RetryOfJobID: request.RetryOfJobID, ProjectID: request.ProjectID, RevisionID: request.RevisionID, InputHash: request.InputHash, IdempotencyKey: request.IdempotencyKey, RequestHash: request.RequestHash, Evidence: request.Evidence, Status: graphsync.JobQueued}
+	job := graphsync.GraphJob{ID: idValue, RetryOfJobID: request.RetryOfJobID, ProjectID: request.ProjectID, RevisionID: request.RevisionID, InputHash: request.InputHash, IdempotencyKey: request.IdempotencyKey, RequestHash: request.RequestHash, Evidence: request.Evidence, Status: graphsync.JobQueued, CreatedAt: now, UpdatedAt: now}
 	if !job.Valid() {
 		return graphsync.GraphJob{}, false, ErrGraphSyncStateInvalid
 	}
@@ -73,7 +73,7 @@ func (s *Store) GetGraphJob(ctx context.Context, jobID domain.ID) (graphsync.Gra
 	if !jobID.Valid() {
 		return graphsync.GraphJob{}, ErrGraphJobNotFound
 	}
-	job, err := scanGraphJob(s.db.QueryRowContext(ctx, `SELECT id,project_uuid,revision_id,input_hash,idempotency_key,request_hash,retry_of_job_id,COALESCE(graph_evidence,''),status,result_type,result_id,result_url FROM jobs WHERE id=? AND project_uuid=? AND kind='graph_sync'`, jobID, s.projectID))
+	job, err := scanGraphJob(s.db.QueryRowContext(ctx, `SELECT id,project_uuid,revision_id,input_hash,idempotency_key,request_hash,retry_of_job_id,COALESCE(graph_evidence,''),status,result_type,result_id,result_url,created_at,updated_at FROM jobs WHERE id=? AND project_uuid=? AND kind='graph_sync'`, jobID, s.projectID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return graphsync.GraphJob{}, ErrGraphJobNotFound
 	}
@@ -180,7 +180,7 @@ func (s *Store) ListGraphJobEvents(ctx context.Context, jobID domain.ID, after i
 }
 
 func findGraphJobByKey(ctx context.Context, tx *sql.Tx, projectID domain.ID, key string) (graphsync.GraphJob, bool, error) {
-	job, err := scanGraphJob(tx.QueryRowContext(ctx, `SELECT id,project_uuid,revision_id,input_hash,idempotency_key,request_hash,retry_of_job_id,COALESCE(graph_evidence,''),status,result_type,result_id,result_url FROM jobs WHERE project_uuid=? AND idempotency_key=? AND kind='graph_sync'`, projectID, key))
+	job, err := scanGraphJob(tx.QueryRowContext(ctx, `SELECT id,project_uuid,revision_id,input_hash,idempotency_key,request_hash,retry_of_job_id,COALESCE(graph_evidence,''),status,result_type,result_id,result_url,created_at,updated_at FROM jobs WHERE project_uuid=? AND idempotency_key=? AND kind='graph_sync'`, projectID, key))
 	if errors.Is(err, sql.ErrNoRows) {
 		return graphsync.GraphJob{}, false, nil
 	}
@@ -188,7 +188,7 @@ func findGraphJobByKey(ctx context.Context, tx *sql.Tx, projectID domain.ID, key
 }
 
 func findGraphJob(ctx context.Context, tx *sql.Tx, projectID, jobID domain.ID) (graphsync.GraphJob, bool, error) {
-	job, err := scanGraphJob(tx.QueryRowContext(ctx, `SELECT id,project_uuid,revision_id,input_hash,idempotency_key,request_hash,retry_of_job_id,COALESCE(graph_evidence,''),status,result_type,result_id,result_url FROM jobs WHERE id=? AND project_uuid=? AND kind='graph_sync'`, jobID, projectID))
+	job, err := scanGraphJob(tx.QueryRowContext(ctx, `SELECT id,project_uuid,revision_id,input_hash,idempotency_key,request_hash,retry_of_job_id,COALESCE(graph_evidence,''),status,result_type,result_id,result_url,created_at,updated_at FROM jobs WHERE id=? AND project_uuid=? AND kind='graph_sync'`, jobID, projectID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return graphsync.GraphJob{}, false, nil
 	}
@@ -201,10 +201,19 @@ func scanGraphJob(scanner graphJobScanner) (graphsync.GraphJob, error) {
 	var id, projectID, revisionID, inputHash, key, requestHash, evidence, status string
 	var retryOf sql.NullString
 	var resultType, resultID, resultURL sql.NullString
-	if err := scanner.Scan(&id, &projectID, &revisionID, &inputHash, &key, &requestHash, &retryOf, &evidence, &status, &resultType, &resultID, &resultURL); err != nil {
+	var createdAt, updatedAt string
+	if err := scanner.Scan(&id, &projectID, &revisionID, &inputHash, &key, &requestHash, &retryOf, &evidence, &status, &resultType, &resultID, &resultURL, &createdAt, &updatedAt); err != nil {
 		return graphsync.GraphJob{}, err
 	}
-	job := graphsync.GraphJob{ID: domain.ID(id), RetryOfJobID: domain.ID(retryOf.String), ProjectID: domain.ID(projectID), RevisionID: domain.ID(revisionID), InputHash: inputHash, IdempotencyKey: key, RequestHash: requestHash, Evidence: evidence, Status: graphsync.JobStatus(status)}
+	created, err := time.Parse(time.RFC3339Nano, createdAt)
+	if err != nil {
+		return graphsync.GraphJob{}, err
+	}
+	updated, err := time.Parse(time.RFC3339Nano, updatedAt)
+	if err != nil {
+		return graphsync.GraphJob{}, err
+	}
+	job := graphsync.GraphJob{ID: domain.ID(id), RetryOfJobID: domain.ID(retryOf.String), ProjectID: domain.ID(projectID), RevisionID: domain.ID(revisionID), InputHash: inputHash, IdempotencyKey: key, RequestHash: requestHash, Evidence: evidence, Status: graphsync.JobStatus(status), CreatedAt: created, UpdatedAt: updated}
 	if resultType.Valid || resultID.Valid || resultURL.Valid {
 		if !resultType.Valid || !resultID.Valid || !resultURL.Valid {
 			return graphsync.GraphJob{}, fmt.Errorf("partial stored graph job result")
