@@ -397,14 +397,24 @@ func (s *Store) SaveSimulationCheckpoint(ctx context.Context, checkpoint Simulat
 	if err := s.inject("simulation-checkpoint-before-write"); err != nil {
 		return err
 	}
-	write, err := s.db.ExecContext(ctx, `INSERT INTO simulation_job_checkpoints(job_id,sample_ordinal,input_hash,fingerprint_hash,cancel_generation,accumulator,accumulator_hash,completed_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(job_id,sample_ordinal) DO UPDATE SET accumulator=excluded.accumulator,accumulator_hash=excluded.accumulator_hash,completed_at=excluded.completed_at WHERE simulation_job_checkpoints.input_hash=excluded.input_hash AND simulation_job_checkpoints.fingerprint_hash=excluded.fingerprint_hash AND simulation_job_checkpoints.cancel_generation=excluded.cancel_generation`, checkpoint.JobID, checkpoint.SampleOrdinal, checkpoint.InputHash, checkpoint.FingerprintHash, checkpoint.CancelGeneration, checkpoint.Accumulator, checkpoint.AccumulatorHash, checkpoint.CompletedAt.UTC().Format(time.RFC3339Nano))
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	write, err := tx.ExecContext(ctx, `INSERT INTO simulation_job_checkpoints(job_id,sample_ordinal,input_hash,fingerprint_hash,cancel_generation,accumulator,accumulator_hash,completed_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(job_id,sample_ordinal) DO UPDATE SET accumulator=excluded.accumulator,accumulator_hash=excluded.accumulator_hash,completed_at=excluded.completed_at WHERE simulation_job_checkpoints.input_hash=excluded.input_hash AND simulation_job_checkpoints.fingerprint_hash=excluded.fingerprint_hash AND simulation_job_checkpoints.cancel_generation=excluded.cancel_generation`, checkpoint.JobID, checkpoint.SampleOrdinal, checkpoint.InputHash, checkpoint.FingerprintHash, checkpoint.CancelGeneration, checkpoint.Accumulator, checkpoint.AccumulatorHash, checkpoint.CompletedAt.UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return err
 	}
 	if rows, _ := write.RowsAffected(); rows != 1 {
 		return fmt.Errorf("%w: checkpoint identity mismatch", ErrSimulationRunInvalid)
 	}
-	return nil
+	if err = s.inject("simulation-checkpoint-after-write"); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) ListSimulationCheckpoints(ctx context.Context, jobID domain.ID, inputHash, fingerprintHash string, cancelGeneration int64) ([]SimulationCheckpoint, error) {
