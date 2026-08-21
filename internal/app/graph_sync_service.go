@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/zouyi/eco-guardian/internal/domain"
 	"github.com/zouyi/eco-guardian/internal/graph/projector"
@@ -32,6 +33,7 @@ type GraphSyncService interface {
 type GraphStatus struct {
 	RevisionID, ConfigHash string
 	Pipeline               graphsync.PipelineState
+	HasSyncState           bool
 	Freshness              graphsync.Freshness
 	Validation             validation.GateResult
 	Summary                *projector.Summary
@@ -39,6 +41,9 @@ type GraphStatus struct {
 	Warnings               []string
 	SafeError              string
 	ExternalTaskID         string
+	Provider               *graphsync.Snapshot
+	ProviderError          *graphsync.ProviderError
+	ProviderObservedAt     time.Time
 }
 
 type graphRevisionSource interface {
@@ -68,6 +73,8 @@ type GraphSyncApplication struct {
 	States     graphStateSource
 	Summaries  graphSummarySource
 	Validation graphsync.FullValidationGate
+	Provider   graphsync.GraphProvider
+	Clock      func() time.Time
 	Submit     func(context.Context, graphsync.GraphJob) error
 }
 
@@ -93,6 +100,7 @@ func (s GraphSyncApplication) GraphStatus(ctx context.Context, revisionID domain
 		status.Freshness = graphsync.Freshness{Reasons: []string{"MISSING_GRAPH_STATE"}}
 		return status, nil
 	}
+	status.HasSyncState = true
 	status.Pipeline, status.Warnings, status.SafeError, status.ExternalTaskID = state.Pipeline, append([]string(nil), state.Warnings...), state.SafeError, state.ExternalTaskID
 	if state.LatestJobID != "" {
 		job, jobErr := s.Jobs.GetGraphJob(ctx, domain.ID(state.LatestJobID))
@@ -106,6 +114,25 @@ func (s GraphSyncApplication) GraphStatus(ctx context.Context, revisionID domain
 		return GraphStatus{}, ErrGraphOperationUnavailable
 	}
 	status.Freshness = graphsync.ComputeFreshness(graphsync.FreshnessInput{RevisionID: revisionID, InputHash: record.Metadata.ConfigHash, State: state, Job: status.Job})
+	if s.Provider != nil {
+		observedAt := time.Now().UTC()
+		if s.Clock != nil {
+			observedAt = s.Clock().UTC()
+		}
+		snapshot, inspectErr := s.Provider.InspectSnapshot(ctx, string(s.Revisions.ProjectID()), string(revisionID), "graph-status-"+string(revisionID))
+		status.ProviderObservedAt = observedAt
+		if inspectErr != nil {
+			if providerErr, ok := inspectErr.(*graphsync.ProviderError); ok {
+				status.ProviderError = providerErr
+			} else {
+				status.ProviderError = &graphsync.ProviderError{Code: "GRAPH_STATUS_UNAVAILABLE", Message: "Graph provider inspection is unavailable", RequestID: "graph-status-" + string(revisionID), Details: map[string]any{}}
+			}
+		} else if snapshot.Namespace != string(s.Revisions.ProjectID()) || snapshot.Version != string(revisionID) {
+			status.ProviderError = &graphsync.ProviderError{Code: "GRAPH_STATUS_UNAVAILABLE", Message: "Graph provider returned a different Snapshot identity", RequestID: "graph-status-" + string(revisionID), Details: map[string]any{}}
+		} else {
+			status.Provider = &snapshot
+		}
+	}
 	return status, nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/zouyi/eco-guardian/internal/app"
@@ -21,17 +22,24 @@ type GraphSyncServiceProvider func() app.GraphSyncService
 // Graph admission. A missing active Store leaves the optional capability
 // unavailable instead of creating a parallel project or Job implementation.
 func GraphSyncServiceFromProjectManager(manager *project.Manager, submit func(context.Context, graphsync.GraphJob) error) GraphSyncServiceProvider {
+	return GraphSyncServiceFromProjectManagerWithProvider(manager, nil, submit)
+}
+
+// GraphSyncServiceFromProjectManagerWithProvider optionally exposes exact
+// read-only Snapshot observations to the status assembler. A nil provider
+// produces an honest unavailable observation rather than a fallback read.
+func GraphSyncServiceFromProjectManagerWithProvider(manager *project.Manager, provider graphsync.GraphProvider, submit func(context.Context, graphsync.GraphJob) error) GraphSyncServiceProvider {
 	return func() app.GraphSyncService {
 		handle, ok := manager.ActiveHandle()
 		if !ok {
 			return nil
 		}
-		provider, ok := handle.(interface{ Store() *store.Store })
+		storeProvider, ok := handle.(interface{ Store() *store.Store })
 		if !ok {
 			return nil
 		}
-		s := provider.Store()
-		return app.GraphSyncApplication{Revisions: s, Jobs: s, States: s, Summaries: s, Validation: validation.NewValidationGate(s), Submit: submit}
+		s := storeProvider.Store()
+		return app.GraphSyncApplication{Revisions: s, Jobs: s, States: s, Summaries: s, Validation: validation.NewValidationGate(s), Provider: provider, Submit: submit}
 	}
 }
 
@@ -122,7 +130,10 @@ func (h *GraphHandler) status(c *gin.Context) {
 		writeGraphAdmissionError(c, err)
 		return
 	}
-	freshness := "stale"
+	freshness := "unknown"
+	if status.HasSyncState {
+		freshness = "stale"
+	}
 	if status.Freshness.Fresh {
 		freshness = "fresh"
 	}
@@ -137,13 +148,48 @@ func (h *GraphHandler) status(c *gin.Context) {
 	} else {
 		response["job"] = nil
 	}
+	if status.Provider != nil {
+		response["provider"] = graphProviderJSON(*status.Provider, status.ProviderObservedAt)
+	} else {
+		response["provider"] = nil
+	}
 	if status.SafeError != "" {
 		response["error"] = gin.H{"code": status.SafeError, "retryable": status.Pipeline == graphsync.StateFailed}
+	} else if status.ProviderError != nil {
+		response["error"] = gin.H{"code": status.ProviderError.Code, "retryable": status.ProviderError.Retryable, "request_id": status.ProviderError.RequestID, "provider_code": status.ProviderError.Code}
 	} else {
 		response["error"] = nil
 	}
-	response["provider"] = nil
 	c.JSON(http.StatusOK, response)
+}
+
+func graphProviderJSON(snapshot graphsync.Snapshot, observedAt time.Time) gin.H {
+	components := make([]gin.H, 0, len(snapshot.Components))
+	for _, component := range snapshot.Components {
+		switch component.Name {
+		case "graph", "fts", "vector", "rerank":
+			components = append(components, gin.H{"name": component.Name, "state": graphComponentState(component.State)})
+		}
+	}
+	return gin.H{"namespace": snapshot.Namespace, "version": snapshot.Version, "task_id": nullable(snapshot.TaskID), "status": graphSnapshotState(snapshot.Status), "query_ready": snapshot.QueryReady, "components": components, "observed_at": observedAt}
+}
+
+func graphSnapshotState(value string) string {
+	switch value {
+	case "queued", "building", "ready", "failed", "unavailable":
+		return value
+	default:
+		return "unknown"
+	}
+}
+
+func graphComponentState(value string) string {
+	switch value {
+	case "ready", "building", "failed", "unavailable":
+		return value
+	default:
+		return "unknown"
+	}
 }
 
 func graphWarningsJSON(warnings []string) []gin.H {

@@ -94,13 +94,13 @@ func TestGraphHandlerRejectsRetryWithoutIdempotencyKeyAndUnavailableService(t *t
 func TestGraphHandlerReadsExactStatusWithoutMutation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	revisionID := domain.ID("01948c1e-0000-7000-8000-000000000000")
-	service := &graphServiceFake{status: app.GraphStatus{RevisionID: string(revisionID), ConfigHash: strings.Repeat("a", 64), Pipeline: graphsync.StateFailed, Freshness: graphsync.Freshness{Reasons: []string{"GRAPH_NOT_READY"}}, Validation: "PASS", Warnings: []string{"DEGRADED_VECTOR"}, SafeError: "PROVIDER_TASK_FAILED"}}
+	service := &graphServiceFake{status: app.GraphStatus{RevisionID: string(revisionID), ConfigHash: strings.Repeat("a", 64), Pipeline: graphsync.StateFailed, Freshness: graphsync.Freshness{Reasons: []string{"GRAPH_NOT_READY"}}, Validation: "PASS", Warnings: []string{"DEGRADED_VECTOR"}, SafeError: "PROVIDER_TASK_FAILED", Provider: &graphsync.Snapshot{Namespace: string(revisionID), Version: string(revisionID), Status: "failed", Components: []graphsync.Component{{Name: "graph", State: "failed"}}}, ProviderObservedAt: time.Now().UTC()}}
 	engine := gin.New()
 	NewGraphHandler(func() app.GraphSyncService { return service }).Register(engine)
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/revisions/"+string(revisionID)+"/graph-status", nil)
 	engine.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"revision_id":"`+string(revisionID)+`"`) || !strings.Contains(response.Body.String(), `"actions":["retry","inspect"]`) || !strings.Contains(response.Body.String(), `"code":"DEGRADED_VECTOR"`) {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"revision_id":"`+string(revisionID)+`"`) || !strings.Contains(response.Body.String(), `"actions":["retry","inspect"]`) || !strings.Contains(response.Body.String(), `"code":"DEGRADED_VECTOR"`) || !strings.Contains(response.Body.String(), `"components":[{"name":"graph","state":"failed"}]`) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }
