@@ -116,6 +116,10 @@ func TestSimulationJobMaterializationIsImmutableAndBoundToJobIdentity(t *testing
 	if _, err = store.db.Exec(`UPDATE simulation_job_materializations SET fingerprint_hash=? WHERE job_id=?`, strings.Repeat("d", 64), job.ID); err == nil {
 		t.Fatal("expected immutable materialization")
 	}
+	checkpoint := SimulationCheckpoint{JobID: job.ID, SampleOrdinal: 0, InputHash: materialization.InputHash, FingerprintHash: materialization.FingerprintHash, Accumulator: `{"sample":0}`, AccumulatorHash: SimulationAccumulatorHash(`{"sample":0}`), CompletedAt: time.Now().UTC()}
+	if err = store.SaveSimulationCheckpoint(context.Background(), checkpoint); err != nil {
+		t.Fatal(err)
+	}
 	if err = store.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -130,6 +134,10 @@ func TestSimulationJobMaterializationIsImmutableAndBoundToJobIdentity(t *testing
 	}
 	if _, err = reopened.GetSimulationJobMaterialization(context.Background(), job.ID); err != nil {
 		t.Fatal(err)
+	}
+	checkpoints, err := reopened.ListSimulationCheckpoints(context.Background(), job.ID, materialization.InputHash, materialization.FingerprintHash, 0)
+	if err != nil || len(checkpoints) != 1 || checkpoints[0].AccumulatorHash != checkpoint.AccumulatorHash {
+		t.Fatalf("checkpoints=%#v err=%v", checkpoints, err)
 	}
 }
 
