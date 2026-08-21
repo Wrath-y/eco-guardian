@@ -377,6 +377,38 @@ func (s *Store) InsertSimulationVerification(ctx context.Context, verification S
 	return err
 }
 
+// VerifySimulationRuns records an immutable server-side comparison for two
+// already-distinct runs. Neither run is changed by verification.
+func (s *Store) VerifySimulationRuns(ctx context.Context, sourceID, reproductionID domain.ID) (SimulationVerification, error) {
+	if !sourceID.Valid() || !reproductionID.Valid() || sourceID == reproductionID {
+		return SimulationVerification{}, ErrSimulationRunInvalid
+	}
+	source, _, err := s.GetSimulationRun(ctx, sourceID)
+	if err != nil {
+		return SimulationVerification{}, err
+	}
+	reproduction, _, err := s.GetSimulationRun(ctx, reproductionID)
+	if err != nil {
+		return SimulationVerification{}, err
+	}
+	if source.ProjectID != reproduction.ProjectID || source.InputHash != reproduction.InputHash || source.FingerprintHash != reproduction.FingerprintHash {
+		return SimulationVerification{}, ErrSimulationRunInvalid
+	}
+	id, err := domain.NewID()
+	if err != nil {
+		return SimulationVerification{}, err
+	}
+	status := "mismatch"
+	if source.ResultHash == reproduction.ResultHash {
+		status = "verified"
+	}
+	verification := SimulationVerification{ID: id, SourceRunID: source.ID, ReproductionRunID: reproduction.ID, InputHash: source.InputHash, FingerprintHash: source.FingerprintHash, SourceResultHash: source.ResultHash, ReproductionResultHash: reproduction.ResultHash, Status: status, CreatedAt: s.now().UTC()}
+	if err = s.InsertSimulationVerification(ctx, verification); err != nil {
+		return SimulationVerification{}, err
+	}
+	return verification, nil
+}
+
 func validSimulationHash(value string) bool {
 	return len(value) == 64 && strings.Trim(value, "0123456789abcdef") == ""
 }
