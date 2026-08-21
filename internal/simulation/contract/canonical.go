@@ -1,6 +1,7 @@
 package contract
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -30,4 +31,23 @@ func (input SimulationInputV1) Hash() (string, error) {
 	}
 	digest := sha256.Sum256(body)
 	return hex.EncodeToString(digest[:]), nil
+}
+
+// ParseCanonicalInput decodes only a byte-exact captured input. It rejects a
+// JSON lookalike so read paths cannot substitute a reconstructed current input
+// for the immutable materialization that was actually admitted.
+func ParseCanonicalInput(raw []byte) (SimulationInputV1, error) {
+	prefix := []byte(inputDomainSeparatorV1)
+	if !bytes.HasPrefix(raw, prefix) {
+		return SimulationInputV1{}, ErrInputInvalid
+	}
+	var input SimulationInputV1
+	if err := json.Unmarshal(raw[len(prefix):], &input); err != nil {
+		return SimulationInputV1{}, fmt.Errorf("%w: %v", ErrInputInvalid, err)
+	}
+	canonical, err := input.CanonicalBytes()
+	if err != nil || !bytes.Equal(raw, canonical) {
+		return SimulationInputV1{}, ErrInputInvalid
+	}
+	return input, nil
 }

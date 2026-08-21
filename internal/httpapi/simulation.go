@@ -17,6 +17,7 @@ import (
 // must never be materialized, replayed, or repaired by a GET request.
 type simulationRunReader interface {
 	GetSimulationRun(context.Context, domain.ID) (store.SimulationRun, []store.SimulationMetricResult, error)
+	GetSimulationJobMaterialization(context.Context, domain.ID) (contract.JobMaterialization, error)
 	ListSimulationVerifications(context.Context, domain.ID) ([]store.SimulationVerification, error)
 }
 
@@ -180,15 +181,28 @@ func (h *SimulationHandler) getRun(c *gin.Context) {
 		problem(c, http.StatusServiceUnavailable, "SIMULATION_RUN_UNAVAILABLE", "Simulation run is unavailable")
 		return
 	}
+	projection := h.project(run)
+	var input *contract.SimulationInputV1
+	materialization, materializationErr := reader.GetSimulationJobMaterialization(c.Request.Context(), run.JobID)
+	if materializationErr == nil && materialization.JobID == run.JobID && materialization.ProjectID == run.ProjectID && materialization.RevisionID == run.RevisionID && materialization.ScenarioDefinitionID == run.ScenarioDefinitionID && materialization.InputHash == run.InputHash && materialization.FingerprintHash == run.FingerprintHash {
+		captured, parseErr := contract.ParseCanonicalInput(materialization.CanonicalInput)
+		if parseErr == nil && captured.ProjectID == contract.ID(run.ProjectID) && captured.RevisionID == contract.ID(run.RevisionID) {
+			input = &captured
+		}
+	}
+	if input == nil {
+		projection.Reproducible = false
+		projection.Reasons = append(projection.Reasons, "simulation input materialization is unavailable")
+	}
 	verifications, err := reader.ListSimulationVerifications(c.Request.Context(), id)
 	if err != nil {
 		problem(c, http.StatusServiceUnavailable, "SIMULATION_RUN_UNAVAILABLE", "Simulation run is unavailable")
 		return
 	}
-	c.JSON(http.StatusOK, simulationRunJSON(run, metrics, verifications, h.project(run)))
+	c.JSON(http.StatusOK, simulationRunJSON(run, metrics, verifications, projection, input))
 }
 
-func simulationRunJSON(run store.SimulationRun, metrics []store.SimulationMetricResult, verifications []store.SimulationVerification, projection contract.HistoricalRunProjection) gin.H {
+func simulationRunJSON(run store.SimulationRun, metrics []store.SimulationMetricResult, verifications []store.SimulationVerification, projection contract.HistoricalRunProjection, input *contract.SimulationInputV1) gin.H {
 	metricItems := make([]gin.H, 0, len(metrics))
 	for _, metric := range metrics {
 		metricItems = append(metricItems, gin.H{"id": metric.MetricID, "version": metric.MetricVersion, "status": metric.Status, "canonical_result": metric.CanonicalResult})
@@ -197,7 +211,7 @@ func simulationRunJSON(run store.SimulationRun, metrics []store.SimulationMetric
 	for _, verification := range verifications {
 		verificationItems = append(verificationItems, gin.H{"id": verification.ID, "source_run_id": verification.SourceRunID, "reproduction_run_id": verification.ReproductionRunID, "status": verification.Status, "input_hash": verification.InputHash, "fingerprint_hash": verification.FingerprintHash, "source_result_hash": verification.SourceResultHash, "reproduction_result_hash": verification.ReproductionResultHash, "created_at": verification.CreatedAt})
 	}
-	return gin.H{"id": run.ID, "job_id": run.JobID, "revision_id": run.RevisionID, "scenario_definition_id": run.ScenarioDefinitionID, "input_hash": projection.InputHash, "fingerprint_hash": projection.FingerprintHash, "result_hash": projection.ResultHash, "canonical_result": projection.CanonicalResult, "metrics": metricItems, "verification_refs": verificationItems, "reproducible": projection.Reproducible, "reasons": projection.Reasons, "created_at": run.CreatedAt}
+	return gin.H{"id": run.ID, "job_id": run.JobID, "revision_id": run.RevisionID, "scenario_definition_id": run.ScenarioDefinitionID, "input": input, "input_hash": projection.InputHash, "fingerprint_hash": projection.FingerprintHash, "result_hash": projection.ResultHash, "canonical_result": projection.CanonicalResult, "metrics": metricItems, "verification_refs": verificationItems, "reproducible": projection.Reproducible, "reasons": projection.Reasons, "created_at": run.CreatedAt}
 }
 
 func simulationJobJSON(job sharedjob.Record) gin.H {

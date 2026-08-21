@@ -18,10 +18,11 @@ import (
 )
 
 type simulationRunReaderFake struct {
-	run           store.SimulationRun
-	metrics       []store.SimulationMetricResult
-	verifications []store.SimulationVerification
-	readCalls     int
+	run             store.SimulationRun
+	metrics         []store.SimulationMetricResult
+	verifications   []store.SimulationVerification
+	materialization contract.JobMaterialization
+	readCalls       int
 }
 
 type simulationJobReaderFake struct {
@@ -74,6 +75,13 @@ func (f *simulationRunReaderFake) ListSimulationVerifications(_ context.Context,
 	return f.verifications, nil
 }
 
+func (f *simulationRunReaderFake) GetSimulationJobMaterialization(_ context.Context, id domain.ID) (contract.JobMaterialization, error) {
+	if id != f.materialization.JobID {
+		return contract.JobMaterialization{}, store.ErrNotFound
+	}
+	return f.materialization, nil
+}
+
 func TestSimulationHandlerReadsImmutableRunWithoutMutation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	id := domain.ID("01948c1e-0000-7000-8000-000000000000")
@@ -84,7 +92,12 @@ func TestSimulationHandlerReadsImmutableRunWithoutMutation(t *testing.T) {
 	reproductionID := domain.ID("01948c1e-0000-7000-8000-000000000005")
 	hash := strings.Repeat("a", 64)
 	now := time.Date(2026, 8, 21, 8, 0, 0, 0, time.UTC)
-	reader := &simulationRunReaderFake{run: store.SimulationRun{ID: id, JobID: jobID, ProjectID: id, RevisionID: revisionID, ScenarioDefinitionID: sceneID, InputHash: hash, FingerprintHash: hash, ResultHash: hash, CanonicalResult: `{"schema":"simulation-result-v1"}`, CreatedAt: now, Implementations: contract.V1Descriptors()}, metrics: []store.SimulationMetricResult{{MetricID: "metric-dps", MetricVersion: "v1", Status: "available", CanonicalResult: `{"value":"10"}`}}, verifications: []store.SimulationVerification{{ID: verificationID, SourceRunID: id, ReproductionRunID: reproductionID, InputHash: hash, FingerprintHash: hash, SourceResultHash: hash, ReproductionResultHash: hash, Status: "verified", CreatedAt: now}}}
+	input := contract.SimulationInputV1{SchemaVersion: contract.SimulationInputSchemaV1, ProjectID: contract.ID(id), RevisionID: contract.ID(revisionID), ConfigHash: hash, ManifestHash: hash, SceneID: "single-target-30s", SceneVersion: "v1", SceneBodyHash: hash, SampleCount: 1, Metrics: []contract.MetricIdentity{{ID: "metric-dps", Version: "v1"}}}
+	canonical, err := input.CanonicalBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := &simulationRunReaderFake{run: store.SimulationRun{ID: id, JobID: jobID, ProjectID: id, RevisionID: revisionID, ScenarioDefinitionID: sceneID, InputHash: hash, FingerprintHash: hash, ResultHash: hash, CanonicalResult: `{"schema":"simulation-result-v1"}`, CreatedAt: now, Implementations: contract.V1Descriptors()}, metrics: []store.SimulationMetricResult{{MetricID: "metric-dps", MetricVersion: "v1", Status: "available", CanonicalResult: `{"value":"10"}`}}, verifications: []store.SimulationVerification{{ID: verificationID, SourceRunID: id, ReproductionRunID: reproductionID, InputHash: hash, FingerprintHash: hash, SourceResultHash: hash, ReproductionResultHash: hash, Status: "verified", CreatedAt: now}}, materialization: contract.JobMaterialization{JobID: jobID, ProjectID: id, RevisionID: revisionID, ScenarioDefinitionID: sceneID, CanonicalInput: canonical, InputHash: hash, FingerprintHash: hash, CreatedAt: now}}
 	engine := gin.New()
 	NewSimulationHandler(func() simulationRunReader { return reader }).Register(engine)
 

@@ -910,14 +910,35 @@ components:
         source_result_hash: { $ref: '#/components/schemas/Hash' }
         reproduction_result_hash: { $ref: '#/components/schemas/Hash' }
         created_at: { type: string, format: date-time }
+    SimulationCapturedInput:
+      type: object
+      description: Byte-exact normalized immutable input captured at Job admission; server fields are never reconstructed from current working state.
+      required: [schema_version, project_id, revision_id, config_hash, version_manifest_hash, scene_id, scene_version, scene_body_hash, participants, actions, duration_ms, budgets, sample_count, seed, metrics]
+      properties:
+        schema_version: { type: string, const: v1 }
+        project_id: { $ref: '#/components/schemas/UUIDv7' }
+        revision_id: { $ref: '#/components/schemas/UUIDv7' }
+        config_hash: { $ref: '#/components/schemas/Hash' }
+        version_manifest_hash: { $ref: '#/components/schemas/Hash' }
+        scene_id: { type: string, minLength: 1 }
+        scene_version: { type: string, minLength: 1 }
+        scene_body_hash: { $ref: '#/components/schemas/Hash' }
+        participants: { type: array, items: { type: object, additionalProperties: true } }
+        actions: { type: array, items: { type: object, additionalProperties: true } }
+        duration_ms: { type: integer, minimum: 0 }
+        budgets: { type: object, additionalProperties: true }
+        sample_count: { type: integer, minimum: 1 }
+        seed: { type: integer, minimum: 0 }
+        metrics: { type: array, items: { $ref: '#/components/schemas/SimulationMetricRequest' } }
     SimulationRun:
       type: object
-      required: [id, job_id, revision_id, scenario_definition_id, input_hash, fingerprint_hash, result_hash, canonical_result, metrics, verification_refs, reproducible, reasons, created_at]
+      required: [id, job_id, revision_id, scenario_definition_id, input, input_hash, fingerprint_hash, result_hash, canonical_result, metrics, verification_refs, reproducible, reasons, created_at]
       properties:
         id: { $ref: '#/components/schemas/UUIDv7' }
         job_id: { $ref: '#/components/schemas/UUIDv7' }
         revision_id: { $ref: '#/components/schemas/UUIDv7' }
         scenario_definition_id: { $ref: '#/components/schemas/UUIDv7' }
+        input: { oneOf: [{ $ref: '#/components/schemas/SimulationCapturedInput' }, { type: 'null' }] }
         input_hash: { $ref: '#/components/schemas/Hash' }
         fingerprint_hash: { $ref: '#/components/schemas/Hash' }
         result_hash: { $ref: '#/components/schemas/Hash' }

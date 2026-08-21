@@ -994,11 +994,37 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
+        /** @description Byte-exact normalized immutable input captured at Job admission; server fields are never reconstructed from current working state. */
+        SimulationCapturedInput: {
+            /** @constant */
+            schema_version: "v1";
+            project_id: components["schemas"]["UUIDv7"];
+            revision_id: components["schemas"]["UUIDv7"];
+            config_hash: components["schemas"]["Hash"];
+            version_manifest_hash: components["schemas"]["Hash"];
+            scene_id: string;
+            scene_version: string;
+            scene_body_hash: components["schemas"]["Hash"];
+            participants: {
+                [key: string]: unknown;
+            }[];
+            actions: {
+                [key: string]: unknown;
+            }[];
+            duration_ms: number;
+            budgets: {
+                [key: string]: unknown;
+            };
+            sample_count: number;
+            seed: number;
+            metrics: components["schemas"]["SimulationMetricRequest"][];
+        };
         SimulationRun: {
             id: components["schemas"]["UUIDv7"];
             job_id: components["schemas"]["UUIDv7"];
             revision_id: components["schemas"]["UUIDv7"];
             scenario_definition_id: components["schemas"]["UUIDv7"];
+            input: components["schemas"]["SimulationCapturedInput"] | null;
             input_hash: components["schemas"]["Hash"];
             fingerprint_hash: components["schemas"]["Hash"];
             result_hash: components["schemas"]["Hash"];
