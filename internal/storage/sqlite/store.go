@@ -24,7 +24,7 @@ import (
 )
 
 const databaseName = "project.db"
-const currentSchemaVersion = 12
+const currentSchemaVersion = 13
 
 func DBSchemaVersion() int { return currentSchemaVersion }
 
@@ -354,6 +354,12 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 		}
 		version = 12
 	}
+	if version == 12 {
+		if err := applyMigrationV13(ctx, tx); err != nil {
+			return err
+		}
+		version = 13
+	}
 	if version != currentSchemaVersion {
 		return fmt.Errorf("unsupported schema version %d", version)
 	}
@@ -465,6 +471,17 @@ func applyMigrationV12(ctx context.Context, tx *sql.Tx) error {
 	return recordMigrationChecksums(ctx, tx)
 }
 
+func applyMigrationV13(ctx context.Context, tx *sql.Tx) error {
+	body, err := root.Assets.ReadFile("migrations/0013_simulation_job_materializations.sql")
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, string(body)); err != nil {
+		return err
+	}
+	return recordMigrationChecksums(ctx, tx)
+}
+
 func recordMigrationChecksums(ctx context.Context, tx *sql.Tx) error {
 	checksums, err := migrationStepChecksums()
 	if err != nil {
@@ -486,17 +503,18 @@ func recordMigrationChecksums(ctx context.Context, tx *sql.Tx) error {
 
 func migrationStepChecksums() (map[string]string, error) {
 	files := map[string]string{
-		"validation-v2":                "migrations/0002_validation.sql",
-		"versioning-v3":                "migrations/0003_versioning.sql",
-		"release-audit-v4":             "migrations/0004_release_audit.sql",
-		"graph-sync-v5":                "migrations/0005_graph_sync.sql",
-		"graph-checkpoints-v6":         "migrations/0006_graph_checkpoints.sql",
-		"graph-sync-indexes-v7":        "migrations/0007_graph_sync_indexes.sql",
-		"graph-migration-checksums-v8": "migrations/0008_graph_migration_checksums.sql",
-		"graph-job-evidence-v9":        "migrations/0009_graph_job_evidence.sql",
-		"shared-job-cancellation-v10":  "migrations/0010_shared_job_cancellation.sql",
-		"simulation-scenarios-v11":     "migrations/0011_simulation_scenarios.sql",
-		"simulation-runs-v12":          "migrations/0012_simulation_runs.sql",
+		"validation-v2":                       "migrations/0002_validation.sql",
+		"versioning-v3":                       "migrations/0003_versioning.sql",
+		"release-audit-v4":                    "migrations/0004_release_audit.sql",
+		"graph-sync-v5":                       "migrations/0005_graph_sync.sql",
+		"graph-checkpoints-v6":                "migrations/0006_graph_checkpoints.sql",
+		"graph-sync-indexes-v7":               "migrations/0007_graph_sync_indexes.sql",
+		"graph-migration-checksums-v8":        "migrations/0008_graph_migration_checksums.sql",
+		"graph-job-evidence-v9":               "migrations/0009_graph_job_evidence.sql",
+		"shared-job-cancellation-v10":         "migrations/0010_shared_job_cancellation.sql",
+		"simulation-scenarios-v11":            "migrations/0011_simulation_scenarios.sql",
+		"simulation-runs-v12":                 "migrations/0012_simulation_runs.sql",
+		"simulation-job-materializations-v13": "migrations/0013_simulation_job_materializations.sql",
 	}
 	checksums := make(map[string]string, len(files))
 	for stepID, path := range files {

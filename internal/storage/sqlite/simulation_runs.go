@@ -2,7 +2,9 @@ package sqlite
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -88,9 +90,62 @@ type SimulationCheckpoint struct {
 	Accumulator, AccumulatorHash string
 	CompletedAt                  time.Time
 }
+type SimulationJobMaterialization struct {
+	JobID, ProjectID, RevisionID, ScenarioDefinitionID domain.ID
+	CanonicalInput                                     []byte
+	InputHash, FingerprintHash                         string
+	CancelGeneration                                   int64
+	CreatedAt                                          time.Time
+}
 
 func (run SimulationRun) valid() bool {
 	return run.ID.Valid() && run.JobID.Valid() && run.ProjectID.Valid() && run.RevisionID.Valid() && run.ScenarioDefinitionID.Valid() && validSimulationHash(run.InputHash) && validSimulationHash(run.FingerprintHash) && validSimulationHash(run.ResultHash) && run.CanonicalResult != "" && !run.CreatedAt.IsZero()
+}
+
+func (materialization SimulationJobMaterialization) valid() bool {
+	return materialization.JobID.Valid() && materialization.ProjectID.Valid() && materialization.RevisionID.Valid() && materialization.ScenarioDefinitionID.Valid() && len(materialization.CanonicalInput) > 0 && validSimulationHash(materialization.InputHash) && validSimulationHash(materialization.FingerprintHash) && materialization.CancelGeneration >= 0 && !materialization.CreatedAt.IsZero() && hashSimulationBytes(materialization.CanonicalInput) == materialization.InputHash
+}
+
+func SimulationAccumulatorHash(accumulator string) string {
+	return hashSimulationBytes([]byte("eco-guardian/simulation-checkpoint/v1\x00" + accumulator))
+}
+
+func hashSimulationBytes(body []byte) string {
+	digest := sha256.Sum256(body)
+	return hex.EncodeToString(digest[:])
+}
+
+// SaveSimulationJobMaterialization records the complete captured identity
+// before execution. A materialization is immutable and must agree with the
+// shared Job's project, revision, and input hash.
+func (s *Store) SaveSimulationJobMaterialization(ctx context.Context, materialization SimulationJobMaterialization) error {
+	if !materialization.valid() || materialization.ProjectID != s.projectID {
+		return ErrSimulationRunInvalid
+	}
+	write, err := s.db.ExecContext(ctx, `INSERT INTO simulation_job_materializations(job_id,project_uuid,revision_id,scenario_definition_id,canonical_input,input_hash,fingerprint_hash,cancel_generation,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM jobs WHERE id=? AND project_uuid=? AND kind='simulation' AND revision_id=? AND input_hash=?)`, materialization.JobID, materialization.ProjectID, materialization.RevisionID, materialization.ScenarioDefinitionID, materialization.CanonicalInput, materialization.InputHash, materialization.FingerprintHash, materialization.CancelGeneration, materialization.CreatedAt.UTC().Format(time.RFC3339Nano), materialization.JobID, materialization.ProjectID, materialization.RevisionID, materialization.InputHash)
+	if err != nil {
+		return err
+	}
+	if rows, _ := write.RowsAffected(); rows != 1 {
+		return ErrSimulationRunInvalid
+	}
+	return nil
+}
+
+func (s *Store) GetSimulationJobMaterialization(ctx context.Context, jobID domain.ID) (SimulationJobMaterialization, error) {
+	var materialization SimulationJobMaterialization
+	var createdAt string
+	err := s.db.QueryRowContext(ctx, `SELECT job_id,project_uuid,revision_id,scenario_definition_id,canonical_input,input_hash,fingerprint_hash,cancel_generation,created_at FROM simulation_job_materializations WHERE job_id=? AND project_uuid=?`, jobID, s.projectID).Scan(&materialization.JobID, &materialization.ProjectID, &materialization.RevisionID, &materialization.ScenarioDefinitionID, &materialization.CanonicalInput, &materialization.InputHash, &materialization.FingerprintHash, &materialization.CancelGeneration, &createdAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SimulationJobMaterialization{}, ErrNotFound
+	}
+	if err != nil {
+		return SimulationJobMaterialization{}, err
+	}
+	if materialization.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt); err != nil || !materialization.valid() {
+		return SimulationJobMaterialization{}, ErrSimulationRunInvalid
+	}
+	return materialization, nil
 }
 
 func (s *Store) InsertSimulationRun(ctx context.Context, run SimulationRun, metrics []SimulationMetricResult) error {
@@ -205,7 +260,7 @@ func (s *Store) GetSimulationRun(ctx context.Context, id domain.ID) (SimulationR
 }
 
 func (s *Store) SaveSimulationCheckpoint(ctx context.Context, checkpoint SimulationCheckpoint) error {
-	if !checkpoint.JobID.Valid() || checkpoint.SampleOrdinal > uint64(^uint64(0)>>1) || !validSimulationHash(checkpoint.InputHash) || !validSimulationHash(checkpoint.FingerprintHash) || checkpoint.CancelGeneration < 0 || checkpoint.Accumulator == "" || !validSimulationHash(checkpoint.AccumulatorHash) || checkpoint.CompletedAt.IsZero() {
+	if !checkpoint.JobID.Valid() || checkpoint.SampleOrdinal > uint64(^uint64(0)>>1) || !validSimulationHash(checkpoint.InputHash) || !validSimulationHash(checkpoint.FingerprintHash) || checkpoint.CancelGeneration < 0 || checkpoint.Accumulator == "" || checkpoint.AccumulatorHash != SimulationAccumulatorHash(checkpoint.Accumulator) || checkpoint.CompletedAt.IsZero() {
 		return ErrSimulationRunInvalid
 	}
 	write, err := s.db.ExecContext(ctx, `INSERT INTO simulation_job_checkpoints(job_id,sample_ordinal,input_hash,fingerprint_hash,cancel_generation,accumulator,accumulator_hash,completed_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(job_id,sample_ordinal) DO UPDATE SET accumulator=excluded.accumulator,accumulator_hash=excluded.accumulator_hash,completed_at=excluded.completed_at WHERE simulation_job_checkpoints.input_hash=excluded.input_hash AND simulation_job_checkpoints.fingerprint_hash=excluded.fingerprint_hash AND simulation_job_checkpoints.cancel_generation=excluded.cancel_generation`, checkpoint.JobID, checkpoint.SampleOrdinal, checkpoint.InputHash, checkpoint.FingerprintHash, checkpoint.CancelGeneration, checkpoint.Accumulator, checkpoint.AccumulatorHash, checkpoint.CompletedAt.UTC().Format(time.RFC3339Nano))
@@ -239,7 +294,7 @@ func (s *Store) ListSimulationCheckpoints(ctx context.Context, jobID domain.ID, 
 			return nil, ErrSimulationRunInvalid
 		}
 		checkpoint.SampleOrdinal = uint64(ordinal)
-		if checkpoint.CompletedAt, err = time.Parse(time.RFC3339Nano, completedAt); err != nil || checkpoint.Accumulator == "" || !validSimulationHash(checkpoint.AccumulatorHash) {
+		if checkpoint.CompletedAt, err = time.Parse(time.RFC3339Nano, completedAt); err != nil || checkpoint.Accumulator == "" || checkpoint.AccumulatorHash != SimulationAccumulatorHash(checkpoint.Accumulator) {
 			return nil, ErrSimulationRunInvalid
 		}
 		checkpoints = append(checkpoints, checkpoint)

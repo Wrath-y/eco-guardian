@@ -35,11 +35,12 @@ func TestSimulationRunAndMetricFactsAreInsertOnlyWhileCheckpointIsRecoverable(t 
 	if _, err = store.db.Exec(`UPDATE simulation_runs SET result_hash=? WHERE id=?`, strings.Repeat("e", 64), run.ID); err == nil {
 		t.Fatal("expected immutable run")
 	}
-	checkpoint := SimulationCheckpoint{JobID: job.ID, SampleOrdinal: 0, InputHash: run.InputHash, FingerprintHash: run.FingerprintHash, CancelGeneration: 0, Accumulator: `{"sample":0}`, AccumulatorHash: strings.Repeat("f", 64), CompletedAt: time.Now().UTC()}
+	checkpoint := SimulationCheckpoint{JobID: job.ID, SampleOrdinal: 0, InputHash: run.InputHash, FingerprintHash: run.FingerprintHash, CancelGeneration: 0, Accumulator: `{"sample":0}`, AccumulatorHash: SimulationAccumulatorHash(`{"sample":0}`), CompletedAt: time.Now().UTC()}
 	if err = store.SaveSimulationCheckpoint(context.Background(), checkpoint); err != nil {
 		t.Fatal(err)
 	}
 	checkpoint.Accumulator = `{"sample":0,"replayed":true}`
+	checkpoint.AccumulatorHash = SimulationAccumulatorHash(checkpoint.Accumulator)
 	if err = store.SaveSimulationCheckpoint(context.Background(), checkpoint); err != nil {
 		t.Fatal(err)
 	}
@@ -50,6 +51,38 @@ func TestSimulationRunAndMetricFactsAreInsertOnlyWhileCheckpointIsRecoverable(t 
 	checkpoint.InputHash = strings.Repeat("9", 64)
 	if err = store.SaveSimulationCheckpoint(context.Background(), checkpoint); err == nil {
 		t.Fatal("expected checkpoint identity mismatch")
+	}
+}
+
+func TestSimulationJobMaterializationIsImmutableAndBoundToJobIdentity(t *testing.T) {
+	store := newStore(t)
+	_, revision, err := store.Create(context.Background(), "tag", tagDraft("simulationmaterialization"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	scene, err := store.GetScenarioDefinition(context.Background(), "single-target-30s", "v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical := []byte("eco-guardian/simulation-input/v1\x00{\"captured\":true}")
+	inputHash := hashSimulationBytes(canonical)
+	job, _, err := store.CreateOrGet(context.Background(), sharedjob.Request{ProjectID: store.ProjectID(), Kind: "simulation", RevisionID: revision.ID, InputHash: inputHash, IdempotencyKey: "simulation-materialization", RequestHash: strings.Repeat("b", 64)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	materialization := SimulationJobMaterialization{JobID: job.ID, ProjectID: store.ProjectID(), RevisionID: revision.ID, ScenarioDefinitionID: scene.ID, CanonicalInput: canonical, InputHash: inputHash, FingerprintHash: strings.Repeat("c", 64), CreatedAt: time.Now().UTC()}
+	if err = store.SaveSimulationJobMaterialization(context.Background(), materialization); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.GetSimulationJobMaterialization(context.Background(), job.ID)
+	if err != nil || string(loaded.CanonicalInput) != string(canonical) || loaded.FingerprintHash != materialization.FingerprintHash {
+		t.Fatalf("materialization=%#v err=%v", loaded, err)
+	}
+	if err = store.SaveSimulationJobMaterialization(context.Background(), materialization); err == nil {
+		t.Fatal("expected duplicate immutable materialization rejection")
+	}
+	if _, err = store.db.Exec(`UPDATE simulation_job_materializations SET fingerprint_hash=? WHERE job_id=?`, strings.Repeat("d", 64), job.ID); err == nil {
+		t.Fatal("expected immutable materialization")
 	}
 }
 
@@ -75,7 +108,7 @@ func TestSimulationSealIsAtomicAndRejectsNewCancellationGeneration(t *testing.T)
 	if err = store.SealSimulationRun(context.Background(), run, metrics, 1, 0); err == nil {
 		t.Fatal("expected incomplete sample seal rejection")
 	}
-	checkpoint := SimulationCheckpoint{JobID: job.ID, SampleOrdinal: 0, InputHash: run.InputHash, FingerprintHash: run.FingerprintHash, CancelGeneration: 0, Accumulator: `{"sample":0}`, AccumulatorHash: strings.Repeat("f", 64), CompletedAt: time.Now().UTC()}
+	checkpoint := SimulationCheckpoint{JobID: job.ID, SampleOrdinal: 0, InputHash: run.InputHash, FingerprintHash: run.FingerprintHash, CancelGeneration: 0, Accumulator: `{"sample":0}`, AccumulatorHash: SimulationAccumulatorHash(`{"sample":0}`), CompletedAt: time.Now().UTC()}
 	if err = store.SaveSimulationCheckpoint(context.Background(), checkpoint); err != nil {
 		t.Fatal(err)
 	}
