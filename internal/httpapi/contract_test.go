@@ -16,7 +16,7 @@ func TestOpenAPIContainsAllHandlerOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	contract := string(raw)
-	for _, id := range []string{"selectProjectDirectory", "openProject", "listRecentProjects", "openRecentProject", "getCurrentProject", "closeProject", "getEntitySchema", "listEntities", "createEntity", "getEntity", "patchEntity", "deleteEntity", "createValidationRun", "getValidationRun", "listRevisions", "createRevision", "getRevision", "getRevisionDiff", "ensureGraphSync", "getGraphStatus", "listReleasePolicies", "createReleasePolicy", "listReleases", "createRelease", "getRelease", "getJob", "streamJobEvents", "cancelJob", "getRuntimeCapabilities"} {
+	for _, id := range []string{"selectProjectDirectory", "openProject", "listRecentProjects", "openRecentProject", "getCurrentProject", "closeProject", "getEntitySchema", "listEntities", "createEntity", "getEntity", "patchEntity", "deleteEntity", "createValidationRun", "getValidationRun", "listRevisions", "createRevision", "getRevision", "getRevisionDiff", "ensureGraphSync", "getGraphStatus", "listReleasePolicies", "createReleasePolicy", "listReleases", "createRelease", "getRelease", "getJob", "streamJobEvents", "cancelJob", "createSimulationJob", "getSimulationRun", "getRuntimeCapabilities"} {
 		if !strings.Contains(contract, "operationId: "+id) {
 			t.Errorf("OpenAPI missing handler operation %s", id)
 		}
@@ -44,6 +44,27 @@ func TestOpenAPIContainsGraphStatusAndProblemContracts(t *testing.T) {
 	} {
 		if !strings.Contains(contract, code) {
 			t.Errorf("OpenAPI missing graph problem code %s", code)
+		}
+	}
+}
+
+func TestOpenAPIContainsSimulationProblemContracts(t *testing.T) {
+	raw, err := os.ReadFile("../../api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract := string(raw)
+	for _, code := range []string{
+		"SIMULATION_IDEMPOTENCY_REQUIRED", "SIMULATION_INPUT_INVALID", "SIMULATION_SEED_INVALID",
+		"SIMULATION_VALIDATION_REQUIRED", "SIMULATION_SOURCE_INVALID", "SIMULATION_SCENE_INVALID",
+		"SIMULATION_PARAMETER_INVALID", "SIMULATION_METRIC_INVALID", "SIMULATION_SAMPLE_INVALID",
+		"SIMULATION_BUDGET_INVALID", "SIMULATION_IMPLEMENTATION_UNAVAILABLE",
+		"SIMULATION_VERIFICATION_TARGET_INVALID", "SIMULATION_CAPABILITY_UNAVAILABLE",
+		"SIMULATION_RUN_NOT_FOUND", "SIMULATION_RUN_UNAVAILABLE", "BUDGET_EXCEEDED", "TIMEOUT",
+		"RECOVERY_MISMATCH", "RECOVERY_UNAVAILABLE",
+	} {
+		if !strings.Contains(contract, code) {
+			t.Errorf("OpenAPI missing simulation problem code %s", code)
 		}
 	}
 }
@@ -113,6 +134,14 @@ func TestVersioningProblemFixturesHaveStableStatusMappings(t *testing.T) {
 		"CONTENT_HASH_MISMATCH": 422, "CONTENT_HASH_CONFLICT": 409,
 		"PROVIDER_TASK_FAILED": 422, "GRAPH_RETRY_EXHAUSTED": 503,
 		"GRAPH_RETRY_NOT_SAFE": 409, "GRAPH_STATUS_UNAVAILABLE": 503,
+		"SIMULATION_IDEMPOTENCY_REQUIRED": 400, "SIMULATION_INPUT_INVALID": 400, "SIMULATION_SEED_INVALID": 400,
+		"SIMULATION_VALIDATION_REQUIRED": 409, "SIMULATION_SOURCE_INVALID": 400,
+		"SIMULATION_SCENE_INVALID": 400, "SIMULATION_PARAMETER_INVALID": 400,
+		"SIMULATION_METRIC_INVALID": 400, "SIMULATION_SAMPLE_INVALID": 400,
+		"SIMULATION_BUDGET_INVALID": 400, "SIMULATION_IMPLEMENTATION_UNAVAILABLE": 409,
+		"SIMULATION_VERIFICATION_TARGET_INVALID": 400, "SIMULATION_CAPABILITY_UNAVAILABLE": 503,
+		"SIMULATION_RUN_NOT_FOUND": 404, "SIMULATION_RUN_UNAVAILABLE": 503,
+		"BUDGET_EXCEEDED": 422, "TIMEOUT": 504, "RECOVERY_MISMATCH": 409, "RECOVERY_UNAVAILABLE": 409,
 	}
 	got := map[string]int{}
 	for _, fixture := range fixtures {
