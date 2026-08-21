@@ -14,6 +14,7 @@ import (
 	"github.com/zouyi/eco-guardian/internal/domain"
 	sharedjob "github.com/zouyi/eco-guardian/internal/job"
 	"github.com/zouyi/eco-guardian/internal/simulation/contract"
+	"github.com/zouyi/eco-guardian/internal/simulation/orchestration"
 	store "github.com/zouyi/eco-guardian/internal/storage/sqlite"
 )
 
@@ -30,6 +31,8 @@ type simulationJobReaderFake struct {
 	events    []sharedjob.Event
 	cancelled bool
 }
+
+func (f *simulationJobReaderFake) ProjectID() domain.ID { return f.job.ProjectID }
 
 func (f *simulationJobReaderFake) GetJob(_ context.Context, id domain.ID) (sharedjob.Record, error) {
 	if id != f.job.ID {
@@ -171,5 +174,56 @@ func TestSimulationJobResolverUsesSharedJobRoutes(t *testing.T) {
 	engine.ServeHTTP(stream, request)
 	if stream.Code != http.StatusOK || !strings.Contains(stream.Body.String(), "id: 2") || !strings.Contains(stream.Body.String(), "SAMPLES_RUNNING") || !strings.Contains(stream.Body.String(), "event: terminal") {
 		t.Fatalf("stream=%d body=%s", stream.Code, stream.Body.String())
+	}
+}
+
+type simulationAdmissionServiceFake struct {
+	result app.SimulationAdmissionResult
+	err    error
+	seen   app.SimulationAdmission
+}
+
+func (f *simulationAdmissionServiceFake) AdmitSimulation(_ context.Context, admission app.SimulationAdmission) (app.SimulationAdmissionResult, error) {
+	f.seen = admission
+	return f.result, f.err
+}
+
+func TestSimulationAdmissionHandlerCreatesSharedJobWithStableLocation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	projectID := domain.ID("01948c1e-0000-7000-8000-000000000000")
+	jobID := domain.ID("01948c1e-0000-7000-8000-000000000001")
+	now := time.Now().UTC()
+	jobs := &simulationJobReaderFake{job: sharedjob.Record{ID: jobID, ProjectID: projectID, Kind: "simulation", RevisionID: domain.ID("01948c1e-0000-7000-8000-000000000002"), InputHash: strings.Repeat("a", 64), IdempotencyKey: "key", RequestHash: strings.Repeat("a", 64), Status: sharedjob.Queued, CreatedAt: now, UpdatedAt: now}}
+	service := &simulationAdmissionServiceFake{result: app.SimulationAdmissionResult{Job: jobID}}
+	engine := gin.New()
+	NewSimulationAdmissionHandler(func() app.SimulationAdmissionService { return service }, func() simulationJobReader { return jobs }).Register(engine)
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/simulation-jobs", strings.NewReader(`{"source":{"revision_id":"01948c1e-0000-7000-8000-000000000002"},"scene_id":"single-target-30s","scene_version":"v1","metrics":[{"id":"metric-dps","version":"v1"}],"sample_count":1}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Idempotency-Key", "key")
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusAccepted || response.Header().Get("Location") != "/api/v1/jobs/"+string(jobID) || service.seen.ProjectID != projectID || service.seen.IdempotencyKey != "key" || !strings.Contains(response.Body.String(), `"kind":"simulation"`) {
+		t.Fatalf("status=%d location=%q admission=%#v body=%s", response.Code, response.Header().Get("Location"), service.seen, response.Body.String())
+	}
+}
+
+func TestSimulationAdmissionHandlerRejectsUnsupportedAndBlockedInputs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	projectID := domain.ID("01948c1e-0000-7000-8000-000000000000")
+	jobs := &simulationJobReaderFake{job: sharedjob.Record{ProjectID: projectID}}
+	service := &simulationAdmissionServiceFake{err: orchestration.ErrFullValidationRequired}
+	engine := gin.New()
+	NewSimulationAdmissionHandler(func() app.SimulationAdmissionService { return service }, func() simulationJobReader { return jobs }).Register(engine)
+	for name, body := range map[string]string{"unsupported": `{"source":{"revision_id":"01948c1e-0000-7000-8000-000000000002"},"scene_id":"scene","scene_version":"v1","metrics":[{"id":"metric-dps","version":"v1"}],"parameters":{"x":1}}`, "blocked": `{"source":{"revision_id":"01948c1e-0000-7000-8000-000000000002"},"scene_id":"scene","scene_version":"v1","metrics":[{"id":"metric-dps","version":"v1"}]}`} {
+		t.Run(name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/simulation-jobs", strings.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Idempotency-Key", "key")
+			engine.ServeHTTP(response, request)
+			if response.Code == http.StatusAccepted || (name == "unsupported" && !strings.Contains(response.Body.String(), `"code":"SIMULATION_INPUT_INVALID"`)) || (name == "blocked" && !strings.Contains(response.Body.String(), `"code":"SIMULATION_VALIDATION_REQUIRED"`)) {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
 	}
 }
