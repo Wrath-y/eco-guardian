@@ -65,6 +65,14 @@ func NewVersionHandlerWithGraph(service VersionServiceProvider, graph GraphSyncS
 	return &VersionHandler{service: service, graph: graph, resolvers: []DurableResolver{releaseResolver(service), graphResolver(graph)}}
 }
 
+// RegisterDurableResolver composes another capability into the shared Job
+// transport without changing its public routes or event protocol.
+func (h *VersionHandler) RegisterDurableResolver(resolver DurableResolver) {
+	if resolver != nil {
+		h.resolvers = append(h.resolvers, resolver)
+	}
+}
+
 func releaseResolver(provider VersionServiceProvider) DurableResolverFunc {
 	return DurableResolverFunc{
 		Get: func(ctx context.Context, id domain.ID) (map[string]any, bool, error) {

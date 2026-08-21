@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/zouyi/eco-guardian/internal/app"
 	"github.com/zouyi/eco-guardian/internal/domain"
+	sharedjob "github.com/zouyi/eco-guardian/internal/job"
 	"github.com/zouyi/eco-guardian/internal/simulation/contract"
 	store "github.com/zouyi/eco-guardian/internal/storage/sqlite"
 )
@@ -20,6 +22,41 @@ type simulationRunReaderFake struct {
 	metrics       []store.SimulationMetricResult
 	verifications []store.SimulationVerification
 	readCalls     int
+}
+
+type simulationJobReaderFake struct {
+	job       sharedjob.Record
+	events    []sharedjob.Event
+	cancelled bool
+}
+
+func (f *simulationJobReaderFake) GetJob(_ context.Context, id domain.ID) (sharedjob.Record, error) {
+	if id != f.job.ID {
+		return sharedjob.Record{}, store.ErrJobNotFound
+	}
+	return f.job, nil
+}
+
+func (f *simulationJobReaderFake) RequestCancellation(_ context.Context, id domain.ID) (sharedjob.Record, bool, error) {
+	if id != f.job.ID {
+		return sharedjob.Record{}, false, store.ErrJobNotFound
+	}
+	f.cancelled = true
+	f.job.Status = sharedjob.Canceled
+	return f.job, false, nil
+}
+
+func (f *simulationJobReaderFake) ListEvents(_ context.Context, id domain.ID, after int64) ([]sharedjob.Event, error) {
+	if id != f.job.ID {
+		return nil, store.ErrJobNotFound
+	}
+	result := []sharedjob.Event{}
+	for _, event := range f.events {
+		if event.Ordinal > after {
+			result = append(result, event)
+		}
+	}
+	return result, nil
 }
 
 func (f *simulationRunReaderFake) GetSimulationRun(_ context.Context, id domain.ID) (store.SimulationRun, []store.SimulationMetricResult, error) {
@@ -91,5 +128,35 @@ func TestSimulationHandlerScopesMissingAndUnavailableReaders(t *testing.T) {
 	engine.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/simulation-runs/"+id, nil))
 	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `"code":"SIMULATION_RUN_NOT_FOUND"`) {
 		t.Fatalf("missing status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestSimulationJobResolverUsesSharedJobRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	id := domain.ID("01948c1e-0000-7000-8000-000000000000")
+	revisionID := domain.ID("01948c1e-0000-7000-8000-000000000001")
+	now := time.Now().UTC()
+	reader := &simulationJobReaderFake{job: sharedjob.Record{ID: id, ProjectID: id, Kind: "simulation", RevisionID: revisionID, InputHash: strings.Repeat("a", 64), IdempotencyKey: "simulation", RequestHash: strings.Repeat("a", 64), Status: sharedjob.Running, CreatedAt: now, UpdatedAt: now}, events: []sharedjob.Event{{JobID: id, Ordinal: 2, Phase: "SAMPLES_RUNNING", Progress: 50, CreatedAt: now}}}
+	handler := NewVersionHandler(func() app.VersioningService { return &fakeVersionService{jobErr: errors.New("not a release job")} })
+	handler.RegisterDurableResolver(SimulationJobResolver(func() simulationJobReader { return reader }))
+	engine := gin.New()
+	handler.Register(engine)
+
+	get := httptest.NewRecorder()
+	engine.ServeHTTP(get, httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+string(id), nil))
+	if get.Code != http.StatusOK || !strings.Contains(get.Body.String(), `"kind":"simulation"`) || !strings.Contains(get.Body.String(), `"input_hash"`) {
+		t.Fatalf("get=%d body=%s", get.Code, get.Body.String())
+	}
+	cancel := httptest.NewRecorder()
+	engine.ServeHTTP(cancel, httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+string(id)+"/cancel", nil))
+	if cancel.Code != http.StatusAccepted || !reader.cancelled || !strings.Contains(cancel.Body.String(), `"status":"canceled"`) {
+		t.Fatalf("cancel=%d canceled=%v body=%s", cancel.Code, reader.cancelled, cancel.Body.String())
+	}
+	stream := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+string(id)+"/events", nil)
+	request.Header.Set("Last-Event-ID", "1")
+	engine.ServeHTTP(stream, request)
+	if stream.Code != http.StatusOK || !strings.Contains(stream.Body.String(), "id: 2") || !strings.Contains(stream.Body.String(), "SAMPLES_RUNNING") || !strings.Contains(stream.Body.String(), "event: terminal") {
+		t.Fatalf("stream=%d body=%s", stream.Code, stream.Body.String())
 	}
 }
