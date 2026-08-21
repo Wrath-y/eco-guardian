@@ -6,9 +6,11 @@ import (
 	"testing"
 
 	"github.com/zouyi/eco-guardian/internal/domain"
+	graphgate "github.com/zouyi/eco-guardian/internal/graph/gate"
 	"github.com/zouyi/eco-guardian/internal/graph/projector"
 	graphsync "github.com/zouyi/eco-guardian/internal/graph/sync"
 	store "github.com/zouyi/eco-guardian/internal/storage/sqlite"
+	versioninggate "github.com/zouyi/eco-guardian/internal/versioning/gate"
 )
 
 func TestSQLiteFactoryRunsConfiguredRecoveryOnProjectOpen(t *testing.T) {
@@ -109,6 +111,34 @@ func TestSQLiteFactoryOptionallyRegistersGraphVersionContributor(t *testing.T) {
 		}
 	}
 	t.Fatalf("Graph contributor missing from manifest: %#v", record.Metadata.Manifest)
+}
+
+func TestSQLiteFactoryOptionallyRegistersGraphGateOnceAcrossCreateAndOpen(t *testing.T) {
+	registry, err := domain.NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	gates, err := versioninggate.NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	factory := SQLiteFactory{Registry: registry, GraphGateRegistry: gates, GraphGateProvider: graphgate.Provider{}}
+	directory := t.TempDir()
+	handle, err := factory.Create(context.Background(), directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = handle.Close(); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := factory.Open(context.Background(), directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	if descriptor, descriptorErr := gates.Descriptor(graphgate.CapabilityID, graphgate.GateID); descriptorErr != nil || descriptor.ContractVersion != graphgate.ContractVersion {
+		t.Fatalf("descriptor=%#v err=%v", descriptor, descriptorErr)
+	}
 }
 
 func TestGraphContributorStartsPostRevisionValidationPipeline(t *testing.T) {

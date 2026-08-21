@@ -5,11 +5,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 
 	"github.com/zouyi/eco-guardian/internal/domain"
 	graphsync "github.com/zouyi/eco-guardian/internal/graph/sync"
 	store "github.com/zouyi/eco-guardian/internal/storage/sqlite"
 	"github.com/zouyi/eco-guardian/internal/validation"
+	versioninggate "github.com/zouyi/eco-guardian/internal/versioning/gate"
 	versioningrevision "github.com/zouyi/eco-guardian/internal/versioning/revision"
 )
 
@@ -49,6 +51,8 @@ func (l *fileLock) Release() error {
 type SQLiteFactory struct {
 	Registry                *domain.Registry
 	GraphVersionContributor versioningrevision.VersionContributor
+	GraphGateRegistry       *versioninggate.Registry
+	GraphGateProvider       versioninggate.Provider
 	GraphRecovery           graphsync.RecoveryDispatcher
 	Recover                 func(context.Context, *store.Store) error
 	AfterRevision           func(context.Context, *store.Store, domain.RevisionSummary)
@@ -94,6 +98,9 @@ func (f SQLiteFactory) Open(ctx context.Context, dir string) (ProjectHandle, err
 }
 
 func (f SQLiteFactory) configureGraphVersion(s *store.Store) error {
+	if err := f.registerGraphGate(); err != nil {
+		return err
+	}
 	if f.AfterRevision != nil {
 		s.RegisterRevisionObserver(func(ctx context.Context, revision domain.RevisionSummary) { f.AfterRevision(ctx, s, revision) })
 	} else if f.GraphVersionContributor != nil {
@@ -105,6 +112,27 @@ func (f SQLiteFactory) configureGraphVersion(s *store.Store) error {
 		return nil
 	}
 	return s.RegisterGraphVersionContributor(f.GraphVersionContributor)
+}
+
+func (f SQLiteFactory) registerGraphGate() error {
+	if f.GraphGateProvider == nil {
+		return nil
+	}
+	if f.GraphGateRegistry == nil {
+		return versioninggate.ErrDescriptorInvalid
+	}
+	want := f.GraphGateProvider.Descriptor()
+	existing, err := f.GraphGateRegistry.Descriptor(want.CapabilityID, want.GateID)
+	if err == nil {
+		if reflect.DeepEqual(existing, want) {
+			return nil
+		}
+		return versioninggate.ErrDescriptorDuplicate
+	}
+	if err != versioninggate.ErrDescriptorNotFound {
+		return err
+	}
+	return f.GraphGateRegistry.RegisterProvider(f.GraphGateProvider)
 }
 
 func startGraphValidationPipeline(ctx context.Context, s *store.Store, revision domain.RevisionSummary) {
