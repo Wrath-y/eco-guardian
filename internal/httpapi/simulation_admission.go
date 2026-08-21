@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -13,6 +15,7 @@ import (
 	"github.com/zouyi/eco-guardian/internal/simulation/contract"
 	simulationgate "github.com/zouyi/eco-guardian/internal/simulation/gate"
 	"github.com/zouyi/eco-guardian/internal/simulation/orchestration"
+	"github.com/zouyi/eco-guardian/internal/simulation/scenario"
 	store "github.com/zouyi/eco-guardian/internal/storage/sqlite"
 	"github.com/zouyi/eco-guardian/internal/validation"
 )
@@ -68,16 +71,16 @@ func (h *SimulationAdmissionHandler) create(c *gin.Context) {
 			RevisionID domain.ID `json:"revision_id"`
 			ReleaseID  domain.ID `json:"release_id"`
 		} `json:"source"`
-		SceneID      string                    `json:"scene_id"`
-		SceneVersion string                    `json:"scene_version"`
-		Metrics      []contract.MetricIdentity `json:"metrics"`
-		SampleCount  int                       `json:"sample_count"`
-		Seed         *uint64                   `json:"seed"`
-		Parameters   map[string]any            `json:"parameters"`
-		Budget       map[string]any            `json:"budget"`
-		VerifyRunID  domain.ID                 `json:"verify_run_id"`
+		SceneID      string                     `json:"scene_id"`
+		SceneVersion string                     `json:"scene_version"`
+		Metrics      []contract.MetricIdentity  `json:"metrics"`
+		SampleCount  int                        `json:"sample_count"`
+		Seed         *uint64                    `json:"seed"`
+		Parameters   map[string]json.RawMessage `json:"parameters"`
+		Budget       map[string]any             `json:"budget"`
+		VerifyRunID  domain.ID                  `json:"verify_run_id"`
 	}
-	if err := c.ShouldBindJSON(&request); err != nil || len(request.Parameters) != 0 || len(request.Budget) != 0 || request.VerifyRunID != "" {
+	if err := c.ShouldBindJSON(&request); err != nil || len(request.Budget) != 0 || request.VerifyRunID != "" {
 		problem(c, http.StatusBadRequest, "SIMULATION_INPUT_INVALID", "Simulation request is invalid")
 		return
 	}
@@ -90,7 +93,16 @@ func (h *SimulationAdmissionHandler) create(c *gin.Context) {
 		return
 	}
 	projectID := provider.ProjectID()
-	result, err := h.service().AdmitSimulation(c.Request.Context(), app.SimulationAdmission{ProjectID: projectID, RevisionID: request.Source.RevisionID, ReleaseID: request.Source.ReleaseID, SceneID: request.SceneID, SceneVersion: request.SceneVersion, Metrics: request.Metrics, SampleCount: request.SampleCount, Seed: request.Seed, IdempotencyKey: key})
+	paths := make([]string, 0, len(request.Parameters))
+	for path := range request.Parameters {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	parameters := make([]scenario.ParameterOverlay, 0, len(paths))
+	for _, path := range paths {
+		parameters = append(parameters, scenario.ParameterOverlay{Path: path, Value: append(json.RawMessage(nil), request.Parameters[path]...)})
+	}
+	result, err := h.service().AdmitSimulation(c.Request.Context(), app.SimulationAdmission{ProjectID: projectID, RevisionID: request.Source.RevisionID, ReleaseID: request.Source.ReleaseID, SceneID: request.SceneID, SceneVersion: request.SceneVersion, Metrics: request.Metrics, SampleCount: request.SampleCount, Seed: request.Seed, Parameters: parameters, IdempotencyKey: key})
 	if err != nil {
 		writeSimulationAdmissionError(c, err)
 		return

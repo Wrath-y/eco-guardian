@@ -7,6 +7,7 @@ import (
 	"github.com/zouyi/eco-guardian/internal/domain"
 	"github.com/zouyi/eco-guardian/internal/simulation/contract"
 	"github.com/zouyi/eco-guardian/internal/simulation/orchestration"
+	"github.com/zouyi/eco-guardian/internal/simulation/scenario"
 )
 
 var ErrSimulationAdmissionUnavailable = errors.New("simulation admission is unavailable")
@@ -24,6 +25,7 @@ type SimulationAdmission struct {
 	Metrics        []contract.MetricIdentity
 	SampleCount    int
 	Seed           *uint64
+	Parameters     []scenario.ParameterOverlay
 	IdempotencyKey string
 }
 
@@ -59,7 +61,14 @@ func (s SimulationAdmissionApplication) AdmitSimulation(ctx context.Context, req
 	if err != nil || !scene.DefinitionID.Valid() {
 		return SimulationAdmissionResult{}, ErrSimulationAdmissionUnavailable
 	}
-	input, err := contract.NormalizeInput(contract.InputRequest{Revision: revision, Scene: scene.Template, SampleCount: request.SampleCount, Seed: request.Seed, Metrics: request.Metrics})
+	template := scene.Template
+	if len(request.Parameters) > 0 {
+		template, err = scenario.Clone(scene.Template, scene.Template.Definition.ID, scene.Template.Definition.Version, request.Parameters, nil)
+		if err != nil {
+			return SimulationAdmissionResult{}, err
+		}
+	}
+	input, err := contract.NormalizeInput(contract.InputRequest{Revision: revision, Scene: template, SampleCount: request.SampleCount, Seed: request.Seed, Metrics: request.Metrics})
 	if err != nil {
 		return SimulationAdmissionResult{}, err
 	}

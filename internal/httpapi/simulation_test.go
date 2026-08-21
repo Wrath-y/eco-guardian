@@ -214,7 +214,7 @@ func TestSimulationAdmissionHandlerRejectsUnsupportedAndBlockedInputs(t *testing
 	service := &simulationAdmissionServiceFake{err: orchestration.ErrFullValidationRequired}
 	engine := gin.New()
 	NewSimulationAdmissionHandler(func() app.SimulationAdmissionService { return service }, func() simulationJobReader { return jobs }).Register(engine)
-	for name, body := range map[string]string{"unsupported": `{"source":{"revision_id":"01948c1e-0000-7000-8000-000000000002"},"scene_id":"scene","scene_version":"v1","metrics":[{"id":"metric-dps","version":"v1"}],"parameters":{"x":1}}`, "blocked": `{"source":{"revision_id":"01948c1e-0000-7000-8000-000000000002"},"scene_id":"scene","scene_version":"v1","metrics":[{"id":"metric-dps","version":"v1"}]}`} {
+	for name, body := range map[string]string{"unsupported": `{"source":{"revision_id":"01948c1e-0000-7000-8000-000000000002"},"scene_id":"scene","scene_version":"v1","metrics":[{"id":"metric-dps","version":"v1"}],"budget":{"max_events":1}}`, "blocked": `{"source":{"revision_id":"01948c1e-0000-7000-8000-000000000002"},"scene_id":"scene","scene_version":"v1","metrics":[{"id":"metric-dps","version":"v1"}]}`} {
 		t.Run(name, func(t *testing.T) {
 			response := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodPost, "/api/v1/simulation-jobs", strings.NewReader(body))
