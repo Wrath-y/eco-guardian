@@ -9,6 +9,7 @@ import (
 
 	"github.com/zouyi/eco-guardian/internal/domain"
 	graphsync "github.com/zouyi/eco-guardian/internal/graph/sync"
+	sharedjob "github.com/zouyi/eco-guardian/internal/job"
 )
 
 var (
@@ -68,16 +69,29 @@ func (s *Store) CreateOrGetGraphJob(ctx context.Context, request graphsync.Graph
 var _ graphsync.JobAdmission = (*Store)(nil)
 var _ graphsync.DurableJobStore = (*Store)(nil)
 var _ graphsync.JobEventStore = (*Store)(nil)
+var _ graphsync.CancellationIntentStore = (*Store)(nil)
 
 func (s *Store) GetGraphJob(ctx context.Context, jobID domain.ID) (graphsync.GraphJob, error) {
 	if !jobID.Valid() {
 		return graphsync.GraphJob{}, ErrGraphJobNotFound
 	}
-	job, err := scanGraphJob(s.db.QueryRowContext(ctx, `SELECT id,project_uuid,revision_id,input_hash,idempotency_key,request_hash,retry_of_job_id,COALESCE(graph_evidence,''),status,result_type,result_id,result_url,created_at,updated_at FROM jobs WHERE id=? AND project_uuid=? AND kind='graph_sync'`, jobID, s.projectID))
+	job, err := scanGraphJob(s.db.QueryRowContext(ctx, `SELECT id,project_uuid,revision_id,input_hash,idempotency_key,request_hash,retry_of_job_id,COALESCE(graph_evidence,''),status,result_type,result_id,result_url,cancel_generation,cancel_requested_at,created_at,updated_at FROM jobs WHERE id=? AND project_uuid=? AND kind='graph_sync'`, jobID, s.projectID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return graphsync.GraphJob{}, ErrGraphJobNotFound
 	}
 	return job, err
+}
+
+func (s *Store) RequestGraphCancellation(ctx context.Context, jobID domain.ID) (graphsync.GraphJob, bool, error) {
+	record, replay, err := s.RequestCancellation(ctx, jobID)
+	if errors.Is(err, ErrJobNotFound) {
+		return graphsync.GraphJob{}, false, ErrGraphJobNotFound
+	}
+	if err != nil || record.Kind != graphsync.SharedJobKind {
+		return graphsync.GraphJob{}, false, err
+	}
+	job, getErr := s.GetGraphJob(ctx, record.ID)
+	return job, replay, getErr
 }
 
 func (s *Store) TransitionGraphJob(ctx context.Context, jobID domain.ID, expected, next graphsync.JobStatus, result *graphsync.GraphJobResult) (graphsync.GraphJob, bool, error) {
@@ -94,19 +108,20 @@ func (s *Store) TransitionGraphJob(ctx context.Context, jobID domain.ID, expecte
 	if !expected.CanTransitionTo(next) {
 		return graphsync.GraphJob{}, false, ErrGraphJobTransition
 	}
-	var resultType, resultID, resultURL any
-	if result != nil {
-		resultType, resultID, resultURL = result.Type, result.ID, result.URL
+	shared, err := s.GetJob(ctx, jobID)
+	if errors.Is(err, ErrJobNotFound) || shared.Kind != graphsync.SharedJobKind {
+		return graphsync.GraphJob{}, false, ErrGraphJobNotFound
 	}
-	s.writes.Lock()
-	defer s.writes.Unlock()
-	write, err := s.db.ExecContext(ctx, `UPDATE jobs SET status=?,result_type=?,result_id=?,result_url=?,updated_at=? WHERE id=? AND project_uuid=? AND kind='graph_sync' AND status=?`, next, resultType, resultID, resultURL, s.now().UTC().Format(time.RFC3339Nano), jobID, s.projectID, expected)
 	if err != nil {
 		return graphsync.GraphJob{}, false, err
 	}
-	updated, err := write.RowsAffected()
-	if err != nil || updated == 0 {
-		return graphsync.GraphJob{}, false, err
+	var sharedResult *sharedjob.Result
+	if result != nil {
+		sharedResult = &sharedjob.Result{Type: result.Type, ID: result.ID, URL: result.URL}
+	}
+	_, updated, err := s.Transition(ctx, jobID, sharedjob.Status(expected), sharedjob.Status(next), sharedResult, shared.CancelGeneration)
+	if err != nil || !updated {
+		return graphsync.GraphJob{}, updated, err
 	}
 	job, err := s.GetGraphJob(ctx, jobID)
 	return job, true, err
@@ -116,71 +131,60 @@ func (s *Store) AppendGraphJobEvent(ctx context.Context, event graphsync.GraphJo
 	if !event.Valid() {
 		return graphsync.GraphJobEvent{}, false, ErrGraphJobEvent
 	}
-	s.writes.Lock()
-	defer s.writes.Unlock()
-	tx, err := s.db.BeginTx(ctx, nil)
+	history, err := s.ListGraphJobEvents(ctx, event.JobID, 0)
 	if err != nil {
 		return graphsync.GraphJobEvent{}, false, err
 	}
-	defer tx.Rollback()
-	existing, found, err := findGraphJobEvent(ctx, tx, s.projectID, event.JobID, event.Ordinal)
-	if err != nil {
-		return graphsync.GraphJobEvent{}, false, err
-	}
-	if found {
-		if !sameGraphJobEvent(existing, event) {
+	if len(history) > 0 {
+		previous := history[len(history)-1]
+		if event.Ordinal > previous.Ordinal && (event.Progress < previous.Progress || !previous.Phase.CanAdvanceTo(event.Phase)) {
 			return graphsync.GraphJobEvent{}, false, ErrGraphJobEvent
 		}
-		return existing, true, tx.Commit()
 	}
-	previous, found, err := latestGraphJobEvent(ctx, tx, s.projectID, event.JobID)
+	previousEvents, err := s.ListEvents(ctx, event.JobID, event.Ordinal-1)
 	if err != nil {
 		return graphsync.GraphJobEvent{}, false, err
 	}
-	if found && (event.Ordinal <= previous.Ordinal || event.Progress < previous.Progress || !previous.Phase.CanAdvanceTo(event.Phase)) {
+	createdAt := s.now().UTC()
+	if len(previousEvents) > 0 && previousEvents[0].Ordinal == event.Ordinal {
+		createdAt = previousEvents[0].CreatedAt
+	}
+	if len(previousEvents) > 0 && previousEvents[0].Ordinal != event.Ordinal {
+		previous := previousEvents[len(previousEvents)-1]
+		if event.Progress < previous.Progress {
+			return graphsync.GraphJobEvent{}, false, ErrGraphJobEvent
+		}
+	}
+	stored, replay, err := s.Append(ctx, sharedjob.Event{JobID: event.JobID, Ordinal: event.Ordinal, Phase: string(event.Phase), Progress: event.Progress, Warning: event.Warning, SafeError: event.SafeError, Result: graphResultToShared(event.Result), CreatedAt: createdAt})
+	if errors.Is(err, ErrJobEvent) {
 		return graphsync.GraphJobEvent{}, false, ErrGraphJobEvent
 	}
-	var resultType, resultID, resultURL any
-	if event.Result != nil {
-		resultType, resultID, resultURL = event.Result.Type, event.Result.ID, event.Result.URL
+	if errors.Is(err, ErrJobNotFound) {
+		return graphsync.GraphJobEvent{}, false, ErrGraphJobNotFound
 	}
-	write, err := tx.ExecContext(ctx, `INSERT INTO job_events(job_id,event_ordinal,phase,progress,warning,error,result_type,result_id,result_url,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM jobs WHERE id=? AND project_uuid=? AND kind='graph_sync')`, event.JobID, event.Ordinal, event.Phase, event.Progress, nullString(event.Warning), nullString(event.SafeError), resultType, resultID, resultURL, s.now().UTC().Format(time.RFC3339Nano), event.JobID, s.projectID)
 	if err != nil {
 		return graphsync.GraphJobEvent{}, false, err
 	}
-	if rows, rowsErr := write.RowsAffected(); rowsErr != nil {
-		return graphsync.GraphJobEvent{}, false, rowsErr
-	} else if rows != 1 {
-		return graphsync.GraphJobEvent{}, false, ErrGraphJobNotFound
-	}
-	if err = tx.Commit(); err != nil {
-		return graphsync.GraphJobEvent{}, false, err
-	}
-	return event, false, nil
+	return graphEventFromShared(stored), replay, nil
 }
 
 func (s *Store) ListGraphJobEvents(ctx context.Context, jobID domain.ID, after int64) ([]graphsync.GraphJobEvent, error) {
 	if !jobID.Valid() || after < 0 {
 		return nil, ErrGraphJobNotFound
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT e.job_id,e.event_ordinal,e.phase,e.progress,e.warning,e.error,e.result_type,e.result_id,e.result_url FROM job_events e JOIN jobs j ON j.id=e.job_id WHERE e.job_id=? AND j.project_uuid=? AND j.kind='graph_sync' AND e.event_ordinal>? ORDER BY e.event_ordinal`, jobID, s.projectID, after)
+	stored, err := s.ListEvents(ctx, jobID, after)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	events := []graphsync.GraphJobEvent{}
-	for rows.Next() {
-		event, scanErr := scanGraphJobEvent(rows)
-		if scanErr != nil {
-			return nil, scanErr
-		}
-		events = append(events, event)
+	events := make([]graphsync.GraphJobEvent, 0, len(stored))
+	for _, event := range stored {
+		events = append(events, graphEventFromShared(event))
 	}
-	return events, rows.Err()
+	return events, nil
 }
 
 func findGraphJobByKey(ctx context.Context, tx *sql.Tx, projectID domain.ID, key string) (graphsync.GraphJob, bool, error) {
-	job, err := scanGraphJob(tx.QueryRowContext(ctx, `SELECT id,project_uuid,revision_id,input_hash,idempotency_key,request_hash,retry_of_job_id,COALESCE(graph_evidence,''),status,result_type,result_id,result_url,created_at,updated_at FROM jobs WHERE project_uuid=? AND idempotency_key=? AND kind='graph_sync'`, projectID, key))
+	job, err := scanGraphJob(tx.QueryRowContext(ctx, `SELECT id,project_uuid,revision_id,input_hash,idempotency_key,request_hash,retry_of_job_id,COALESCE(graph_evidence,''),status,result_type,result_id,result_url,cancel_generation,cancel_requested_at,created_at,updated_at FROM jobs WHERE project_uuid=? AND idempotency_key=? AND kind='graph_sync'`, projectID, key))
 	if errors.Is(err, sql.ErrNoRows) {
 		return graphsync.GraphJob{}, false, nil
 	}
@@ -188,7 +192,7 @@ func findGraphJobByKey(ctx context.Context, tx *sql.Tx, projectID domain.ID, key
 }
 
 func findGraphJob(ctx context.Context, tx *sql.Tx, projectID, jobID domain.ID) (graphsync.GraphJob, bool, error) {
-	job, err := scanGraphJob(tx.QueryRowContext(ctx, `SELECT id,project_uuid,revision_id,input_hash,idempotency_key,request_hash,retry_of_job_id,COALESCE(graph_evidence,''),status,result_type,result_id,result_url,created_at,updated_at FROM jobs WHERE id=? AND project_uuid=? AND kind='graph_sync'`, jobID, projectID))
+	job, err := scanGraphJob(tx.QueryRowContext(ctx, `SELECT id,project_uuid,revision_id,input_hash,idempotency_key,request_hash,retry_of_job_id,COALESCE(graph_evidence,''),status,result_type,result_id,result_url,cancel_generation,cancel_requested_at,created_at,updated_at FROM jobs WHERE id=? AND project_uuid=? AND kind='graph_sync'`, jobID, projectID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return graphsync.GraphJob{}, false, nil
 	}
@@ -200,9 +204,10 @@ type graphJobScanner interface{ Scan(...any) error }
 func scanGraphJob(scanner graphJobScanner) (graphsync.GraphJob, error) {
 	var id, projectID, revisionID, inputHash, key, requestHash, evidence, status string
 	var retryOf sql.NullString
-	var resultType, resultID, resultURL sql.NullString
+	var resultType, resultID, resultURL, canceledRaw sql.NullString
+	var cancelGeneration int64
 	var createdAt, updatedAt string
-	if err := scanner.Scan(&id, &projectID, &revisionID, &inputHash, &key, &requestHash, &retryOf, &evidence, &status, &resultType, &resultID, &resultURL, &createdAt, &updatedAt); err != nil {
+	if err := scanner.Scan(&id, &projectID, &revisionID, &inputHash, &key, &requestHash, &retryOf, &evidence, &status, &resultType, &resultID, &resultURL, &cancelGeneration, &canceledRaw, &createdAt, &updatedAt); err != nil {
 		return graphsync.GraphJob{}, err
 	}
 	created, err := time.Parse(time.RFC3339Nano, createdAt)
@@ -213,7 +218,15 @@ func scanGraphJob(scanner graphJobScanner) (graphsync.GraphJob, error) {
 	if err != nil {
 		return graphsync.GraphJob{}, err
 	}
-	job := graphsync.GraphJob{ID: domain.ID(id), RetryOfJobID: domain.ID(retryOf.String), ProjectID: domain.ID(projectID), RevisionID: domain.ID(revisionID), InputHash: inputHash, IdempotencyKey: key, RequestHash: requestHash, Evidence: evidence, Status: graphsync.JobStatus(status), CreatedAt: created, UpdatedAt: updated}
+	var canceledAt *time.Time
+	if canceledRaw.Valid {
+		value, parseErr := time.Parse(time.RFC3339Nano, canceledRaw.String)
+		if parseErr != nil {
+			return graphsync.GraphJob{}, parseErr
+		}
+		canceledAt = &value
+	}
+	job := graphsync.GraphJob{ID: domain.ID(id), RetryOfJobID: domain.ID(retryOf.String), ProjectID: domain.ID(projectID), RevisionID: domain.ID(revisionID), InputHash: inputHash, IdempotencyKey: key, RequestHash: requestHash, Evidence: evidence, Status: graphsync.JobStatus(status), CancelGeneration: cancelGeneration, CancelRequestedAt: canceledAt, CreatedAt: created, UpdatedAt: updated}
 	if resultType.Valid || resultID.Valid || resultURL.Valid {
 		if !resultType.Valid || !resultID.Valid || !resultURL.Valid {
 			return graphsync.GraphJob{}, fmt.Errorf("partial stored graph job result")
@@ -280,4 +293,19 @@ func sameGraphJobResult(left, right *graphsync.GraphJobResult) bool {
 		return left == nil && right == nil
 	}
 	return *left == *right
+}
+
+func graphResultToShared(result *graphsync.GraphJobResult) *sharedjob.Result {
+	if result == nil {
+		return nil
+	}
+	return &sharedjob.Result{Type: result.Type, ID: result.ID, URL: result.URL}
+}
+
+func graphEventFromShared(event sharedjob.Event) graphsync.GraphJobEvent {
+	result := (*graphsync.GraphJobResult)(nil)
+	if event.Result != nil {
+		result = &graphsync.GraphJobResult{Type: event.Result.Type, ID: event.Result.ID, URL: event.Result.URL}
+	}
+	return graphsync.GraphJobEvent{JobID: event.JobID, Ordinal: event.Ordinal, Phase: graphsync.WorkerPhase(event.Phase), Progress: event.Progress, Warning: event.Warning, SafeError: event.SafeError, Result: result}
 }

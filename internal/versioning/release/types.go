@@ -84,20 +84,22 @@ func (c Confirmation) Valid() bool {
 }
 
 type Job struct {
-	ID             domain.ID  `json:"id"`
-	ProjectID      domain.ID  `json:"project_id"`
-	RevisionID     domain.ID  `json:"revision_id"`
-	InputHash      string     `json:"input_hash"`
-	IdempotencyKey string     `json:"idempotency_key"`
-	Status         JobStatus  `json:"status"`
-	RequestHash    string     `json:"request_hash"`
-	Result         *JobResult `json:"result,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID                domain.ID  `json:"id"`
+	ProjectID         domain.ID  `json:"project_id"`
+	RevisionID        domain.ID  `json:"revision_id"`
+	InputHash         string     `json:"input_hash"`
+	IdempotencyKey    string     `json:"idempotency_key"`
+	Status            JobStatus  `json:"status"`
+	RequestHash       string     `json:"request_hash"`
+	Result            *JobResult `json:"result,omitempty"`
+	CancelGeneration  int64      `json:"cancel_generation"`
+	CancelRequestedAt *time.Time `json:"cancel_requested_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
 func (j Job) Valid() bool {
-	if !j.ID.Valid() || !j.ProjectID.Valid() || !j.RevisionID.Valid() || !validHash(j.InputHash) || !validIdempotencyKey(j.IdempotencyKey) || !j.Status.Valid() || !validHash(j.RequestHash) || j.CreatedAt.IsZero() || j.UpdatedAt.IsZero() || j.UpdatedAt.Before(j.CreatedAt) {
+	if !j.ID.Valid() || !j.ProjectID.Valid() || !j.RevisionID.Valid() || !validHash(j.InputHash) || !validIdempotencyKey(j.IdempotencyKey) || !j.Status.Valid() || !validHash(j.RequestHash) || j.CancelGeneration < 0 || j.CreatedAt.IsZero() || j.UpdatedAt.IsZero() || j.UpdatedAt.Before(j.CreatedAt) || (j.CancelGeneration == 0 && j.CancelRequestedAt != nil) || (j.CancelGeneration > 0 && (j.CancelRequestedAt == nil || j.CancelRequestedAt.IsZero())) {
 		return false
 	}
 	if j.Result != nil && !j.Result.Valid() {

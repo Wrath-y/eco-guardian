@@ -883,8 +883,8 @@ export interface components {
         };
         Job: {
             id: components["schemas"]["UUIDv7"];
-            /** @enum {string} */
-            kind: "release" | "graph_sync";
+            /** @description Registered durable Job kind. Unknown persisted kinds are returned only through a registered projection. */
+            kind: string;
             revision_id: components["schemas"]["UUIDv7"];
             status: components["schemas"]["JobStatus"];
             request_hash: components["schemas"]["Hash"];
@@ -897,6 +897,13 @@ export interface components {
             result_id?: components["schemas"]["UUIDv7"] | null;
             /** Format: uri-reference */
             result_url?: string | null;
+            /** @description Monotonic persisted cancellation generation. */
+            cancel_generation?: number;
+            /**
+             * Format: date-time
+             * @description Time the current cancellation intent was recorded
+             */
+            cancel_requested_at?: string | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -1725,7 +1732,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Durable release Job state; clients may poll using poll_after_ms */
+            /** @description Durable registered Job state; clients may poll using poll_after_ms */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1774,7 +1781,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Cancellation accepted when the Job has not crossed an external-effect boundary */
+            /** @description Cancellation intent persisted for a registered Job; feature workers resolve it at their documented safe boundary */
             202: {
                 headers: {
                     [name: string]: unknown;

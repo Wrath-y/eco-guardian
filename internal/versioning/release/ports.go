@@ -51,6 +51,12 @@ type DurableJobRepository interface {
 	TransitionReleaseJob(context.Context, domain.ID, JobStatus, JobStatus, *JobResult) (Job, bool, error)
 }
 
+// CancellationIntentRepository is optional for legacy fakes but implemented
+// by the shared durable Job adapter before terminal state resolution.
+type CancellationIntentRepository interface {
+	RequestReleaseCancellation(context.Context, domain.ID) (Job, bool, error)
+}
+
 // ActiveJobReader lets the active-project manager install a release close
 // guard without importing storage or knowing Job table details.
 type ActiveJobReader interface {

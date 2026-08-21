@@ -48,6 +48,19 @@ func TestOpenAPIContainsGraphStatusAndProblemContracts(t *testing.T) {
 	}
 }
 
+func TestOpenAPISharedJobContractIncludesRegisteredKindsAndCancellation(t *testing.T) {
+	raw, err := os.ReadFile("../../api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract := string(raw)
+	for _, fragment := range []string{"Registered durable Job kind", "cancel_generation:", "cancel_requested_at:", "Last-Event-ID"} {
+		if !strings.Contains(contract, fragment) {
+			t.Errorf("OpenAPI missing shared Job contract fragment %q", fragment)
+		}
+	}
+}
+
 func TestVersioningDTOsAreGeneratedRatherThanHandwritten(t *testing.T) {
 	duplicate := regexp.MustCompile(`(?m)^(?:export\s+)?(?:interface|type)\s+(?:Revision|Release|Job|Gate|VersionManifest)\w*`)
 	for _, root := range []string{".", "../../web/src/features/versions"} {

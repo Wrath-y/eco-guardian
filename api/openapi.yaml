@@ -221,7 +221,7 @@ paths:
       operationId: getJob
       parameters: [ { $ref: '#/components/parameters/JobID' } ]
       responses:
-        '200': { description: Durable release Job state; clients may poll using poll_after_ms, content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
+        '200': { description: Durable registered Job state; clients may poll using poll_after_ms, content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
         default: { $ref: '#/components/responses/Problem' }
   /jobs/{id}/events:
     get:
@@ -237,7 +237,7 @@ paths:
       operationId: cancelJob
       parameters: [ { $ref: '#/components/parameters/JobID' } ]
       responses:
-        '202': { description: Cancellation accepted when the Job has not crossed an external-effect boundary, content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
+        '202': { description: Cancellation intent persisted for a registered Job; feature workers resolve it at their documented safe boundary, content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
         default: { $ref: '#/components/responses/Problem' }
   /runtime/capabilities:
     get:
@@ -819,7 +819,7 @@ components:
       required: [id, kind, revision_id, status, request_hash, events_url, poll_after_ms, created_at]
       properties:
         id: { $ref: '#/components/schemas/UUIDv7' }
-        kind: { type: string, enum: [release, graph_sync] }
+        kind: { type: string, minLength: 1, maxLength: 64, description: Registered durable Job kind. Unknown persisted kinds are returned only through a registered projection. }
         revision_id: { $ref: '#/components/schemas/UUIDv7' }
         status: { $ref: '#/components/schemas/JobStatus' }
         request_hash: { $ref: '#/components/schemas/Hash' }
@@ -829,6 +829,8 @@ components:
         result_type: { type: [string, 'null'] }
         result_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
         result_url: { type: [string, 'null'], format: uri-reference }
+        cancel_generation: { type: integer, minimum: 0, description: Monotonic persisted cancellation generation. }
+        cancel_requested_at: { type: [string, 'null'], format: date-time, description: Time the current cancellation intent was recorded, if any. }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     ReleaseDisabledReason:

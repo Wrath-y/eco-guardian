@@ -218,7 +218,7 @@ func graphActions(status app.GraphStatus) []string {
 }
 
 func graphJobJSON(job graphsync.GraphJob) gin.H {
-	response := gin.H{"id": job.ID, "kind": "graph_sync", "revision_id": job.RevisionID, "status": job.Status, "request_hash": job.RequestHash, "events_url": "/api/v1/jobs/" + string(job.ID) + "/events", "poll_after_ms": 1000, "created_at": job.CreatedAt, "updated_at": job.UpdatedAt}
+	response := gin.H{"id": job.ID, "kind": "graph_sync", "revision_id": job.RevisionID, "status": job.Status, "request_hash": job.RequestHash, "events_url": "/api/v1/jobs/" + string(job.ID) + "/events", "poll_after_ms": 1000, "cancel_generation": job.CancelGeneration, "cancel_requested_at": job.CancelRequestedAt, "created_at": job.CreatedAt, "updated_at": job.UpdatedAt}
 	if job.Result != nil {
 		response["result_type"] = job.Result.Type
 		response["result_id"] = job.Result.ID

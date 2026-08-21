@@ -40,6 +40,13 @@ func (s CancellationService) Cancel(ctx context.Context, jobID domain.ID) (Graph
 	if job.Status != JobQueued && job.Status != JobRunning {
 		return GraphJob{}, false, ErrCancellationInvalid
 	}
+	if intents, ok := s.Jobs.(CancellationIntentStore); ok {
+		requested, _, requestErr := intents.RequestGraphCancellation(ctx, jobID)
+		if requestErr != nil {
+			return GraphJob{}, false, requestErr
+		}
+		job = requested
+	}
 	updated, swapped, err := s.Jobs.TransitionGraphJob(ctx, job.ID, job.Status, next, nil)
 	if err != nil {
 		return GraphJob{}, false, err

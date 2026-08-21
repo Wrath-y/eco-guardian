@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,8 +23,9 @@ import (
 
 type VersionServiceProvider func() app.VersioningService
 type VersionHandler struct {
-	service VersionServiceProvider
-	graph   GraphSyncServiceProvider
+	service   VersionServiceProvider
+	graph     GraphSyncServiceProvider
+	resolvers []DurableResolver
 }
 
 // VersioningServiceFromProjectManager is composition glue only. Handlers see
@@ -52,7 +54,7 @@ func VersioningServiceFromProjectManagerWithDependencies(manager *project.Manage
 }
 
 func NewVersionHandler(service VersionServiceProvider) *VersionHandler {
-	return &VersionHandler{service: service}
+	return &VersionHandler{service: service, resolvers: []DurableResolver{releaseResolver(service)}}
 }
 
 // NewVersionHandlerWithGraph joins the two existing application services at
@@ -60,7 +62,51 @@ func NewVersionHandler(service VersionServiceProvider) *VersionHandler {
 // the same /jobs resource, SSE protocol, and cancellation semantics as
 // release jobs rather than creating a second public job API.
 func NewVersionHandlerWithGraph(service VersionServiceProvider, graph GraphSyncServiceProvider) *VersionHandler {
-	return &VersionHandler{service: service, graph: graph}
+	return &VersionHandler{service: service, graph: graph, resolvers: []DurableResolver{releaseResolver(service), graphResolver(graph)}}
+}
+
+func releaseResolver(provider VersionServiceProvider) DurableResolverFunc {
+	return DurableResolverFunc{
+		Get: func(ctx context.Context, id domain.ID) (map[string]any, bool, error) {
+			if service := provider(); service != nil {
+				if job, err := service.GetReleaseJob(ctx, id); err == nil {
+					return jobJSON(job), true, nil
+				}
+			}
+			return nil, false, nil
+		},
+		Cancel: func(ctx context.Context, id domain.ID) (map[string]any, bool, bool, error) {
+			if service := provider(); service != nil {
+				job, changed, err := service.CancelReleaseJob(ctx, id)
+				if err == nil {
+					return jobJSON(job), true, changed, nil
+				}
+			}
+			return nil, false, false, nil
+		},
+	}
+}
+
+func graphResolver(provider GraphSyncServiceProvider) DurableResolverFunc {
+	return DurableResolverFunc{
+		Get: func(ctx context.Context, id domain.ID) (map[string]any, bool, error) {
+			if service := provider(); service != nil {
+				if job, err := service.GetGraphJob(ctx, id); err == nil {
+					return graphJobJSON(job), true, nil
+				}
+			}
+			return nil, false, nil
+		},
+		Cancel: func(ctx context.Context, id domain.ID) (map[string]any, bool, bool, error) {
+			if service := provider(); service != nil {
+				job, changed, err := service.CancelGraphJob(ctx, id)
+				if err == nil {
+					return graphJobJSON(job), true, changed, nil
+				}
+			}
+			return nil, false, false, nil
+		},
+	}
 }
 func (h *VersionHandler) Register(r *gin.Engine) {
 	r.HandleMethodNotAllowed = true
@@ -372,7 +418,7 @@ func writeReleaseError(c *gin.Context, err error) {
 }
 func mustJSON(value any) []byte { body, _ := json.Marshal(value); return body }
 func jobJSON(job versioningrelease.Job) gin.H {
-	response := gin.H{"id": job.ID, "kind": "release", "revision_id": job.RevisionID, "status": job.Status, "request_hash": job.RequestHash, "events_url": "/api/v1/jobs/" + string(job.ID) + "/events", "created_at": job.CreatedAt, "updated_at": job.UpdatedAt, "poll_after_ms": 1000}
+	response := gin.H{"id": job.ID, "kind": "release", "revision_id": job.RevisionID, "status": job.Status, "request_hash": job.RequestHash, "events_url": "/api/v1/jobs/" + string(job.ID) + "/events", "cancel_generation": job.CancelGeneration, "cancel_requested_at": job.CancelRequestedAt, "created_at": job.CreatedAt, "updated_at": job.UpdatedAt, "poll_after_ms": 1000}
 	if job.Result != nil {
 		response["result_type"] = job.Result.Type
 		response["result_id"] = job.Result.ID
@@ -389,13 +435,9 @@ func (h *VersionHandler) job(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if job, err := s.GetReleaseJob(c.Request.Context(), id); err == nil {
-		c.JSON(http.StatusOK, jobJSON(job))
-		return
-	}
-	if graph := h.graphCurrent(); graph != nil {
-		if job, err := graph.GetGraphJob(c.Request.Context(), id); err == nil {
-			c.JSON(http.StatusOK, graphJobJSON(job))
+	for _, resolver := range h.resolvers {
+		if job, found, err := resolver.GetJob(c.Request.Context(), id); err == nil && found {
+			c.JSON(http.StatusOK, job)
 			return
 		}
 	}
@@ -410,22 +452,13 @@ func (h *VersionHandler) cancel(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if job, canceled, err := s.CancelReleaseJob(c.Request.Context(), id); err == nil {
-		if !canceled {
-			problem(c, http.StatusConflict, "RELEASE_PREFLIGHT_FAILED", "Job is already terminal")
-			return
-		}
-		c.JSON(http.StatusAccepted, jobJSON(job))
-		return
-	}
-	if graph := h.graphCurrent(); graph != nil {
-		job, canceled, err := graph.CancelGraphJob(c.Request.Context(), id)
-		if err == nil && canceled {
-			c.JSON(http.StatusAccepted, graphJobJSON(job))
-			return
-		}
-		if err == nil {
-			problem(c, http.StatusConflict, "GRAPH_RETRY_NOT_SAFE", "Graph Job is already terminal")
+	for _, resolver := range h.resolvers {
+		if job, found, canceled, err := resolver.CancelJob(c.Request.Context(), id); err == nil && found {
+			if !canceled {
+				problem(c, http.StatusConflict, "RELEASE_PREFLIGHT_FAILED", "Job is already terminal")
+				return
+			}
+			c.JSON(http.StatusAccepted, job)
 			return
 		}
 	}

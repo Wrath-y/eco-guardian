@@ -133,6 +133,13 @@ func (w Worker) Cancel(ctx context.Context, jobID domain.ID, boundary Cancellati
 	default:
 		return Job{}, false, ErrCancelBoundary
 	}
+	if intents, ok := w.Jobs.(CancellationIntentRepository); ok {
+		requested, _, requestErr := intents.RequestReleaseCancellation(ctx, jobID)
+		if requestErr != nil {
+			return Job{}, false, requestErr
+		}
+		job = requested
+	}
 	return w.Jobs.TransitionReleaseJob(ctx, jobID, job.Status, next, nil)
 }
 

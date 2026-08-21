@@ -15,6 +15,7 @@ import (
 
 	root "github.com/zouyi/eco-guardian"
 	"github.com/zouyi/eco-guardian/internal/domain"
+	sharedjob "github.com/zouyi/eco-guardian/internal/job"
 	"github.com/zouyi/eco-guardian/internal/validation"
 	versioningdiff "github.com/zouyi/eco-guardian/internal/versioning/diff"
 	versioningpolicy "github.com/zouyi/eco-guardian/internal/versioning/policy"
@@ -327,7 +328,7 @@ func TestMigrationStepsRollbackAndReplayWithoutDuplicates(t *testing.T) {
 		t.Fatal(err)
 	}
 	var count int
-	if err = db.QueryRow(`SELECT count(*) FROM schema_migration_steps`).Scan(&count); err != nil || count != 8 {
+	if err = db.QueryRow(`SELECT count(*) FROM schema_migration_steps`).Scan(&count); err != nil || count != 9 {
 		t.Fatalf("migration steps=%d err=%v", count, err)
 	}
 }
@@ -398,8 +399,63 @@ func TestV7ProjectUpgradesToChecksummedV8OnReopen(t *testing.T) {
 	if err = store.db.QueryRow(`SELECT db_schema_version FROM project_meta`).Scan(&version); err != nil || version != currentSchemaVersion {
 		t.Fatalf("version=%d err=%v", version, err)
 	}
-	if err = store.db.QueryRow(`SELECT count(*) FROM schema_migration_steps WHERE checksum IS NOT NULL`).Scan(&checksummed); err != nil || checksummed != 8 {
+	if err = store.db.QueryRow(`SELECT count(*) FROM schema_migration_steps WHERE checksum IS NOT NULL`).Scan(&checksummed); err != nil || checksummed != 9 {
 		t.Fatalf("checksummed=%d err=%v", checksummed, err)
+	}
+}
+
+func TestV9JobUpgradesWithCancellationDefaultsAndHistory(t *testing.T) {
+	registry, err := domain.NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, databaseName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial, err := root.Assets.ReadFile("migrations/0001_initial.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(string(initial)); err != nil {
+		t.Fatal(err)
+	}
+	projectID, jobID := mustID(t), mustID(t)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err = db.Exec(`INSERT INTO project_meta(id,db_schema_version,created_at) VALUES(?,?,?)`, projectID, 1, now); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, migration := range []func(context.Context, *sql.Tx) error{applyMigrationV2, applyMigrationV3, applyMigrationV4, applyMigrationV5, applyMigrationV6, applyMigrationV7, applyMigrationV8, applyMigrationV9} {
+		if err = migration(context.Background(), tx); err != nil {
+			_ = tx.Rollback()
+			t.Fatal(err)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(`INSERT INTO jobs(id,project_uuid,kind,input_hash,idempotency_key,request_hash,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)`, jobID, projectID, "test", strings.Repeat("a", 64), "v9-job", strings.Repeat("b", 64), "queued", now, now); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, id, err := Open(dir, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if id != projectID {
+		t.Fatalf("project=%s", id)
+	}
+	job, err := store.GetJob(context.Background(), jobID)
+	if err != nil || job.Status != sharedjob.Queued || job.CancelGeneration != 0 || job.CancelRequestedAt != nil {
+		t.Fatalf("job=%#v err=%v", job, err)
 	}
 }
 
@@ -1026,6 +1082,35 @@ func TestRevisionDetailMergesImmutableTimelineAndActivePointer(t *testing.T) {
 		if again.Timeline[index] != detail.Timeline[index] {
 			t.Fatalf("timeline changed index=%d before=%#v after=%#v", index, detail.Timeline[index], again.Timeline[index])
 		}
+	}
+}
+
+func TestRevisionTimelineProjectsRegisteredSharedJobKindAndResult(t *testing.T) {
+	s := newStore(t)
+	_, revision, err := s.Create(context.Background(), domain.KindTag, tagDraft("timelinejob"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, _, err := s.CreateOrGet(context.Background(), sharedjob.Request{ProjectID: s.ProjectID(), Kind: "simulation", RevisionID: revision.ID, InputHash: revision.ConfigHash, IdempotencyKey: "timeline-simulation", RequestHash: strings.Repeat("b", 64)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, swapped, transitionErr := s.Transition(context.Background(), job.ID, sharedjob.Queued, sharedjob.Running, nil, 0); transitionErr != nil || !swapped {
+		t.Fatalf("start swapped=%v err=%v", swapped, transitionErr)
+	}
+	if _, swapped, transitionErr := s.Transition(context.Background(), job.ID, sharedjob.Running, sharedjob.Succeeded, &sharedjob.Result{Type: "simulation_run", ID: mustID(t), URL: "/api/v1/simulation-runs/1"}, 0); transitionErr != nil || !swapped {
+		t.Fatalf("finish swapped=%v err=%v", swapped, transitionErr)
+	}
+	detail, err := s.GetRevisionDetail(context.Background(), revision.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]bool{}
+	for _, event := range detail.Timeline {
+		found[event.Type] = true
+	}
+	if !found["simulation_queued"] || !found["simulation_result"] {
+		t.Fatalf("timeline=%#v", detail.Timeline)
 	}
 }
 

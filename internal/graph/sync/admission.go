@@ -41,6 +41,8 @@ type GraphJob struct {
 	Evidence              string
 	Status                JobStatus
 	Result                *GraphJobResult
+	CancelGeneration      int64
+	CancelRequestedAt     *time.Time
 	CreatedAt, UpdatedAt  time.Time
 }
 
@@ -48,7 +50,7 @@ func (r GraphJobRequest) Valid() bool {
 	return r.ProjectID.Valid() && r.RevisionID.Valid() && (r.RetryOfJobID == "" || r.RetryOfJobID.Valid()) && validHash(r.InputHash) && validIdempotencyKey(r.IdempotencyKey) && validHash(r.RequestHash) && len(r.Evidence) <= 4096
 }
 func (j GraphJob) Valid() bool {
-	return j.ID.Valid() && (j.RetryOfJobID == "" || j.RetryOfJobID.Valid()) && j.ProjectID.Valid() && j.RevisionID.Valid() && validHash(j.InputHash) && validIdempotencyKey(j.IdempotencyKey) && validHash(j.RequestHash) && len(j.Evidence) <= 4096 && j.Status.Valid() && (j.Result == nil || j.Result.Valid()) && (j.Status != JobSucceeded || j.Result != nil)
+	return j.ID.Valid() && (j.RetryOfJobID == "" || j.RetryOfJobID.Valid()) && j.ProjectID.Valid() && j.RevisionID.Valid() && validHash(j.InputHash) && validIdempotencyKey(j.IdempotencyKey) && validHash(j.RequestHash) && len(j.Evidence) <= 4096 && j.Status.Valid() && j.CancelGeneration >= 0 && (j.CancelGeneration != 0 || j.CancelRequestedAt == nil) && (j.CancelGeneration == 0 || (j.CancelRequestedAt != nil && !j.CancelRequestedAt.IsZero())) && (j.Result == nil || j.Result.Valid()) && (j.Status != JobSucceeded || j.Result != nil)
 }
 
 func validHash(value string) bool {

@@ -109,7 +109,7 @@ func (s *Store) GetRevisionDetail(ctx context.Context, revisionID domain.ID) (ve
 		return versioningrevision.Detail{}, err
 	}
 	detail := versioningrevision.Detail{Record: record, Timeline: make([]versioningrevision.TimelineEvent, 0)}
-	rows, err := s.db.QueryContext(ctx, revisionTimelineQuery, revisionID, revisionID, revisionID, revisionID, revisionID)
+	rows, err := s.db.QueryContext(ctx, revisionTimelineQuery, revisionID, revisionID, revisionID, revisionID, revisionID, revisionID)
 	if err != nil {
 		return versioningrevision.Detail{}, err
 	}
@@ -156,7 +156,9 @@ SELECT id,created_at,'revision_created',id,'','' FROM config_revisions WHERE id=
 UNION ALL
 SELECT id,created_at,'validation_completed',source_revision_id,id,status FROM validation_runs WHERE source_revision_id=? AND scope='FULL'
 UNION ALL
-SELECT id,created_at,'release_queued',revision_id,id,status FROM jobs WHERE revision_id=?
+SELECT id,created_at,kind || '_queued',revision_id,id,status FROM jobs WHERE revision_id=?
+UNION ALL
+SELECT id,updated_at,kind || '_result',revision_id,result_id,status FROM jobs WHERE revision_id=? AND result_id IS NOT NULL
 UNION ALL
 SELECT i.id,i.created_at,'release_intent',i.candidate_revision_id,i.job_id,i.phase FROM release_intents i WHERE i.candidate_revision_id=?
 UNION ALL

@@ -79,6 +79,13 @@ type DurableJobStore interface {
 	TransitionGraphJob(context.Context, domain.ID, JobStatus, JobStatus, *GraphJobResult) (GraphJob, bool, error)
 }
 
+// CancellationIntentStore is implemented by the shared Job adapter. Graph
+// still determines whether its persisted intent resolves to canceled or
+// interrupted based on external-task acceptance.
+type CancellationIntentStore interface {
+	RequestGraphCancellation(context.Context, domain.ID) (GraphJob, bool, error)
+}
+
 type JobEventStore interface {
 	AppendGraphJobEvent(context.Context, GraphJobEvent) (GraphJobEvent, bool, error)
 	ListGraphJobEvents(context.Context, domain.ID, int64) ([]GraphJobEvent, error)
