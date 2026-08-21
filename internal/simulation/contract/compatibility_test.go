@@ -19,4 +19,8 @@ func TestImplementationRegistryAuditsRetainedDescriptors(t *testing.T) {
 	if err = registry.AuditHistorical([]Descriptor{missing}); err == nil {
 		t.Fatal("expected drift rejection")
 	}
+	projection := registry.ProjectHistoricalRun(`{"stored":true}`, "input", "fingerprint", "result", []Descriptor{missing})
+	if projection.Reproducible || projection.CanonicalResult != `{"stored":true}` || len(projection.Reasons) != 1 {
+		t.Fatalf("projection=%#v", projection)
+	}
 }
