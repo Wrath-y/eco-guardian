@@ -6,6 +6,9 @@ package contract
 import (
 	"context"
 	"time"
+
+	"github.com/zouyi/eco-guardian/internal/domain"
+	"github.com/zouyi/eco-guardian/internal/simulation/scenario"
 )
 
 type ID string
@@ -29,6 +32,17 @@ type RevisionSource interface {
 // when it was created. It must not read a mutable active-release pointer.
 type ReleaseSource interface {
 	ResolveReleaseRevision(context.Context, ID) (Revision, error)
+}
+
+// CapturedScenario ties a persisted immutable definition identity to the
+// canonical template consumed by input normalization.
+type CapturedScenario struct {
+	DefinitionID domain.ID
+	Template     scenario.Template
+}
+
+type ScenarioSource interface {
+	ResolveSimulationScenario(context.Context, string, string) (CapturedScenario, error)
 }
 
 type ScenarioStore interface {
