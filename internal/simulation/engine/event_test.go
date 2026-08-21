@@ -64,3 +64,21 @@ func TestQueueRejectsInvalidAndDuplicateCompleteKeys(t *testing.T) {
 		t.Fatalf("invalid err=%v", err)
 	}
 }
+
+func FuzzQueueAndRunRemainBounded(f *testing.F) {
+	f.Add(int64(0), "source", "damage")
+	f.Add(int64(-1), "\x00", "")
+	f.Fuzz(func(t *testing.T, at int64, source, kind string) {
+		queue := NewQueue()
+		event := Event{TimeMS: at, SourceID: source, InsertionOrdinal: 0, Kind: kind, Version: "v1", EvaluatorID: "combat", TargetID: "target"}
+		if err := queue.Enqueue(event); err != nil {
+			return
+		}
+		stats, err := Run(queue, Limits{DurationMS: 10, MaxEvents: 1, MaxSteps: 1}, func(_ Event, emitter *Emitter) error {
+			return emitter.Schedule(testEvent(0, "derived", 0))
+		})
+		if stats.NowMS < 0 || stats.EventsExecuted > 1 || stats.Steps > 1 || (err == nil && queue.Len() > 0 && !stats.ReachedSceneEnd) {
+			t.Fatalf("stats=%#v err=%v", stats, err)
+		}
+	})
+}
