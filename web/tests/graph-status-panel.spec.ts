@@ -20,7 +20,7 @@ function job(status: GraphJob['status'] = 'failed'): GraphJob {
   return { id: jobID, kind: 'graph_sync', revision_id: revisionID, status, request_hash: 'a'.repeat(64), events_url: `/api/v1/jobs/${jobID}/events`, poll_after_ms: 100, created_at: '2026-01-01T00:00:00Z' }
 }
 function status(state: GraphStatus['pipeline_state'] = 'graph_failed', current = job()): GraphStatus {
-  return { revision_id: revisionID, config_hash: 'b'.repeat(64), pipeline_state: state, freshness: 'stale', freshness_reasons: ['GRAPH_NOT_READY'], validation_result: 'PASS', projection: null, job: current, warnings: [], actions: state === 'graph_failed' ? ['retry', 'inspect'] : ['wait'], evidence: [] }
+  return { revision_id: revisionID, config_hash: 'b'.repeat(64), pipeline_state: state, freshness: 'stale', freshness_reasons: ['GRAPH_NOT_READY'], validation_result: 'PASS', projection: null, job: current, impact_state: state === 'graph_ready' ? 'queued' : null, warnings: [], actions: state === 'graph_failed' ? ['retry', 'inspect'] : ['wait'], evidence: [] }
 }
 function renderPanel() { return render(GraphStatusPanel, { props: { projectID: revisionID, revisionID }, global: { plugins: [VueQueryPlugin] } }) }
 
@@ -62,5 +62,12 @@ describe('graph status panel', () => {
     await vi.advanceTimersByTimeAsync(100)
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes(`/api/v1/jobs/${jobID}`))).toBe(true)
     vi.useRealTimers()
+  })
+
+  it('keeps the ready-to-impact handoff visible without exposing retry', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify(status('graph_ready', job('succeeded'))), { status: 200 }))))
+    renderPanel()
+    expect(await screen.findByText('影响分析已排队，等待下游模块处理。')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '重试图谱同步' })).toBeNull()
   })
 })
