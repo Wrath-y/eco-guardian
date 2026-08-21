@@ -238,6 +238,38 @@ func TestSimulationCheckpointFaultDoesNotExposePartialState(t *testing.T) {
 	}
 }
 
+func TestSimulationCancellationFaultsRollbackTheEntireIntent(t *testing.T) {
+	for _, stage := range []string{"shared-job-cancel-before-write", "shared-job-cancel-after-write"} {
+		t.Run(stage, func(t *testing.T) {
+			store := newStore(t)
+			_, revision, err := store.Create(context.Background(), "tag", tagDraft("simulationcancelfault"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			job, _, err := store.CreateOrGet(context.Background(), sharedjob.Request{ProjectID: store.ProjectID(), Kind: "simulation", RevisionID: revision.ID, InputHash: strings.Repeat("a", 64), IdempotencyKey: stage, RequestHash: strings.Repeat("b", 64)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err = store.Transition(context.Background(), job.ID, sharedjob.Queued, sharedjob.Running, nil, 0); err != nil {
+				t.Fatal(err)
+			}
+			store.failStage = func(at string) error {
+				if at == stage {
+					return errors.New("injected")
+				}
+				return nil
+			}
+			if _, _, err = store.RequestCancellation(context.Background(), job.ID); err == nil {
+				t.Fatal("expected cancellation fault")
+			}
+			current, err := store.GetJob(context.Background(), job.ID)
+			if err != nil || current.Status != sharedjob.Running || current.CancelGeneration != 0 || current.CancelRequestedAt != nil {
+				t.Fatalf("job=%#v err=%v", current, err)
+			}
+		})
+	}
+}
+
 func TestSimulationSealFaultsDoNotExposeRunOrJobSuccess(t *testing.T) {
 	for _, stage := range []string{"simulation-seal-before-run", "simulation-seal-after-run"} {
 		t.Run(stage, func(t *testing.T) {

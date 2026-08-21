@@ -131,9 +131,15 @@ func (s *Store) RequestCancellation(ctx context.Context, id domain.ID) (sharedjo
 	if record.Status.Terminal() || record.CancelGeneration > 0 {
 		return record, true, tx.Commit()
 	}
+	if err = s.inject("shared-job-cancel-before-write"); err != nil {
+		return sharedjob.Record{}, false, err
+	}
 	now := s.now().UTC()
 	_, err = tx.ExecContext(ctx, `UPDATE jobs SET cancel_generation=cancel_generation+1,cancel_requested_at=?,updated_at=? WHERE id=? AND project_uuid=? AND cancel_generation=?`, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), id, s.projectID, record.CancelGeneration)
 	if err != nil {
+		return sharedjob.Record{}, false, err
+	}
+	if err = s.inject("shared-job-cancel-after-write"); err != nil {
 		return sharedjob.Record{}, false, err
 	}
 	if err = tx.Commit(); err != nil {
