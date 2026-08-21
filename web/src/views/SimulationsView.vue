@@ -38,6 +38,7 @@ const submitting = ref(false)
 const error = ref('')
 const jobID = ref('')
 const runID = ref('')
+const verifyRunID = ref('')
 const run = useSimulationRun(() => projectID.value, () => runID.value)
 const scene = computed(() => scenes.find(value => value.id === sceneID.value) ?? scenes[0])
 const sourceOptions = computed(() => sourceKind.value === 'revision'
@@ -61,6 +62,28 @@ function budget(): components['schemas']['SimulationBudget'] | undefined {
   const value = { max_events: maxEvents.value, max_steps: maxSteps.value, max_runtime_ms: maxRuntimeMS.value }
   return Object.values(value).some(item => item !== undefined) ? value : undefined
 }
+function numericInput(value: Record<string, unknown>, key: string): number | undefined {
+  const item = value[key]
+  return typeof item === 'number' ? item : undefined
+}
+function verify(run: components['schemas']['SimulationRun']) {
+  const input = run.input
+  if (!input || !run.reproducible || !scenes.some(value => value.id === input.scene_id)) {
+    error.value = '此历史 Run 缺少可验证的已捕获输入或所需实现。'
+    return
+  }
+  sourceKind.value = 'revision'; sourceID.value = input.revision_id; sceneID.value = input.scene_id as (typeof scenes)[number]['id']
+  selectedMetrics.value = input.metrics.map(value => value.id).filter((value): value is MetricID => metrics.some(metric => metric.id === value))
+  sampleCount.value = input.sample_count; seed.value = String(input.seed)
+  const limits = input.budgets as Record<string, unknown>
+  maxEvents.value = numericInput(limits, 'max_events'); maxSteps.value = numericInput(limits, 'max_steps'); maxRuntimeMS.value = numericInput(limits, 'max_runtime_ms')
+  const opening = input.actions.find(action => action.id === 'opening-strike')
+  const amountInput = Array.isArray(opening?.inputs) ? opening.inputs.find(value => value.id === 'amount') : undefined
+  if (typeof amountInput?.value === 'string') amount.value = amountInput.value
+  verifyRunID.value = run.id
+  sessionStorage.removeItem(attemptStorageKey())
+  error.value = `已重建 ${run.id} 的已捕获选项；提交会创建新的 Job 并验证结果 hash。`
+}
 async function submit() {
   if (!sourceID.value) { error.value = `请选择${sourceLabel.value}。`; return }
   if (!selectedMetrics.value.length) { error.value = '请至少选择一个 Metric。'; return }
@@ -76,6 +99,7 @@ async function submit() {
   if (seed.value.trim()) request.seed = Number(seed.value)
   const limits = budget()
   if (limits) request.budget = limits
+  if (verifyRunID.value) request.verify_run_id = verifyRunID.value
   try {
     const accepted = await createSimulationJob(request, key())
     jobID.value = accepted.job.id
@@ -138,6 +162,7 @@ watch(projectID, value => { jobID.value = value ? sessionStorage.getItem(jobStor
           <span v-if="metric.assumptions.length"> · 假设：{{ metric.assumptions.join('；') }}</span>
         </li></ul>
         <p v-if="run.data.value.verification_refs.length">复现关系：<span v-for="reference in run.data.value.verification_refs" :key="reference.id">{{ reference.status }}（{{ reference.source_run_id }} → {{ reference.reproduction_run_id }}）</span></p>
+        <button v-if="run.data.value.input && run.data.value.reproducible" type="button" @click="verify(run.data.value)">用此 Run 发起复现验证</button>
       </template>
     </section>
     <small v-if="projectID">项目 {{ projectID }}</small>
