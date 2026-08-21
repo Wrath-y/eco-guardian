@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -60,5 +61,31 @@ func TestRunChecksAtEveryEventBoundary(t *testing.T) {
 	})
 	if !errors.Is(err, stop) || stats.EventsExecuted != 2 || checks != 3 {
 		t.Fatalf("stats=%#v checks=%d err=%v", stats, checks, err)
+	}
+}
+
+func TestEvaluatorDiagnosticsAreStableAndSanitized(t *testing.T) {
+	for source, want := range map[string]DiagnosticCode{
+		"NUMERIC_NON_FINITE":           DiagnosticNumericNonFinite,
+		"FORMULA_DIVISION_BY_ZERO":     DiagnosticDivisionByZero,
+		"NUMERIC_OUT_OF_RANGE":         DiagnosticNumericOutOfRange,
+		"FORMULA_UNIT_MISMATCH":        DiagnosticUnitOrScope,
+		"FORMULA_UNKNOWN_VARIABLE":     DiagnosticUnitOrScope,
+		"SIMULATION_EVALUATOR_MISSING": DiagnosticMissingEvaluator,
+		"unregistered-new-code":        DiagnosticContractDrift,
+	} {
+		var diagnostic Diagnostic
+		if err := EvaluatorDiagnostic(source); !errors.As(err, &diagnostic) || diagnostic.Code != want {
+			t.Fatalf("source=%q diagnostic=%v", source, err)
+		}
+	}
+	queue := NewQueue()
+	if err := queue.Enqueue(testEvent(0, "source", 0)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Run(queue, Limits{DurationMS: 1, MaxEvents: 1, MaxSteps: 1}, func(Event, *Emitter) error { return errors.New("/secret/formula source text") })
+	var diagnostic Diagnostic
+	if !errors.As(err, &diagnostic) || diagnostic.Code != DiagnosticContractDrift || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("error=%v", err)
 	}
 }

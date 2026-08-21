@@ -85,7 +85,7 @@ func RunWithCheckpoint(queue *Queue, limits Limits, evaluate Evaluator, checkpoi
 		stats.NowMS = event.TimeMS
 		emitter.nowMS = stats.NowMS
 		if err := evaluate(event, emitter); err != nil {
-			return stats, err
+			return stats, normalizeEvaluatorError(err)
 		}
 		stats.EventsExecuted++
 		stats.Steps++
