@@ -33,6 +33,16 @@ func TestSimulationRunAndMetricFactsAreInsertOnlyWhileCheckpointIsRecoverable(t 
 	if err != nil || loaded.ResultHash != run.ResultHash || len(metrics) != 1 {
 		t.Fatalf("run=%#v metrics=%#v err=%v", loaded, metrics, err)
 	}
+	reconciled, replay, err := store.ReconcileSealedSimulationRun(context.Background(), job.ID, run.InputHash, run.ResultHash)
+	if err != nil || replay || reconciled.Status != sharedjob.Succeeded || reconciled.Result == nil || reconciled.Result.ID != run.ID {
+		t.Fatalf("reconciled=%#v replay=%v err=%v", reconciled, replay, err)
+	}
+	if _, replay, err = store.ReconcileSealedSimulationRun(context.Background(), job.ID, run.InputHash, run.ResultHash); err != nil || !replay {
+		t.Fatalf("replay=%v err=%v", replay, err)
+	}
+	if _, _, err = store.ReconcileSealedSimulationRun(context.Background(), job.ID, run.InputHash, strings.Repeat("e", 64)); !errors.Is(err, ErrSimulationReplay) {
+		t.Fatalf("expected replay mismatch, got %v", err)
+	}
 	if _, err = store.db.Exec(`UPDATE simulation_runs SET result_hash=? WHERE id=?`, strings.Repeat("e", 64), run.ID); err == nil {
 		t.Fatal("expected immutable run")
 	}

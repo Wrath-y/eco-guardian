@@ -19,7 +19,53 @@ var (
 	ErrSimulationRunInvalid = errors.New("simulation run is invalid")
 	ErrSimulationSeal       = errors.New("simulation run cannot be sealed")
 	ErrSimulationFailure    = errors.New("simulation job cannot be failed")
+	ErrSimulationReplay     = errors.New("simulation run replay mismatch")
 )
+
+// ReconcileSealedSimulationRun repairs the narrow crash window where an
+// immutable run committed before its shared Job terminal link was updated.
+func (s *Store) ReconcileSealedSimulationRun(ctx context.Context, jobID domain.ID, inputHash, resultHash string) (sharedjob.Record, bool, error) {
+	if !jobID.Valid() || !validSimulationHash(inputHash) || !validSimulationHash(resultHash) {
+		return sharedjob.Record{}, false, ErrSimulationReplay
+	}
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return sharedjob.Record{}, false, err
+	}
+	defer tx.Rollback()
+	var runID domain.ID
+	var storedInput, storedResult string
+	if err = tx.QueryRowContext(ctx, `SELECT id,input_hash,result_hash FROM simulation_runs WHERE job_id=? AND project_uuid=?`, jobID, s.projectID).Scan(&runID, &storedInput, &storedResult); err != nil || storedInput != inputHash || storedResult != resultHash {
+		return sharedjob.Record{}, false, ErrSimulationReplay
+	}
+	record, err := scanSharedJob(tx.QueryRowContext(ctx, sharedJobSelect+` WHERE id=? AND project_uuid=?`, jobID, s.projectID))
+	if err != nil || record.Kind != "simulation" || record.InputHash != inputHash || record.CancelGeneration != 0 {
+		return sharedjob.Record{}, false, ErrSimulationReplay
+	}
+	if record.Status == sharedjob.Succeeded {
+		if record.Result == nil || record.Result.Type != "simulation_run" || record.Result.ID != runID {
+			return sharedjob.Record{}, false, ErrSimulationReplay
+		}
+		return record, true, tx.Commit()
+	}
+	if record.Status != sharedjob.Queued && record.Status != sharedjob.Running && record.Status != sharedjob.Interrupted {
+		return sharedjob.Record{}, false, ErrSimulationReplay
+	}
+	write, err := tx.ExecContext(ctx, `UPDATE jobs SET status='succeeded',result_type='simulation_run',result_id=?,result_url=?,updated_at=? WHERE id=? AND project_uuid=? AND status=? AND cancel_generation=0`, runID, "/api/v1/simulation-runs/"+string(runID), s.now().UTC().Format(time.RFC3339Nano), jobID, s.projectID, record.Status)
+	if err != nil {
+		return sharedjob.Record{}, false, err
+	}
+	if rows, _ := write.RowsAffected(); rows != 1 {
+		return sharedjob.Record{}, false, ErrSimulationReplay
+	}
+	if err = tx.Commit(); err != nil {
+		return sharedjob.Record{}, false, err
+	}
+	updated, err := s.GetJob(ctx, jobID)
+	return updated, false, err
+}
 
 type SimulationRun struct {
 	ID, JobID, ProjectID, RevisionID, ScenarioDefinitionID  domain.ID
