@@ -328,7 +328,7 @@ func TestMigrationStepsRollbackAndReplayWithoutDuplicates(t *testing.T) {
 		t.Fatal(err)
 	}
 	var count int
-	if err = db.QueryRow(`SELECT count(*) FROM schema_migration_steps`).Scan(&count); err != nil || count != 13 {
+	if err = db.QueryRow(`SELECT count(*) FROM schema_migration_steps`).Scan(&count); err != nil || count != 14 {
 		t.Fatalf("migration steps=%d err=%v", count, err)
 	}
 }
@@ -399,7 +399,7 @@ func TestV7ProjectUpgradesToChecksummedV8OnReopen(t *testing.T) {
 	if err = store.db.QueryRow(`SELECT db_schema_version FROM project_meta`).Scan(&version); err != nil || version != currentSchemaVersion {
 		t.Fatalf("version=%d err=%v", version, err)
 	}
-	if err = store.db.QueryRow(`SELECT count(*) FROM schema_migration_steps WHERE checksum IS NOT NULL`).Scan(&checksummed); err != nil || checksummed != 13 {
+	if err = store.db.QueryRow(`SELECT count(*) FROM schema_migration_steps WHERE checksum IS NOT NULL`).Scan(&checksummed); err != nil || checksummed != 14 {
 		t.Fatalf("checksummed=%d err=%v", checksummed, err)
 	}
 }

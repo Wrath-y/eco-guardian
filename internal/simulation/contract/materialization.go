@@ -7,6 +7,7 @@ import (
 
 type JobMaterialization struct {
 	JobID, ProjectID, RevisionID, ScenarioDefinitionID domain.ID
+	VerifySourceRunID                                  domain.ID
 	CanonicalInput                                     []byte
 	InputHash, FingerprintHash                         string
 	CancelGeneration                                   int64

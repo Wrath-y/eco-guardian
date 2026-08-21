@@ -154,7 +154,7 @@ func (run SimulationRun) validForInsert() bool {
 }
 
 func validSimulationMaterialization(materialization SimulationJobMaterialization) bool {
-	return materialization.JobID.Valid() && materialization.ProjectID.Valid() && materialization.RevisionID.Valid() && materialization.ScenarioDefinitionID.Valid() && len(materialization.CanonicalInput) > 0 && validSimulationHash(materialization.InputHash) && validSimulationHash(materialization.FingerprintHash) && materialization.CancelGeneration >= 0 && !materialization.CreatedAt.IsZero() && hashSimulationBytes(materialization.CanonicalInput) == materialization.InputHash
+	return materialization.JobID.Valid() && materialization.ProjectID.Valid() && materialization.RevisionID.Valid() && materialization.ScenarioDefinitionID.Valid() && (!materialization.VerifySourceRunID.Valid() || materialization.VerifySourceRunID != materialization.JobID) && len(materialization.CanonicalInput) > 0 && validSimulationHash(materialization.InputHash) && validSimulationHash(materialization.FingerprintHash) && materialization.CancelGeneration >= 0 && !materialization.CreatedAt.IsZero() && hashSimulationBytes(materialization.CanonicalInput) == materialization.InputHash
 }
 
 func SimulationAccumulatorHash(accumulator string) string {
@@ -173,7 +173,7 @@ func (s *Store) SaveSimulationJobMaterialization(ctx context.Context, materializ
 	if !validSimulationMaterialization(materialization) || materialization.ProjectID != s.projectID {
 		return ErrSimulationRunInvalid
 	}
-	write, err := s.db.ExecContext(ctx, `INSERT INTO simulation_job_materializations(job_id,project_uuid,revision_id,scenario_definition_id,canonical_input,input_hash,fingerprint_hash,cancel_generation,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM jobs WHERE id=? AND project_uuid=? AND kind='simulation' AND revision_id=? AND input_hash=?)`, materialization.JobID, materialization.ProjectID, materialization.RevisionID, materialization.ScenarioDefinitionID, materialization.CanonicalInput, materialization.InputHash, materialization.FingerprintHash, materialization.CancelGeneration, materialization.CreatedAt.UTC().Format(time.RFC3339Nano), materialization.JobID, materialization.ProjectID, materialization.RevisionID, materialization.InputHash)
+	write, err := s.db.ExecContext(ctx, `INSERT INTO simulation_job_materializations(job_id,project_uuid,revision_id,scenario_definition_id,canonical_input,input_hash,fingerprint_hash,cancel_generation,created_at,verify_source_run_id) SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM jobs WHERE id=? AND project_uuid=? AND kind='simulation' AND revision_id=? AND input_hash=?)`, materialization.JobID, materialization.ProjectID, materialization.RevisionID, materialization.ScenarioDefinitionID, materialization.CanonicalInput, materialization.InputHash, materialization.FingerprintHash, materialization.CancelGeneration, materialization.CreatedAt.UTC().Format(time.RFC3339Nano), nullID(materialization.VerifySourceRunID), materialization.JobID, materialization.ProjectID, materialization.RevisionID, materialization.InputHash)
 	if err != nil {
 		return err
 	}
@@ -186,7 +186,8 @@ func (s *Store) SaveSimulationJobMaterialization(ctx context.Context, materializ
 func (s *Store) GetSimulationJobMaterialization(ctx context.Context, jobID domain.ID) (SimulationJobMaterialization, error) {
 	var materialization SimulationJobMaterialization
 	var createdAt string
-	err := s.db.QueryRowContext(ctx, `SELECT job_id,project_uuid,revision_id,scenario_definition_id,canonical_input,input_hash,fingerprint_hash,cancel_generation,created_at FROM simulation_job_materializations WHERE job_id=? AND project_uuid=?`, jobID, s.projectID).Scan(&materialization.JobID, &materialization.ProjectID, &materialization.RevisionID, &materialization.ScenarioDefinitionID, &materialization.CanonicalInput, &materialization.InputHash, &materialization.FingerprintHash, &materialization.CancelGeneration, &createdAt)
+	var verifySource sql.NullString
+	err := s.db.QueryRowContext(ctx, `SELECT job_id,project_uuid,revision_id,scenario_definition_id,canonical_input,input_hash,fingerprint_hash,cancel_generation,created_at,verify_source_run_id FROM simulation_job_materializations WHERE job_id=? AND project_uuid=?`, jobID, s.projectID).Scan(&materialization.JobID, &materialization.ProjectID, &materialization.RevisionID, &materialization.ScenarioDefinitionID, &materialization.CanonicalInput, &materialization.InputHash, &materialization.FingerprintHash, &materialization.CancelGeneration, &createdAt, &verifySource)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SimulationJobMaterialization{}, ErrNotFound
 	}
@@ -195,6 +196,12 @@ func (s *Store) GetSimulationJobMaterialization(ctx context.Context, jobID domai
 	}
 	if materialization.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt); err != nil || !validSimulationMaterialization(materialization) {
 		return SimulationJobMaterialization{}, ErrSimulationRunInvalid
+	}
+	if verifySource.Valid {
+		materialization.VerifySourceRunID = domain.ID(verifySource.String)
+		if !materialization.VerifySourceRunID.Valid() {
+			return SimulationJobMaterialization{}, ErrSimulationRunInvalid
+		}
 	}
 	return materialization, nil
 }
@@ -234,6 +241,31 @@ func (s *Store) InsertSimulationRun(ctx context.Context, run SimulationRun, metr
 	return tx.Commit()
 }
 
+func (s *Store) insertSimulationVerificationForSealedRun(ctx context.Context, tx *sql.Tx, run SimulationRun) error {
+	var sourceID sql.NullString
+	err := tx.QueryRowContext(ctx, `SELECT verify_source_run_id FROM simulation_job_materializations WHERE job_id=? AND project_uuid=?`, run.JobID, s.projectID).Scan(&sourceID)
+	if errors.Is(err, sql.ErrNoRows) || !sourceID.Valid {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var inputHash, fingerprintHash, resultHash string
+	if err = tx.QueryRowContext(ctx, `SELECT input_hash,fingerprint_hash,result_hash FROM simulation_runs WHERE id=? AND project_uuid=?`, sourceID.String, s.projectID).Scan(&inputHash, &fingerprintHash, &resultHash); err != nil || inputHash != run.InputHash || fingerprintHash != run.FingerprintHash {
+		return ErrSimulationSeal
+	}
+	verificationID, err := domain.NewID()
+	if err != nil {
+		return err
+	}
+	status := "mismatch"
+	if resultHash == run.ResultHash {
+		status = "verified"
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO simulation_verifications(id,source_run_id,reproduction_run_id,input_hash,fingerprint_hash,source_result_hash,reproduction_result_hash,status,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, verificationID, sourceID.String, run.ID, run.InputHash, run.FingerprintHash, resultHash, run.ResultHash, status, s.now().UTC().Format(time.RFC3339Nano))
+	return err
+}
+
 // SealSimulationRun makes the immutable run visible only after every required
 // sample checkpoint matches the captured Job identity and cancellation
 // generation. The run facts and shared Job success result commit in one short
@@ -269,6 +301,9 @@ func (s *Store) SealSimulationRun(ctx context.Context, run SimulationRun, metric
 		return err
 	}
 	if err = insertSimulationRun(ctx, tx, run, metrics); err != nil {
+		return err
+	}
+	if err = s.insertSimulationVerificationForSealedRun(ctx, tx, run); err != nil {
 		return err
 	}
 	if err = s.inject("simulation-seal-after-run"); err != nil {

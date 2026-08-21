@@ -24,7 +24,7 @@ import (
 )
 
 const databaseName = "project.db"
-const currentSchemaVersion = 14
+const currentSchemaVersion = 15
 
 func DBSchemaVersion() int { return currentSchemaVersion }
 
@@ -366,6 +366,12 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 		}
 		version = 14
 	}
+	if version == 14 {
+		if err := applyMigrationV15(ctx, tx); err != nil {
+			return err
+		}
+		version = 15
+	}
 	if version != currentSchemaVersion {
 		return fmt.Errorf("unsupported schema version %d", version)
 	}
@@ -499,6 +505,17 @@ func applyMigrationV14(ctx context.Context, tx *sql.Tx) error {
 	return recordMigrationChecksums(ctx, tx)
 }
 
+func applyMigrationV15(ctx context.Context, tx *sql.Tx) error {
+	body, err := root.Assets.ReadFile("migrations/0015_simulation_verification_intents.sql")
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, string(body)); err != nil {
+		return err
+	}
+	return recordMigrationChecksums(ctx, tx)
+}
+
 func recordMigrationChecksums(ctx context.Context, tx *sql.Tx) error {
 	checksums, err := migrationStepChecksums()
 	if err != nil {
@@ -533,6 +550,7 @@ func migrationStepChecksums() (map[string]string, error) {
 		"simulation-runs-v12":                 "migrations/0012_simulation_runs.sql",
 		"simulation-job-materializations-v13": "migrations/0013_simulation_job_materializations.sql",
 		"simulation-run-implementations-v14":  "migrations/0014_simulation_run_implementations.sql",
+		"simulation-verification-intents-v15": "migrations/0015_simulation_verification_intents.sql",
 	}
 	checksums := make(map[string]string, len(files))
 	for stepID, path := range files {

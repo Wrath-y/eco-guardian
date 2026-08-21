@@ -196,6 +196,51 @@ func TestSimulationSealIsAtomicAndRejectsNewCancellationGeneration(t *testing.T)
 	}
 }
 
+func TestSimulationSealWritesVerificationForCapturedSourceRun(t *testing.T) {
+	store := newStore(t)
+	_, revision, err := store.Create(context.Background(), "tag", tagDraft("simulationverifyseal"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	scene, err := store.GetScenarioDefinition(context.Background(), "single-target-30s", "v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical := []byte("eco-guardian/simulation-input/v1\x00{\"verify\":true}")
+	inputHash := hashSimulationBytes(canonical)
+	fingerprint, resultHash := strings.Repeat("b", 64), strings.Repeat("c", 64)
+	sourceJob, _, err := store.CreateOrGet(context.Background(), sharedjob.Request{ProjectID: store.ProjectID(), Kind: "simulation", RevisionID: revision.ID, InputHash: inputHash, IdempotencyKey: "verify-source", RequestHash: inputHash})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceRun := SimulationRun{ID: mustID(t), JobID: sourceJob.ID, ProjectID: store.ProjectID(), RevisionID: revision.ID, ScenarioDefinitionID: scene.ID, InputHash: inputHash, FingerprintHash: fingerprint, ResultHash: resultHash, CanonicalResult: `{"schema_version":"v1"}`, CreatedAt: time.Now().UTC(), Implementations: contract.V1Descriptors()}
+	if err = store.InsertSimulationRun(context.Background(), sourceRun, []SimulationMetricResult{{MetricID: "metric-dps", MetricVersion: "v1", Status: "available", CanonicalResult: `{"value":"1"}`}}); err != nil {
+		t.Fatal(err)
+	}
+	targetJob, _, err := store.CreateOrGet(context.Background(), sharedjob.Request{ProjectID: store.ProjectID(), Kind: "simulation", RevisionID: revision.ID, InputHash: inputHash, IdempotencyKey: "verify-target", RequestHash: inputHash})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.SaveSimulationJobMaterialization(context.Background(), SimulationJobMaterialization{JobID: targetJob.ID, ProjectID: store.ProjectID(), RevisionID: revision.ID, ScenarioDefinitionID: scene.ID, VerifySourceRunID: sourceRun.ID, CanonicalInput: canonical, InputHash: inputHash, FingerprintHash: fingerprint, CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = store.Transition(context.Background(), targetJob.ID, sharedjob.Queued, sharedjob.Running, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.SaveSimulationCheckpoint(context.Background(), SimulationCheckpoint{JobID: targetJob.ID, InputHash: inputHash, FingerprintHash: fingerprint, Accumulator: `{"sample":0}`, AccumulatorHash: SimulationAccumulatorHash(`{"sample":0}`), CompletedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	targetRun := sourceRun
+	targetRun.ID, targetRun.JobID, targetRun.CreatedAt = mustID(t), targetJob.ID, time.Now().UTC()
+	if err = store.SealSimulationRun(context.Background(), targetRun, []SimulationMetricResult{{MetricID: "metric-dps", MetricVersion: "v1", Status: "available", CanonicalResult: `{"value":"1"}`}}, 1, 0); err != nil {
+		t.Fatal(err)
+	}
+	links, err := store.ListSimulationVerifications(context.Background(), sourceRun.ID)
+	if err != nil || len(links) != 1 || links[0].SourceRunID != sourceRun.ID || links[0].ReproductionRunID != targetRun.ID || links[0].Status != "verified" {
+		t.Fatalf("links=%#v err=%v", links, err)
+	}
+}
+
 func TestSimulationFailureAtomicallyRetainsDiagnosticWithoutRun(t *testing.T) {
 	store := newStore(t)
 	_, revision, err := store.Create(context.Background(), "tag", tagDraft("simulationfailure"))
