@@ -46,6 +46,19 @@ func TestSimulationRunAndMetricFactsAreInsertOnlyWhileCheckpointIsRecoverable(t 
 	if _, err = store.db.Exec(`UPDATE simulation_runs SET result_hash=? WHERE id=?`, strings.Repeat("e", 64), run.ID); err == nil {
 		t.Fatal("expected immutable run")
 	}
+	secondJob, _, err := store.CreateOrGet(context.Background(), sharedjob.Request{ProjectID: store.ProjectID(), Kind: "simulation", RevisionID: revision.ID, InputHash: run.InputHash, IdempotencyKey: "simulation-verify", RequestHash: strings.Repeat("b", 64)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondRun := run
+	secondRun.ID, secondRun.JobID = mustID(t), secondJob.ID
+	if err = store.InsertSimulationRun(context.Background(), secondRun, []SimulationMetricResult{{MetricID: "metric-dps", MetricVersion: "v1", Status: "available", CanonicalResult: `{"value":"1"}`}}); err != nil {
+		t.Fatal(err)
+	}
+	verification, err := store.VerifySimulationRuns(context.Background(), run.ID, secondRun.ID)
+	if err != nil || verification.Status != "verified" || verification.SourceResultHash != run.ResultHash {
+		t.Fatalf("verification=%#v err=%v", verification, err)
+	}
 	checkpoint := SimulationCheckpoint{JobID: job.ID, SampleOrdinal: 0, InputHash: run.InputHash, FingerprintHash: run.FingerprintHash, CancelGeneration: 0, Accumulator: `{"sample":0}`, AccumulatorHash: SimulationAccumulatorHash(`{"sample":0}`), CompletedAt: time.Now().UTC()}
 	if err = store.SaveSimulationCheckpoint(context.Background(), checkpoint); err != nil {
 		t.Fatal(err)
