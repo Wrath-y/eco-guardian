@@ -51,10 +51,20 @@ func (plan SamplePlan) OrdinalsForWorker(worker int) []uint64 {
 }
 
 type SampleRunner func(context.Context, uint64) (SampleResult, error)
+type CancellationCheck func(context.Context) error
 
 func ExecuteSamples(ctx context.Context, executor contract.BoundedExecutor, plan SamplePlan, run SampleRunner) ([]SampleResult, error) {
+	return ExecuteSamplesWithCancellation(ctx, executor, plan, nil, run)
+}
+
+// ExecuteSamplesWithCancellation observes persisted cancellation before work
+// is scheduled and again before a completed sample is exposed for checkpointing.
+func ExecuteSamplesWithCancellation(ctx context.Context, executor contract.BoundedExecutor, plan SamplePlan, check CancellationCheck, run SampleRunner) ([]SampleResult, error) {
 	if executor == nil || run == nil || plan.SampleCount < 1 || plan.Workers < 1 {
 		return nil, ErrSamplePlanInvalid
+	}
+	if err := checkCancellation(ctx, check); err != nil {
+		return nil, err
 	}
 	results := make([]SampleResult, plan.SampleCount)
 	var (
@@ -63,6 +73,14 @@ func ExecuteSamples(ctx context.Context, executor contract.BoundedExecutor, plan
 	)
 	err := executor.Run(ctx, plan.Workers, func(workerCtx context.Context, worker int) error {
 		for _, ordinal := range plan.OrdinalsForWorker(worker) {
+			if checkErr := checkCancellation(workerCtx, check); checkErr != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = checkErr
+				}
+				mu.Unlock()
+				return nil
+			}
 			mu.Lock()
 			failed := firstErr != nil
 			mu.Unlock()
@@ -81,6 +99,14 @@ func ExecuteSamples(ctx context.Context, executor contract.BoundedExecutor, plan
 				mu.Unlock()
 				return nil
 			}
+			if checkErr := checkCancellation(workerCtx, check); checkErr != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = checkErr
+				}
+				mu.Unlock()
+				return nil
+			}
 			results[ordinal] = result.Clone()
 		}
 		return nil
@@ -94,4 +120,14 @@ func ExecuteSamples(ctx context.Context, executor contract.BoundedExecutor, plan
 		return nil, firstErr
 	}
 	return results, nil
+}
+
+func checkCancellation(ctx context.Context, check CancellationCheck) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if check != nil {
+		return check(ctx)
+	}
+	return nil
 }

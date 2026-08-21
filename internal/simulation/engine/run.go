@@ -27,6 +27,10 @@ type Stats struct {
 // Evaluator receives one event and may schedule finite derived events through
 // the provided emitter. It never receives the queue or a clock.
 type Evaluator func(Event, *Emitter) error
+
+// Checkpoint runs at each event boundary. Orchestration uses it for bounded
+// cancellation and deadline checks; it is deliberately outside domain state.
+type Checkpoint func(Stats) error
 type Emitter struct {
 	queue     *Queue
 	nowMS     int64
@@ -46,12 +50,21 @@ func (emitter *Emitter) Schedule(event Event) error {
 }
 
 func Run(queue *Queue, limits Limits, evaluate Evaluator) (Stats, error) {
+	return RunWithCheckpoint(queue, limits, evaluate, nil)
+}
+
+func RunWithCheckpoint(queue *Queue, limits Limits, evaluate Evaluator, checkpoint Checkpoint) (Stats, error) {
 	if queue == nil || evaluate == nil || !limits.Valid() {
 		return Stats{}, ErrExecutionLimit
 	}
 	emitter := &Emitter{queue: queue, allocator: OrdinalAllocator{next: uint64(queue.Len())}}
 	stats := Stats{}
 	for {
+		if checkpoint != nil {
+			if err := checkpoint(stats); err != nil {
+				return stats, err
+			}
+		}
 		event, found := queue.Pop()
 		if !found {
 			return stats, nil

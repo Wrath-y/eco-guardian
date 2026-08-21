@@ -53,6 +53,17 @@ func TestReducerRejectsIncompleteTerminalAndContractMismatchedSamples(t *testing
 	}
 }
 
+func TestReducerChecksBeforeAggregation(t *testing.T) {
+	registry, err := NewRegistry([]Module{observationModule{descriptor: metricDescriptor("metric-dps"), observationID: "damage"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop := errors.New("canceled")
+	if _, err = ReduceExpectedWithCheck(registry, []Sample{{Ordinal: 0, Status: SampleSucceeded, Observations: []Observation{observation("damage", "1")}}}, 1, func() error { return stop }); !errors.Is(err, stop) {
+		t.Fatalf("expected aggregation safe-point rejection, got %v", err)
+	}
+}
+
 type failingModule struct{ descriptor Descriptor }
 
 func (module failingModule) Descriptor() Descriptor { return module.descriptor }

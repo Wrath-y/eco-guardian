@@ -39,19 +39,25 @@ func (result AggregateResult) Valid() bool {
 // Reduce copies and sorts samples by ordinal, then invokes modules by their raw
 // UTF-8 IDs. No worker completion order or map iteration enters aggregation.
 func Reduce(registry *Registry, samples []Sample) ([]AggregateResult, error) {
-	return reduce(registry, samples, 0)
+	return reduce(registry, samples, 0, nil)
 }
 
 // ReduceExpected refuses incomplete, failed, or canceled sample sets before a
 // result can be materialized. Accepted ordinals are exactly 0..expected-1.
 func ReduceExpected(registry *Registry, samples []Sample, expected int) ([]AggregateResult, error) {
+	return ReduceExpectedWithCheck(registry, samples, expected, nil)
+}
+
+// ReduceExpectedWithCheck provides a deterministic aggregation safe point for
+// persisted cancellation or deadline checks. The callback is never hashed.
+func ReduceExpectedWithCheck(registry *Registry, samples []Sample, expected int, check func() error) ([]AggregateResult, error) {
 	if expected < 1 {
 		return nil, ErrReductionInvalid
 	}
-	return reduce(registry, samples, expected)
+	return reduce(registry, samples, expected, check)
 }
 
-func reduce(registry *Registry, samples []Sample, expected int) ([]AggregateResult, error) {
+func reduce(registry *Registry, samples []Sample, expected int, check func() error) ([]AggregateResult, error) {
 	if registry == nil || len(samples) == 0 {
 		return nil, ErrReductionInvalid
 	}
@@ -74,6 +80,11 @@ func reduce(registry *Registry, samples []Sample, expected int) ([]AggregateResu
 	descriptors := registry.Descriptors()
 	results := make([]AggregateResult, 0, len(descriptors))
 	for _, descriptor := range descriptors {
+		if check != nil {
+			if err := check(); err != nil {
+				return nil, err
+			}
+		}
 		module, _ := registry.Module(descriptor.ID)
 		result, err := reduceModule(module, ordered)
 		if err != nil {

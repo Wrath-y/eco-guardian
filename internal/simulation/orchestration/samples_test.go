@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -139,5 +140,26 @@ func TestSampleResultsKeepHashesAndFinalMetricHashAcrossWorkerCounts(t *testing.
 		} else if resultHash != expectedResultHash {
 			t.Fatalf("workers=%d result hash changed: %s != %s", workers, resultHash, expectedResultHash)
 		}
+	}
+}
+
+func TestSampleExecutionChecksCancellationBeforeSchedulingAndExposure(t *testing.T) {
+	plan, err := NewSamplePlan(2, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop := errors.New("canceled")
+	checks := 0
+	_, err = ExecuteSamplesWithCancellation(context.Background(), concurrentExecutor{}, plan, func(context.Context) error {
+		checks++
+		if checks == 3 {
+			return stop
+		}
+		return nil
+	}, func(_ context.Context, ordinal uint64) (SampleResult, error) {
+		return SampleResult{Ordinal: ordinal}, nil
+	})
+	if !errors.Is(err, stop) || checks != 3 {
+		t.Fatalf("checks=%d err=%v", checks, err)
 	}
 }

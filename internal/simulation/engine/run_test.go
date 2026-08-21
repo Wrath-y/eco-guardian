@@ -41,3 +41,24 @@ func TestRunRejectsPastEventsAndBudgets(t *testing.T) {
 		t.Fatalf("budget err=%v", err)
 	}
 }
+
+func TestRunChecksAtEveryEventBoundary(t *testing.T) {
+	queue := NewQueue()
+	for ordinal := uint64(0); ordinal < 3; ordinal++ {
+		if err := queue.Enqueue(testEvent(int64(ordinal), "source", ordinal)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stop := errors.New("canceled")
+	checks := 0
+	stats, err := RunWithCheckpoint(queue, Limits{DurationMS: 10, MaxEvents: 10, MaxSteps: 10}, func(Event, *Emitter) error { return nil }, func(Stats) error {
+		checks++
+		if checks == 3 {
+			return stop
+		}
+		return nil
+	})
+	if !errors.Is(err, stop) || stats.EventsExecuted != 2 || checks != 3 {
+		t.Fatalf("stats=%#v checks=%d err=%v", stats, checks, err)
+	}
+}
