@@ -20,6 +20,25 @@ func TestCloneCreatesNewVersionAndAppliesOnlyDeclaredOverlay(t *testing.T) {
 	}
 }
 
+func FuzzCloneRejectsMalformedAndUndeclaredOverlays(f *testing.F) {
+	f.Add(`/actions/opening-strike/inputs/amount`, `"10"`)
+	f.Add(`/script`, `"return exploit()"`)
+	f.Add(`/actions/opening-strike/inputs/amount`, `{}`)
+	template := BuiltinTemplates()[0]
+	f.Fuzz(func(t *testing.T, path, value string) {
+		clone, err := Clone(template, "fuzz-clone", "v1", []ParameterOverlay{{Path: path, Value: []byte(value)}}, func(string) bool { return true })
+		if err != nil {
+			return
+		}
+		if clone.Definition.ID != "fuzz-clone" || clone.Definition.Version != "v1" || clone.Definition.Validate() != nil {
+			t.Fatalf("accepted malformed clone: %#v", clone.Definition)
+		}
+		if _, err := ParseDefinition(clone.Body); err != nil {
+			t.Fatalf("accepted clone was not canonical: %v", err)
+		}
+	})
+}
+
 func TestCloneRejectsUndeclaredInvalidAndUnavailableValues(t *testing.T) {
 	template := BuiltinTemplates()[0]
 	for name, testCase := range map[string]struct {
