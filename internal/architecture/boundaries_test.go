@@ -68,6 +68,38 @@ func TestSimulationDoesNotDependOnOptionalCapabilities(t *testing.T) {
 	}, "simulation must use its transport-neutral ports, not optional capability implementations")
 }
 
+func TestSimulationCoreDoesNotIntroduceFloatingPointOrGlobalRandomness(t *testing.T) {
+	err := filepath.WalkDir("../simulation", func(name string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			return nil
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.ParseComments)
+		if err != nil {
+			return err
+		}
+		for _, imp := range file.Imports {
+			value := strings.Trim(imp.Path.Value, "\"")
+			if value == "math/rand" || value == "math/rand/v2" {
+				t.Errorf("%s imports non-engine random source %s", name, value)
+			}
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			identifier, ok := node.(*ast.Ident)
+			if ok && (identifier.Name == "float32" || identifier.Name == "float64") {
+				t.Errorf("%s introduces %s into simulation core", name, identifier.Name)
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func assertImports(t *testing.T, dir string, forbidden func(string) bool, message string) {
 	t.Helper()
 	err := filepath.WalkDir(dir, func(name string, entry fs.DirEntry, walkErr error) error {
