@@ -12,6 +12,7 @@ import (
 
 	"github.com/zouyi/eco-guardian/internal/domain"
 	sharedjob "github.com/zouyi/eco-guardian/internal/job"
+	"github.com/zouyi/eco-guardian/internal/simulation/contract"
 )
 
 var (
@@ -107,7 +108,7 @@ func (materialization SimulationJobMaterialization) valid() bool {
 }
 
 func SimulationAccumulatorHash(accumulator string) string {
-	return hashSimulationBytes([]byte("eco-guardian/simulation-checkpoint/v1\x00" + accumulator))
+	return contract.CheckpointAccumulatorHash(accumulator)
 }
 
 func hashSimulationBytes(body []byte) string {
@@ -146,6 +147,26 @@ func (s *Store) GetSimulationJobMaterialization(ctx context.Context, jobID domai
 		return SimulationJobMaterialization{}, ErrSimulationRunInvalid
 	}
 	return materialization, nil
+}
+
+// ListRecoverableSimulationJobs is the startup/project-reopen scan. It never
+// returns terminal Jobs, and callers must still validate materialization and
+// checkpoint identities before resuming any work.
+func (s *Store) ListRecoverableSimulationJobs(ctx context.Context) ([]sharedjob.Record, error) {
+	rows, err := s.db.QueryContext(ctx, sharedJobSelect+` WHERE project_uuid=? AND kind='simulation' AND status IN ('queued','running','interrupted') ORDER BY created_at,id`, s.projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	jobs := []sharedjob.Record{}
+	for rows.Next() {
+		job, scanErr := scanSharedJob(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, rows.Err()
 }
 
 func (s *Store) InsertSimulationRun(ctx context.Context, run SimulationRun, metrics []SimulationMetricResult) error {

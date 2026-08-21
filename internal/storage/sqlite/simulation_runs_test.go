@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -83,6 +84,21 @@ func TestSimulationJobMaterializationIsImmutableAndBoundToJobIdentity(t *testing
 	}
 	if _, err = store.db.Exec(`UPDATE simulation_job_materializations SET fingerprint_hash=? WHERE job_id=?`, strings.Repeat("d", 64), job.ID); err == nil {
 		t.Fatal("expected immutable materialization")
+	}
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, _, err := Open(filepath.Dir(store.path), store.registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	recoverable, err := reopened.ListRecoverableSimulationJobs(context.Background())
+	if err != nil || len(recoverable) != 1 || recoverable[0].ID != job.ID {
+		t.Fatalf("recoverable=%#v err=%v", recoverable, err)
+	}
+	if _, err = reopened.GetSimulationJobMaterialization(context.Background(), job.ID); err != nil {
+		t.Fatal(err)
 	}
 }
 
