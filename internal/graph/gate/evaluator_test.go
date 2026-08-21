@@ -2,6 +2,7 @@ package gate
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/zouyi/eco-guardian/internal/domain"
@@ -53,5 +54,17 @@ func TestEvaluatorRequiresExactReadySnapshotAndKeepsVectorWarning(t *testing.T) 
 	provider.snapshot.ContentHash, provider.snapshot.Components[1].State = hash, "building"
 	if blocked := (Evaluator{Provider: provider}).Evaluate(context.Background(), request); blocked.State != versioninggate.Block {
 		t.Fatalf("blocked=%#v", blocked)
+	}
+	provider.snapshot.Components[1].State, provider.snapshot.Status = "ready", "failed"
+	if failed := (Evaluator{Provider: provider}).Evaluate(context.Background(), request); failed.State != versioninggate.Block {
+		t.Fatalf("failed=%#v", failed)
+	}
+	provider.snapshot.Status, provider.snapshot.NodeCount = "ready", 2
+	if countMismatch := (Evaluator{Provider: provider}).Evaluate(context.Background(), request); countMismatch.State != versioninggate.Stale {
+		t.Fatalf("countMismatch=%#v", countMismatch)
+	}
+	provider.err = errors.New("provider unavailable")
+	if unavailable := (Evaluator{Provider: provider}).Evaluate(context.Background(), request); unavailable.State != versioninggate.Unavailable {
+		t.Fatalf("unavailable=%#v", unavailable)
 	}
 }
