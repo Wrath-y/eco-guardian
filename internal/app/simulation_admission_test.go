@@ -105,7 +105,7 @@ func TestSimulationAdmissionRequiresExactVerificationSource(t *testing.T) {
 		t.Fatalf("result=%#v calls=%d submission=%#v err=%v", result, jobs.calls, jobs.seen, err)
 	}
 	service.Verifications = verificationSourceFake{source: contract.VerificationSource{RunID: sourceRunID, ProjectID: project, RevisionID: revision, ScenarioDefinitionID: sceneID, InputHash: strings.Repeat("d", 64), FingerprintHash: fingerprint}}
-	if _, err = service.AdmitSimulation(context.Background(), SimulationAdmission{ProjectID: project, RevisionID: revision, SceneID: "single-target-30s", SceneVersion: "v1", Metrics: []contract.MetricIdentity{{ID: "metric-dps", Version: "v1"}}, VerifyRunID: sourceRunID, IdempotencyKey: "mismatch"}); !errors.Is(err, ErrSimulationAdmissionUnavailable) || jobs.calls != 1 {
+	if _, err = service.AdmitSimulation(context.Background(), SimulationAdmission{ProjectID: project, RevisionID: revision, SceneID: "single-target-30s", SceneVersion: "v1", Metrics: []contract.MetricIdentity{{ID: "metric-dps", Version: "v1"}}, VerifyRunID: sourceRunID, IdempotencyKey: "mismatch"}); !errors.Is(err, ErrSimulationVerificationTargetInvalid) || jobs.calls != 1 {
 		t.Fatalf("calls=%d err=%v", jobs.calls, err)
 	}
 }

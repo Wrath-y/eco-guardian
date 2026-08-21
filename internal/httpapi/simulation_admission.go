@@ -131,6 +131,20 @@ func writeSimulationAdmissionError(c *gin.Context, err error) {
 		problem(c, http.StatusConflict, "SIMULATION_VALIDATION_REQUIRED", "Simulation requires matching FULL validation")
 	case errors.Is(err, contract.ErrSourceInvalid), errors.Is(err, contract.ErrSourceOwnership):
 		problem(c, http.StatusBadRequest, "SIMULATION_SOURCE_INVALID", "Simulation source is invalid")
+	case errors.Is(err, app.ErrSimulationSceneInvalid):
+		problem(c, http.StatusBadRequest, "SIMULATION_SCENE_INVALID", "Simulation scene is invalid")
+	case errors.Is(err, app.ErrSimulationParameterInvalid):
+		problem(c, http.StatusBadRequest, "SIMULATION_PARAMETER_INVALID", "Simulation parameter is invalid")
+	case errors.Is(err, app.ErrSimulationMetricInvalid):
+		problem(c, http.StatusBadRequest, "SIMULATION_METRIC_INVALID", "Simulation metric is invalid")
+	case errors.Is(err, app.ErrSimulationSampleInvalid):
+		problem(c, http.StatusBadRequest, "SIMULATION_SAMPLE_INVALID", "Simulation sample count is invalid")
+	case errors.Is(err, app.ErrSimulationBudgetInvalid):
+		problem(c, http.StatusBadRequest, "SIMULATION_BUDGET_INVALID", "Simulation budget is invalid")
+	case errors.Is(err, app.ErrSimulationImplementationUnavailable):
+		problem(c, http.StatusConflict, "SIMULATION_IMPLEMENTATION_UNAVAILABLE", "Simulation implementation is unavailable")
+	case errors.Is(err, app.ErrSimulationVerificationTargetInvalid):
+		problem(c, http.StatusBadRequest, "SIMULATION_VERIFICATION_TARGET_INVALID", "Simulation verification target is invalid")
 	case errors.Is(err, contract.ErrInputInvalid):
 		problem(c, http.StatusBadRequest, "SIMULATION_INPUT_INVALID", "Simulation request is invalid")
 	case errors.Is(err, store.ErrJobIdempotencyConflict):
