@@ -57,6 +57,17 @@ func TestBusinessModulesDoNotDependOnWindowsProcessImplementations(t *testing.T)
 	}
 }
 
+func TestSimulationDoesNotDependOnOptionalCapabilities(t *testing.T) {
+	assertImports(t, "../simulation", func(importPath string) bool {
+		for _, forbidden := range []string{"/graph", "/localrag", "/local-rag", "/impact", "/ai", "model-provider", "/provider"} {
+			if strings.Contains(importPath, forbidden) {
+				return true
+			}
+		}
+		return false
+	}, "simulation must use its transport-neutral ports, not optional capability implementations")
+}
+
 func assertImports(t *testing.T, dir string, forbidden func(string) bool, message string) {
 	t.Helper()
 	err := filepath.WalkDir(dir, func(name string, entry fs.DirEntry, walkErr error) error {

@@ -16,4 +16,7 @@ func TestDurableResolverFuncWithoutCallbacksDoesNotClaimJob(t *testing.T) {
 	if value, found, err := resolver.GetJob(context.Background(), id); err != nil || found || value != nil {
 		t.Fatalf("value=%v found=%v err=%v", value, found, err)
 	}
+	if events, err := resolver.ListJobEvents(context.Background(), id, 3); err != nil || events != nil {
+		t.Fatalf("events=%v err=%v", events, err)
+	}
 }
