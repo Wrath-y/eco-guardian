@@ -17,6 +17,15 @@ let pollTimer: number | undefined
 const job = computed(() => query.data.value)
 const terminal = (status?: SimulationJob['status']) => status === 'succeeded' || status === 'failed' || status === 'canceled' || status === 'interrupted'
 const canCancel = computed(() => job.value?.status === 'queued' || job.value?.status === 'running')
+const latestEvent = computed(() => events.value.at(-1))
+const currentPhase = computed(() => latestEvent.value?.phase ?? (job.value?.status === 'running' ? 'RUNNING' : job.value?.status?.toUpperCase()))
+const failureMessage = computed(() => {
+  const error = latestEvent.value?.error ?? ''
+  if (error.startsWith('BUDGET_EXCEEDED:')) return '已超过固定预算；没有生成部分成功结果。调整受限预算或场景后，使用新的尝试重新运行。'
+  if (error.startsWith('TIMEOUT:')) return '本地执行已超时；没有生成部分成功结果。可在确认预算后使用新的尝试重新运行。'
+  if (error.startsWith('RECOVERY_MISMATCH:') || error.startsWith('RECOVERY_UNAVAILABLE:')) return '恢复所需的历史输入或实现不可用；此 Job 不能安全重试为成功。'
+  return '任务失败；请查看持久化的安全错误码后，使用新的尝试重新运行。'
+})
 const eventStorageKey = () => `simulation-job-ordinal:${props.projectID}:${props.jobID}`
 function closeStream() { stream?.close(); stream = undefined }
 function clearPolling() { if (pollTimer !== undefined) { window.clearTimeout(pollTimer); pollTimer = undefined } }
@@ -74,10 +83,11 @@ onBeforeUnmount(() => { closeStream(); clearPolling() })
     <p v-if="query.isPending.value" role="status">正在读取模拟任务…</p>
     <p v-else-if="query.isError.value" role="alert">{{ query.error.value?.message }} <button type="button" @click="refresh">重试状态查询</button></p>
     <template v-else-if="job">
-      <p>任务 {{ job.id }} · 状态：<strong>{{ job.status }}</strong> · {{ streamState === 'polling' ? 'SSE 已断开，正在按服务端建议轮询。' : streamState === 'connected' ? '已连接到实时事件流。' : '正在连接实时事件流。' }}</p>
+      <p>任务 {{ job.id }} · 状态：<strong>{{ job.status }}</strong> · 阶段：{{ currentPhase }} · {{ streamState === 'polling' ? 'SSE 已断开，正在按服务端建议轮询。' : streamState === 'connected' ? '已连接到实时事件流。' : '正在连接实时事件流。' }}</p>
+      <p v-if="canceling" role="status">正在持久化取消请求；在安全边界前不推断最终状态。</p>
       <p v-if="job.status === 'canceled'">任务已取消；不将部分样本显示为成功结果。</p>
       <p v-else-if="job.status === 'interrupted'">任务已中断；恢复时会核对已捕获的输入与实现指纹。</p>
-      <p v-else-if="job.status === 'failed'" role="alert">任务失败；请查看持久化的安全错误码后重新发起新的尝试。</p>
+      <p v-else-if="job.status === 'failed'" role="alert">{{ failureMessage }}</p>
       <button v-if="canCancel" type="button" :disabled="canceling" @click="cancel">{{ canceling ? '正在请求取消…' : '取消模拟' }}</button>
       <p v-if="cancelError" role="alert">{{ cancelError }}</p>
       <ol v-if="events.length" aria-label="模拟任务事件"><li v-for="event in events" :key="event.ordinal">#{{ event.ordinal }} · {{ event.phase }} · {{ event.progress }}%<span v-if="event.warning"> · WARNING：{{ event.warning }}</span><span v-if="event.error"> · ERROR：{{ event.error }}</span></li></ol>

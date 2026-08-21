@@ -27,7 +27,7 @@ describe('simulation Job progress', () => {
     await screen.findByText('running')
     const stream = FakeEventSource.instances[0]
     stream.emit('job', JSON.stringify({ job_id: id, ordinal: 3, phase: 'SAMPLES_RUNNING', progress: 40, created_at: '2026-01-01T00:00:01Z' }))
-    expect(await screen.findByText(/SAMPLES_RUNNING/)).toBeTruthy()
+    expect((await screen.findAllByText(/SAMPLES_RUNNING/)).length).toBeGreaterThan(0)
     expect(sessionStorage.getItem(`simulation-job-ordinal:${id}:${id}`)).toBe('3')
     vi.useFakeTimers()
     stream.onerror?.(new Event('error'))
@@ -36,5 +36,15 @@ describe('simulation Job progress', () => {
     const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit | undefined]>
     expect(calls.some(([, options]) => options?.method === 'POST')).toBe(false)
     vi.useRealTimers()
+  })
+
+  it('explains a persisted budget failure without treating progress as success', async () => {
+    FakeEventSource.instances = []; vi.stubGlobal('EventSource', FakeEventSource)
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify(job()), { status: 200 }))))
+    render(SimulationJobProgress, { props: { projectID: id, jobID: id }, global: { plugins: [VueQueryPlugin] } })
+    await screen.findByText('running')
+    FakeEventSource.instances[0].emit('job', JSON.stringify({ job_id: id, ordinal: 4, phase: 'FAILED', progress: 100, error: 'BUDGET_EXCEEDED: event budget exceeded', created_at: '2026-01-01T00:00:02Z' }))
+    FakeEventSource.instances[0].emit('terminal', JSON.stringify(job('failed')))
+    expect(await screen.findByText(/已超过固定预算；没有生成部分成功结果/)).toBeTruthy()
   })
 })
