@@ -10,10 +10,14 @@ export const simulationKeys = {
   run: (projectID: string, runID: string) => ['simulation', projectID, 'run', runID] as const,
 }
 
+export class SimulationApiError extends Error {
+  constructor(message: string, readonly code?: components['schemas']['Problem']['code']) { super(message) }
+}
+
 async function response<T>(value: Response): Promise<T> {
   if (value.ok) return value.json() as Promise<T>
-  const problem = await value.json().catch(() => null) as { title?: string } | null
-  throw new Error(problem?.title || '模拟请求失败')
+  const problem = await value.json().catch(() => null) as components['schemas']['Problem'] | null
+  throw new SimulationApiError(problem?.title || '模拟请求失败', problem?.code)
 }
 
 export async function createSimulationJob(request: SimulationJobRequest, idempotencyKey: string): Promise<SimulationJobAccepted> {
