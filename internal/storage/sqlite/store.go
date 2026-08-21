@@ -24,7 +24,7 @@ import (
 )
 
 const databaseName = "project.db"
-const currentSchemaVersion = 10
+const currentSchemaVersion = 12
 
 func DBSchemaVersion() int { return currentSchemaVersion }
 
@@ -80,15 +80,16 @@ type ValidationError struct{ Issues []domain.FieldIssue }
 func (e ValidationError) Error() string { return "entity validation failed" }
 
 type Store struct {
-	db            *sql.DB
-	path          string
-	registry      *domain.Registry
-	writes        sync.Mutex
-	now           func() time.Time
-	projectID     domain.ID
-	graphVersion  versioningrevision.VersionEntry
-	afterRevision func(context.Context, domain.RevisionSummary)
-	failStage     func(string) error // test-only transaction fault injector
+	db                *sql.DB
+	path              string
+	registry          *domain.Registry
+	writes            sync.Mutex
+	now               func() time.Time
+	projectID         domain.ID
+	graphVersion      versioningrevision.VersionEntry
+	simulationVersion versioningrevision.VersionEntry
+	afterRevision     func(context.Context, domain.RevisionSummary)
+	failStage         func(string) error // test-only transaction fault injector
 }
 
 // RegisterGraphVersionContributor is startup composition glue. Its entry is
@@ -105,6 +106,23 @@ func (s *Store) RegisterGraphVersionContributor(contributor versioningrevision.V
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	s.graphVersion = entry
+	return nil
+}
+
+// RegisterSimulationVersionContributor records the exact implementation for
+// future revision metadata only. Existing historical manifests remain read
+// only, including explicitly unavailable simulation entries.
+func (s *Store) RegisterSimulationVersionContributor(contributor versioningrevision.VersionContributor) error {
+	if contributor == nil || contributor.CapabilityID() != "simulation-engine" {
+		return errors.New("invalid simulation version contributor")
+	}
+	entry := versioningrevision.VersionEntry{CapabilityID: contributor.CapabilityID(), ContractVersion: contributor.ContractVersion(), ImplementationVersion: contributor.ImplementationVersion(), State: contributor.RegistrationState()}
+	if !entry.Valid() {
+		return errors.New("invalid simulation version contributor")
+	}
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	s.simulationVersion = entry
 	return nil
 }
 
@@ -324,6 +342,18 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 		}
 		version = 10
 	}
+	if version == 10 {
+		if err := applyMigrationV11(ctx, tx); err != nil {
+			return err
+		}
+		version = 11
+	}
+	if version == 11 {
+		if err := applyMigrationV12(ctx, tx); err != nil {
+			return err
+		}
+		version = 12
+	}
 	if version != currentSchemaVersion {
 		return fmt.Errorf("unsupported schema version %d", version)
 	}
@@ -410,6 +440,31 @@ func applyMigrationV10(ctx context.Context, tx *sql.Tx) error {
 	return recordMigrationChecksums(ctx, tx)
 }
 
+func applyMigrationV11(ctx context.Context, tx *sql.Tx) error {
+	body, err := root.Assets.ReadFile("migrations/0011_simulation_scenarios.sql")
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, string(body)); err != nil {
+		return err
+	}
+	if err = seedBuiltinScenarioDefinitions(ctx, tx); err != nil {
+		return err
+	}
+	return recordMigrationChecksums(ctx, tx)
+}
+
+func applyMigrationV12(ctx context.Context, tx *sql.Tx) error {
+	body, err := root.Assets.ReadFile("migrations/0012_simulation_runs.sql")
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, string(body)); err != nil {
+		return err
+	}
+	return recordMigrationChecksums(ctx, tx)
+}
+
 func recordMigrationChecksums(ctx context.Context, tx *sql.Tx) error {
 	checksums, err := migrationStepChecksums()
 	if err != nil {
@@ -440,6 +495,8 @@ func migrationStepChecksums() (map[string]string, error) {
 		"graph-migration-checksums-v8": "migrations/0008_graph_migration_checksums.sql",
 		"graph-job-evidence-v9":        "migrations/0009_graph_job_evidence.sql",
 		"shared-job-cancellation-v10":  "migrations/0010_shared_job_cancellation.sql",
+		"simulation-scenarios-v11":     "migrations/0011_simulation_scenarios.sql",
+		"simulation-runs-v12":          "migrations/0012_simulation_runs.sql",
 	}
 	checksums := make(map[string]string, len(files))
 	for stepID, path := range files {
@@ -561,12 +618,18 @@ func historicalVersionManifest(ctx context.Context, tx *sql.Tx, revisionID domai
 }
 
 func versionManifestFromValidation(versions validation.VersionManifest) (versioningrevision.VersionManifest, error) {
-	return versionManifestFromValidationWithGraph(versions, defaultGraphVersionEntry())
+	return versionManifestFromValidationWithCapabilities(versions, defaultGraphVersionEntry(), defaultSimulationVersionEntry())
 }
 func defaultGraphVersionEntry() versioningrevision.VersionEntry {
 	return versioningrevision.VersionEntry{CapabilityID: "graph-projector", ContractVersion: "unavailable", State: versioningrevision.Unregistered}
 }
+func defaultSimulationVersionEntry() versioningrevision.VersionEntry {
+	return versioningrevision.VersionEntry{CapabilityID: "simulation-engine", ContractVersion: "unavailable", State: versioningrevision.Unregistered}
+}
 func versionManifestFromValidationWithGraph(versions validation.VersionManifest, graph versioningrevision.VersionEntry) (versioningrevision.VersionManifest, error) {
+	return versionManifestFromValidationWithCapabilities(versions, graph, defaultSimulationVersionEntry())
+}
+func versionManifestFromValidationWithCapabilities(versions validation.VersionManifest, graph, simulation versioningrevision.VersionEntry) (versioningrevision.VersionManifest, error) {
 	if !versions.Valid() {
 		return versioningrevision.VersionManifest{}, errors.New("incomplete validation version manifest")
 	}
@@ -576,7 +639,7 @@ func versionManifestFromValidationWithGraph(versions validation.VersionManifest,
 		{CapabilityID: "validator-registry", ContractVersion: "validation-v1", ImplementationVersion: versions.Registry, State: versioningrevision.Registered},
 		{CapabilityID: "numeric-policy", ContractVersion: "validation-v1", ImplementationVersion: versions.NumericPolicy, State: versioningrevision.Registered},
 		graph,
-		{CapabilityID: "simulation-engine", ContractVersion: "unavailable", State: versioningrevision.Unregistered},
+		simulation,
 	}}
 	if !manifest.Valid() {
 		return versioningrevision.VersionManifest{}, errors.New("invalid revision version manifest")
@@ -591,7 +654,7 @@ type revisionMetadataFields struct {
 }
 
 func (s *Store) writeRevisionMetadata(ctx context.Context, tx *sql.Tx, revision domain.RevisionSummary, versions validation.VersionManifest, fields revisionMetadataFields) error {
-	manifest, err := versionManifestFromValidationWithGraph(versions, s.graphVersion)
+	manifest, err := versionManifestFromValidationWithCapabilities(versions, s.graphVersion, s.simulationVersion)
 	if err != nil {
 		return err
 	}
@@ -630,7 +693,7 @@ func open(path string, registry *domain.Registry) (*Store, error) {
 			return nil, err
 		}
 	}
-	return &Store{db: db, path: path, registry: registry, now: time.Now, graphVersion: defaultGraphVersionEntry()}, nil
+	return &Store{db: db, path: path, registry: registry, now: time.Now, graphVersion: defaultGraphVersionEntry(), simulationVersion: defaultSimulationVersionEntry()}, nil
 }
 func (s *Store) Close() error         { return s.db.Close() }
 func (s *Store) ProjectID() domain.ID { return s.projectID }

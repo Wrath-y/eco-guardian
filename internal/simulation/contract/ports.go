@@ -25,6 +25,12 @@ type RevisionSource interface {
 	ResolveRevision(context.Context, ID) (Revision, error)
 }
 
+// ReleaseSource resolves an immutable release record to the revision it pinned
+// when it was created. It must not read a mutable active-release pointer.
+type ReleaseSource interface {
+	ResolveReleaseRevision(context.Context, ID) (Revision, error)
+}
+
 type ScenarioStore interface {
 	GetScenario(context.Context, ID) ([]byte, error)
 }

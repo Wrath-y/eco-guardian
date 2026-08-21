@@ -34,10 +34,15 @@ func builtinTemplate(id string, duration int64, seed uint64, targets int, stacke
 		actions = append(actions, Action{ID: "stacked-strike", EventID: "damage-v1", EvaluatorID: "combat-v1", AtMS: 1, SourceID: "source", TargetID: "target-1", Inputs: []Attribute{{ID: "amount", Value: "999", Unit: "points"}}})
 	}
 	definition := Definition{ID: id, Version: "v1", Participants: participants, Actions: actions, DurationMS: duration, DefaultSeed: seed, Parameters: []Parameter{}, Budgets: Budgets{MaxEvents: 10_000, MaxSteps: 10_000, MaxSamples: 1_000, MaxRuntimeMS: 30_000}}
+	definition.Parameters = []Parameter{{Path: "/actions/opening-strike/inputs/amount", Type: ParameterDecimal, DefaultValue: json.RawMessage(`"10"`), Minimum: "0", Maximum: "1000", Unit: "points"}}
 	body, err := json.Marshal(definition)
 	if err != nil {
 		panic(err)
 	}
+	return templateFromCanonical(definition, "builtin", body)
+}
+
+func templateFromCanonical(definition Definition, origin string, body []byte) Template {
 	hash := sha256.Sum256(body)
-	return Template{Definition: definition, Origin: "builtin", Body: body, BodyHash: hex.EncodeToString(hash[:])}
+	return Template{Definition: definition, Origin: origin, Body: body, BodyHash: hex.EncodeToString(hash[:])}
 }
