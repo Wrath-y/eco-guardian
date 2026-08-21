@@ -24,6 +24,8 @@ type graphServiceFake struct {
 	retryError error
 	status     app.GraphStatus
 	statusErr  error
+	events     []graphsync.GraphJobEvent
+	cancelled  bool
 }
 
 func (f *graphServiceFake) GraphStatus(context.Context, domain.ID) (app.GraphStatus, error) {
@@ -37,6 +39,31 @@ func (f *graphServiceFake) EnsureGraphSync(_ context.Context, revisionID domain.
 func (f *graphServiceFake) RetryGraphSync(_ context.Context, revisionID, retryOf domain.ID, key string) (graphsync.GraphJob, bool, error) {
 	f.retryID, f.retryOf, f.retryKey = revisionID, retryOf, key
 	return f.job, false, f.retryError
+}
+func (f *graphServiceFake) GetGraphJob(_ context.Context, id domain.ID) (graphsync.GraphJob, error) {
+	if id != f.job.ID {
+		return graphsync.GraphJob{}, app.ErrGraphOperationUnavailable
+	}
+	return f.job, nil
+}
+func (f *graphServiceFake) ListGraphJobEvents(_ context.Context, id domain.ID, after int64) ([]graphsync.GraphJobEvent, error) {
+	if id != f.job.ID {
+		return nil, app.ErrGraphOperationUnavailable
+	}
+	result := []graphsync.GraphJobEvent{}
+	for _, event := range f.events {
+		if event.Ordinal > after {
+			result = append(result, event)
+		}
+	}
+	return result, nil
+}
+func (f *graphServiceFake) CancelGraphJob(_ context.Context, id domain.ID) (graphsync.GraphJob, bool, error) {
+	if id != f.job.ID {
+		return graphsync.GraphJob{}, false, app.ErrGraphOperationUnavailable
+	}
+	f.cancelled = true
+	return f.job, true, nil
 }
 
 func TestGraphHandlerEnsuresExactRevisionAndRetriesWithStableKey(t *testing.T) {

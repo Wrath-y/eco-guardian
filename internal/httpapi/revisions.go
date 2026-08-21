@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/zouyi/eco-guardian/internal/app"
 	"github.com/zouyi/eco-guardian/internal/domain"
+	graphsync "github.com/zouyi/eco-guardian/internal/graph/sync"
 	"github.com/zouyi/eco-guardian/internal/project"
 	store "github.com/zouyi/eco-guardian/internal/storage/sqlite"
 	versioningpolicy "github.com/zouyi/eco-guardian/internal/versioning/policy"
@@ -20,7 +21,10 @@ import (
 )
 
 type VersionServiceProvider func() app.VersioningService
-type VersionHandler struct{ service VersionServiceProvider }
+type VersionHandler struct {
+	service VersionServiceProvider
+	graph   GraphSyncServiceProvider
+}
 
 // VersioningServiceFromProjectManager is composition glue only. Handlers see
 // the app service; this function is the sole project-manager path that knows
@@ -49,6 +53,14 @@ func VersioningServiceFromProjectManagerWithDependencies(manager *project.Manage
 
 func NewVersionHandler(service VersionServiceProvider) *VersionHandler {
 	return &VersionHandler{service: service}
+}
+
+// NewVersionHandlerWithGraph joins the two existing application services at
+// the shared durable Job transport boundary. Graph jobs deliberately retain
+// the same /jobs resource, SSE protocol, and cancellation semantics as
+// release jobs rather than creating a second public job API.
+func NewVersionHandlerWithGraph(service VersionServiceProvider, graph GraphSyncServiceProvider) *VersionHandler {
+	return &VersionHandler{service: service, graph: graph}
 }
 func (h *VersionHandler) Register(r *gin.Engine) {
 	r.HandleMethodNotAllowed = true
@@ -79,6 +91,12 @@ func (h *VersionHandler) current(c *gin.Context) app.VersioningService {
 		problem(c, http.StatusNotFound, "PROJECT_NOT_OPEN", "No active project")
 	}
 	return s
+}
+func (h *VersionHandler) graphCurrent() app.GraphSyncService {
+	if h.graph == nil {
+		return nil
+	}
+	return h.graph()
 }
 func pageLimit(c *gin.Context) (int, bool) {
 	limit, err := strconv.Atoi(c.DefaultQuery("limit", "50"))
@@ -371,12 +389,17 @@ func (h *VersionHandler) job(c *gin.Context) {
 	if !ok {
 		return
 	}
-	job, err := s.GetReleaseJob(c.Request.Context(), id)
-	if err != nil {
-		problem(c, http.StatusNotFound, "HISTORY_NOT_FOUND", "Job not found")
+	if job, err := s.GetReleaseJob(c.Request.Context(), id); err == nil {
+		c.JSON(http.StatusOK, jobJSON(job))
 		return
 	}
-	c.JSON(http.StatusOK, jobJSON(job))
+	if graph := h.graphCurrent(); graph != nil {
+		if job, err := graph.GetGraphJob(c.Request.Context(), id); err == nil {
+			c.JSON(http.StatusOK, graphJobJSON(job))
+			return
+		}
+	}
+	problem(c, http.StatusNotFound, "HISTORY_NOT_FOUND", "Job not found")
 }
 func (h *VersionHandler) cancel(c *gin.Context) {
 	s := h.current(c)
@@ -387,16 +410,26 @@ func (h *VersionHandler) cancel(c *gin.Context) {
 	if !ok {
 		return
 	}
-	job, canceled, err := s.CancelReleaseJob(c.Request.Context(), id)
-	if err != nil {
-		problem(c, http.StatusConflict, "RELEASE_PREFLIGHT_FAILED", "Job cannot be canceled")
+	if job, canceled, err := s.CancelReleaseJob(c.Request.Context(), id); err == nil {
+		if !canceled {
+			problem(c, http.StatusConflict, "RELEASE_PREFLIGHT_FAILED", "Job is already terminal")
+			return
+		}
+		c.JSON(http.StatusAccepted, jobJSON(job))
 		return
 	}
-	if !canceled {
-		problem(c, http.StatusConflict, "RELEASE_PREFLIGHT_FAILED", "Job is already terminal")
-		return
+	if graph := h.graphCurrent(); graph != nil {
+		job, canceled, err := graph.CancelGraphJob(c.Request.Context(), id)
+		if err == nil && canceled {
+			c.JSON(http.StatusAccepted, graphJobJSON(job))
+			return
+		}
+		if err == nil {
+			problem(c, http.StatusConflict, "GRAPH_RETRY_NOT_SAFE", "Graph Job is already terminal")
+			return
+		}
 	}
-	c.JSON(http.StatusAccepted, jobJSON(job))
+	problem(c, http.StatusConflict, "RELEASE_PREFLIGHT_FAILED", "Job cannot be canceled")
 }
 func terminalJob(status versioningrelease.JobStatus) bool {
 	return status == versioningrelease.JobSucceeded || status == versioningrelease.JobFailed || status == versioningrelease.JobCanceled || status == versioningrelease.JobInterrupted
@@ -420,15 +453,35 @@ func (h *VersionHandler) events(c *gin.Context) {
 		after = value
 	}
 	if _, err := s.GetReleaseJob(c.Request.Context(), id); err != nil {
-		problem(c, http.StatusNotFound, "HISTORY_NOT_FOUND", "Job not found")
+		graph := h.graphCurrent()
+		if graph == nil {
+			problem(c, http.StatusNotFound, "HISTORY_NOT_FOUND", "Job not found")
+			return
+		}
+		if _, graphErr := graph.GetGraphJob(c.Request.Context(), id); graphErr != nil {
+			problem(c, http.StatusNotFound, "HISTORY_NOT_FOUND", "Job not found")
+			return
+		}
+		h.streamGraphEvents(c, graph, id, after)
 		return
 	}
+	h.streamReleaseEvents(c, s, id, after)
+}
+
+func streamHeaders(c *gin.Context) (interface{ Flush() }, bool) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 	flusher, ok := c.Writer.(interface{ Flush() })
 	if !ok {
 		problem(c, http.StatusInternalServerError, "STORAGE_FAILURE", "Streaming is unavailable")
+	}
+	return flusher, ok
+}
+
+func (h *VersionHandler) streamReleaseEvents(c *gin.Context, s app.VersioningService, id domain.ID, after int64) {
+	flusher, ok := streamHeaders(c)
+	if !ok {
 		return
 	}
 	ticker := time.NewTicker(time.Second)
@@ -449,6 +502,63 @@ func (h *VersionHandler) events(c *gin.Context) {
 		}
 		if terminalJob(job.Status) {
 			payload, _ := json.Marshal(jobJSON(job))
+			_, _ = fmt.Fprintf(c.Writer, "event: terminal\ndata: %s\n\n", payload)
+			flusher.Flush()
+			return
+		}
+		_, _ = fmt.Fprint(c.Writer, ": heartbeat\n\n")
+		flusher.Flush()
+		select {
+		case <-c.Request.Context().Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func graphEventJSON(event graphsync.GraphJobEvent) gin.H {
+	response := gin.H{"job_id": event.JobID, "ordinal": event.Ordinal, "phase": event.Phase, "progress": event.Progress, "created_at": time.Now().UTC()}
+	if event.Warning != "" {
+		response["warning"] = event.Warning
+	}
+	if event.SafeError != "" {
+		response["error"] = event.SafeError
+	}
+	if event.Result != nil {
+		response["result_type"] = event.Result.Type
+		response["result_id"] = event.Result.ID
+		response["result_url"] = event.Result.URL
+	}
+	return response
+}
+
+func graphTerminal(status graphsync.JobStatus) bool {
+	return status == graphsync.JobSucceeded || status == graphsync.JobFailed || status == graphsync.JobCanceled || status == graphsync.JobInterrupted
+}
+
+func (h *VersionHandler) streamGraphEvents(c *gin.Context, s app.GraphSyncService, id domain.ID, after int64) {
+	flusher, ok := streamHeaders(c)
+	if !ok {
+		return
+	}
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		events, err := s.ListGraphJobEvents(c.Request.Context(), id, after)
+		if err != nil {
+			return
+		}
+		for _, event := range events {
+			payload, _ := json.Marshal(graphEventJSON(event))
+			_, _ = fmt.Fprintf(c.Writer, "id: %d\nevent: job\ndata: %s\n\n", event.Ordinal, payload)
+			after = event.Ordinal
+		}
+		job, err := s.GetGraphJob(c.Request.Context(), id)
+		if err != nil {
+			return
+		}
+		if graphTerminal(job.Status) {
+			payload, _ := json.Marshal(graphJobJSON(job))
 			_, _ = fmt.Fprintf(c.Writer, "event: terminal\ndata: %s\n\n", payload)
 			flusher.Flush()
 			return

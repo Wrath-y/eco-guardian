@@ -3,14 +3,17 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/zouyi/eco-guardian/internal/app"
 	"github.com/zouyi/eco-guardian/internal/domain"
+	graphsync "github.com/zouyi/eco-guardian/internal/graph/sync"
 	versioninggate "github.com/zouyi/eco-guardian/internal/versioning/gate"
 	versioningpolicy "github.com/zouyi/eco-guardian/internal/versioning/policy"
 	versioningrelease "github.com/zouyi/eco-guardian/internal/versioning/release"
@@ -25,6 +28,7 @@ type fakeVersionService struct {
 	createErr   error
 	createCalls int
 	job         versioningrelease.Job
+	jobErr      error
 	events      []versioningrelease.Event
 }
 
@@ -42,10 +46,13 @@ func (f *fakeVersionService) CreateRelease(_ context.Context, command versioning
 	return f.createdJob, f.createErr
 }
 func (f *fakeVersionService) GetReleaseJob(context.Context, domain.ID) (versioningrelease.Job, error) {
-	return f.job, nil
+	return f.job, f.jobErr
 }
 func (f *fakeVersionService) ListReleaseJobEvents(context.Context, domain.ID, int64) ([]versioningrelease.Event, error) {
 	return f.events, nil
+}
+func (f *fakeVersionService) CancelReleaseJob(context.Context, domain.ID) (versioningrelease.Job, bool, error) {
+	return versioningrelease.Job{}, false, errors.New("not a release job")
 }
 
 func TestVersionHandlerRejectsAbsentProjectAndInvalidListLimit(t *testing.T) {
@@ -158,5 +165,35 @@ func TestVersionHandlerResumesPersistedJobEventsAndCompletesTerminalStream(t *te
 	engine.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "id: 2") || !strings.Contains(response.Body.String(), "event: terminal") {
 		t.Fatalf("stream response=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestVersionHandlerServesGraphJobsThroughSharedJobRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	revisionID := domain.ID("01948c1e-0000-7000-8000-000000000000")
+	jobID := domain.ID("01948c1e-0000-7000-8000-000000000001")
+	graph := &graphServiceFake{job: graphsync.GraphJob{ID: jobID, ProjectID: revisionID, RevisionID: revisionID, InputHash: strings.Repeat("a", 64), IdempotencyKey: "automatic", RequestHash: strings.Repeat("b", 64), Status: graphsync.JobFailed, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, events: []graphsync.GraphJobEvent{{JobID: jobID, Ordinal: 2, Phase: graphsync.PhaseProjected, Progress: 40, SafeError: "PROVIDER_TASK_FAILED"}}}
+	versions := &fakeVersionService{jobErr: errors.New("not a release job")}
+	engine := gin.New()
+	NewVersionHandlerWithGraph(func() app.VersioningService { return versions }, func() app.GraphSyncService { return graph }).Register(engine)
+
+	job := httptest.NewRecorder()
+	engine.ServeHTTP(job, httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+string(jobID), nil))
+	if job.Code != http.StatusOK || !strings.Contains(job.Body.String(), `"kind":"graph_sync"`) {
+		t.Fatalf("graph job=%d body=%s", job.Code, job.Body.String())
+	}
+
+	stream := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+string(jobID)+"/events", nil)
+	request.Header.Set("Last-Event-ID", "1")
+	engine.ServeHTTP(stream, request)
+	if stream.Code != http.StatusOK || !strings.Contains(stream.Body.String(), "id: 2") || !strings.Contains(stream.Body.String(), `"ordinal":2`) || !strings.Contains(stream.Body.String(), "event: terminal") {
+		t.Fatalf("graph stream=%d body=%s", stream.Code, stream.Body.String())
+	}
+
+	cancel := httptest.NewRecorder()
+	engine.ServeHTTP(cancel, httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+string(jobID)+"/cancel", nil))
+	if cancel.Code != http.StatusAccepted || !graph.cancelled || !strings.Contains(cancel.Body.String(), `"kind":"graph_sync"`) {
+		t.Fatalf("graph cancel=%d cancelled=%v body=%s", cancel.Code, graph.cancelled, cancel.Body.String())
 	}
 }

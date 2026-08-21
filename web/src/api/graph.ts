@@ -5,12 +5,17 @@ import type { components } from './generated'
 export type GraphStatus = components['schemas']['GraphStatus']
 export type GraphSyncRequest = components['schemas']['GraphSyncRequest']
 export type GraphSyncJobAccepted = components['schemas']['GraphSyncJobAccepted']
+export type GraphJob = components['schemas']['Job']
+export type GraphJobEvent = components['schemas']['JobEvent']
 
 export class GraphApiError extends Error {
   constructor(message: string, readonly code?: string, readonly retryable?: boolean) { super(message) }
 }
 
-export const graphKeys = { status: (projectID: string, revisionID: string) => ['graph', projectID, revisionID, 'status'] as const }
+export const graphKeys = {
+  status: (projectID: string, revisionID: string) => ['graph', projectID, revisionID, 'status'] as const,
+  job: (projectID: string, jobID: string) => ['graph', projectID, 'job', jobID] as const,
+}
 
 async function graphResponse<T>(response: Response): Promise<T> {
   if (response.ok) return response.json() as Promise<T>
@@ -20,6 +25,9 @@ async function graphResponse<T>(response: Response): Promise<T> {
 
 export async function getGraphStatus(revisionID: string): Promise<GraphStatus> {
   return graphResponse<GraphStatus>(await fetch(`/api/v1/revisions/${encodeURIComponent(revisionID)}/graph-status`))
+}
+export async function getGraphJob(jobID: string): Promise<GraphJob> {
+  return graphResponse<GraphJob>(await fetch(`/api/v1/jobs/${encodeURIComponent(jobID)}`))
 }
 export function useGraphStatus(projectID: () => string, revisionID: () => string) {
   return useQuery({ queryKey: computed(() => graphKeys.status(projectID(), revisionID())), queryFn: () => getGraphStatus(revisionID()), enabled: computed(() => Boolean(projectID() && revisionID())), retry: false })

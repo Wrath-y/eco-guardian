@@ -25,6 +25,9 @@ type GraphSyncService interface {
 	EnsureGraphSync(context.Context, domain.ID) (graphsync.GraphJob, bool, error)
 	RetryGraphSync(context.Context, domain.ID, domain.ID, string) (graphsync.GraphJob, bool, error)
 	GraphStatus(context.Context, domain.ID) (GraphStatus, error)
+	GetGraphJob(context.Context, domain.ID) (graphsync.GraphJob, error)
+	ListGraphJobEvents(context.Context, domain.ID, int64) ([]graphsync.GraphJobEvent, error)
+	CancelGraphJob(context.Context, domain.ID) (graphsync.GraphJob, bool, error)
 }
 
 // GraphStatus is the application-level exact-revision read model shared by
@@ -56,7 +59,7 @@ type graphRevisionSource interface {
 
 type graphJobSource interface {
 	graphsync.JobAdmission
-	GetGraphJob(context.Context, domain.ID) (graphsync.GraphJob, error)
+	graphsync.DurableJobStore
 }
 
 type graphStateSource interface {
@@ -212,6 +215,31 @@ func (s GraphSyncApplication) RetryGraphSync(ctx context.Context, revisionID, re
 		}
 	}
 	return job, replay, nil
+}
+
+func (s GraphSyncApplication) GetGraphJob(ctx context.Context, jobID domain.ID) (graphsync.GraphJob, error) {
+	if s.Jobs == nil {
+		return graphsync.GraphJob{}, ErrGraphOperationUnavailable
+	}
+	return s.Jobs.GetGraphJob(ctx, jobID)
+}
+
+func (s GraphSyncApplication) ListGraphJobEvents(ctx context.Context, jobID domain.ID, after int64) ([]graphsync.GraphJobEvent, error) {
+	if s.Events == nil {
+		return nil, ErrGraphOperationUnavailable
+	}
+	return s.Events.ListGraphJobEvents(ctx, jobID, after)
+}
+
+func (s GraphSyncApplication) CancelGraphJob(ctx context.Context, jobID domain.ID) (graphsync.GraphJob, bool, error) {
+	if s.Jobs == nil || s.States == nil {
+		return graphsync.GraphJob{}, false, ErrGraphOperationUnavailable
+	}
+	states, ok := s.States.(graphsync.SyncStateStore)
+	if !ok {
+		return graphsync.GraphJob{}, false, ErrGraphOperationUnavailable
+	}
+	return (graphsync.CancellationService{States: states, Jobs: s.Jobs}).Cancel(ctx, jobID)
 }
 
 func (s GraphSyncApplication) revision(ctx context.Context, revisionID domain.ID) (versioningrevision.Record, validation.VersionManifest, error) {

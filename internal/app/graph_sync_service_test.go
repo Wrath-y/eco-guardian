@@ -38,6 +38,13 @@ func (f *graphAppJobsFake) GetGraphJob(_ context.Context, id domain.ID) (graphsy
 	}
 	return f.job, nil
 }
+func (f *graphAppJobsFake) TransitionGraphJob(_ context.Context, id domain.ID, expected, next graphsync.JobStatus, _ *graphsync.GraphJobResult) (graphsync.GraphJob, bool, error) {
+	if id != f.job.ID || f.job.Status != expected || !expected.CanTransitionTo(next) {
+		return graphsync.GraphJob{}, false, ErrGraphRetryInvalid
+	}
+	f.job.Status = next
+	return f.job, true, nil
+}
 
 type graphAppStatesFake struct{ state graphsync.SyncState }
 
