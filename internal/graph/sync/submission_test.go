@@ -6,11 +6,11 @@ import (
 )
 
 type submissionProviderFake struct {
-	calls, taskCalls, inspectCalls int
-	snapshot                       Snapshot
-	task                           Task
-	inspectErr                     error
-	taskErr                        error
+	calls, taskCalls, inspectCalls, activationCalls int
+	snapshot                                        Snapshot
+	task                                            Task
+	inspectErr                                      error
+	taskErr                                         error
 }
 
 func (f *submissionProviderFake) Health(context.Context, string) (Health, error) {
@@ -29,6 +29,7 @@ func (f *submissionProviderFake) GetTask(context.Context, string, string) (Task,
 	return f.task, f.taskErr
 }
 func (f *submissionProviderFake) ActivateSnapshot(context.Context, string, string, string) (Activation, error) {
+	f.activationCalls++
 	return Activation{}, nil
 }
 func (f *submissionProviderFake) DeleteSnapshotForRetry(context.Context, string, string, string) error {
@@ -51,7 +52,7 @@ func TestSubmissionPersistsTaskIdentityBeforeAcceptedCheckpoint(t *testing.T) {
 	service := SubmissionService{States: states, Worker: worker, Provider: provider}
 	request := SubmissionRequest{JobID: jobID, RevisionID: jobs.job.RevisionID, Namespace: string(jobs.job.ProjectID), Version: string(jobs.job.RevisionID), Snapshot: PutSnapshotRequest{SchemaVersion: SnapshotSchemaVersion, Mode: "full", ContentHash: hash}, RequestID: "eco-request-1"}
 	updated, replay, err := service.Submit(context.Background(), request)
-	if err != nil || replay || provider.calls != 1 || updated.ProviderTaskID != "provider-task" || updated.ExternalTaskID != "provider-task" || updated.ProviderRequestID != request.RequestID || len(events.events) != 6 || events.events[5].Phase != PhaseTaskAccepted {
+	if err != nil || replay || provider.calls != 1 || provider.activationCalls != 0 || updated.ProviderTaskID != "provider-task" || updated.ExternalTaskID != "provider-task" || updated.ProviderRequestID != request.RequestID || len(events.events) != 6 || events.events[5].Phase != PhaseTaskAccepted {
 		t.Fatalf("state=%#v replay=%v events=%#v calls=%d err=%v", updated, replay, events.events, provider.calls, err)
 	}
 	if replayed, replay, err := service.Submit(context.Background(), request); err != nil || !replay || replayed.ProviderTaskID != "provider-task" || provider.calls != 1 {
