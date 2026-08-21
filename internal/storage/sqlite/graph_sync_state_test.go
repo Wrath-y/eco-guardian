@@ -173,6 +173,9 @@ func TestCommitGraphReadyAtomicallyStoresProjectionEvidence(t *testing.T) {
 	if stored, found, err := store.GetProjectionSummary(context.Background(), revision.ID, projector.ProjectionSchemaV1, projector.ProjectorV1); err != nil || !found || stored.ManifestHash != summary.ManifestHash {
 		t.Fatalf("summary=%#v found=%v err=%v", stored, found, err)
 	}
+	if stored, found, err := store.GraphProjectionSummary(context.Background(), revision.ID); err != nil || !found || stored != summary {
+		t.Fatalf("summary=%#v found=%v err=%v", stored, found, err)
+	}
 }
 
 func TestListRecoverableGraphSyncStatesFiltersTerminalStates(t *testing.T) {

@@ -73,3 +73,35 @@ func (s *Store) GetProjectionSummary(ctx context.Context, revisionID domain.ID, 
 	}
 	return out, true, nil
 }
+
+// GraphProjectionSummary satisfies the release activation adapter. It refuses
+// an ambiguous historical lookup rather than selecting a current projector or
+// latest row implicitly; activation requests do not carry projector identity.
+func (s *Store) GraphProjectionSummary(ctx context.Context, revisionID domain.ID) (projector.Summary, bool, error) {
+	if !revisionID.Valid() {
+		return projector.Summary{}, false, ErrProjectionSummaryInvalid
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT projection_schema_version,projector_version,config_hash,graph_manifest_hash,node_count,edge_count,COALESCE(cache_identity,'') FROM projection_summaries WHERE revision_id=? ORDER BY projection_schema_version,projector_version`, revisionID)
+	if err != nil {
+		return projector.Summary{}, false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return projector.Summary{}, false, rows.Err()
+	}
+	var out projector.Summary
+	if err = rows.Scan(&out.SchemaVersion, &out.ProjectorVersion, &out.ConfigHash, &out.ManifestHash, &out.NodeCount, &out.EdgeCount, &out.CacheIdentity); err != nil {
+		return projector.Summary{}, false, err
+	}
+	if rows.Next() {
+		return projector.Summary{}, false, ErrProjectionSummaryInvalid
+	}
+	if err = rows.Err(); err != nil {
+		return projector.Summary{}, false, err
+	}
+	out.ProjectID, out.RevisionID = string(s.projectID), string(revisionID)
+	if !out.Valid() {
+		return projector.Summary{}, false, ErrProjectionSummaryInvalid
+	}
+	return out, true, nil
+}
