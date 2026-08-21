@@ -16,9 +16,34 @@ func TestOpenAPIContainsAllHandlerOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	contract := string(raw)
-	for _, id := range []string{"selectProjectDirectory", "openProject", "listRecentProjects", "openRecentProject", "getCurrentProject", "closeProject", "getEntitySchema", "listEntities", "createEntity", "getEntity", "patchEntity", "deleteEntity", "createValidationRun", "getValidationRun", "listRevisions", "createRevision", "getRevision", "getRevisionDiff", "listReleasePolicies", "createReleasePolicy", "listReleases", "createRelease", "getRelease", "getJob", "streamJobEvents", "cancelJob", "getRuntimeCapabilities"} {
+	for _, id := range []string{"selectProjectDirectory", "openProject", "listRecentProjects", "openRecentProject", "getCurrentProject", "closeProject", "getEntitySchema", "listEntities", "createEntity", "getEntity", "patchEntity", "deleteEntity", "createValidationRun", "getValidationRun", "listRevisions", "createRevision", "getRevision", "getRevisionDiff", "ensureGraphSync", "getGraphStatus", "listReleasePolicies", "createReleasePolicy", "listReleases", "createRelease", "getRelease", "getJob", "streamJobEvents", "cancelJob", "getRuntimeCapabilities"} {
 		if !strings.Contains(contract, "operationId: "+id) {
 			t.Errorf("OpenAPI missing handler operation %s", id)
+		}
+	}
+}
+
+func TestOpenAPIContainsGraphStatusAndProblemContracts(t *testing.T) {
+	raw, err := os.ReadFile("../../api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract := string(raw)
+	for _, schema := range []string{
+		"GraphSyncRequest", "GraphSyncJobAccepted", "GraphStatus", "GraphProjectionSummary",
+		"GraphProviderObservation", "GraphComponent", "GraphEvidence", "GraphSafeError",
+	} {
+		if !strings.Contains(contract, "    "+schema+":") {
+			t.Errorf("OpenAPI missing graph schema %s", schema)
+		}
+	}
+	for _, code := range []string{
+		"GRAPH_VALIDATION_REQUIRED", "GRAPH_VALIDATION_BLOCKED", "PROJECTOR_VERSION_UNAVAILABLE",
+		"GRAPH_CAPABILITY_UNAVAILABLE", "CONTENT_HASH_MISMATCH", "CONTENT_HASH_CONFLICT",
+		"PROVIDER_TASK_FAILED", "GRAPH_RETRY_EXHAUSTED",
+	} {
+		if !strings.Contains(contract, code) {
+			t.Errorf("OpenAPI missing graph problem code %s", code)
 		}
 	}
 }
@@ -69,6 +94,12 @@ func TestVersioningProblemFixturesHaveStableStatusMappings(t *testing.T) {
 		"RELEASE_PREFLIGHT_FAILED": 422, "RELEASE_BASE_CONFLICT": 409, "IDEMPOTENCY_CONFLICT": 409,
 		"MANDATORY_BACKUP_FAILED": 502, "MIGRATION_BACKUP_REQUIRED": 409, "INVALID_CONFIRMATION": 400,
 		"HISTORY_NOT_FOUND": 404, "STORAGE_FAILURE": 500, "EXTERNAL_SERVICE_FAILURE": 503,
+		"GRAPH_VALIDATION_REQUIRED": 409, "GRAPH_VALIDATION_BLOCKED": 409,
+		"PROJECTOR_VERSION_UNAVAILABLE": 409, "GRAPH_CAPABILITY_UNAVAILABLE": 503,
+		"BASE_SNAPSHOT_NOT_FOUND": 409, "BASE_SNAPSHOT_NOT_READY": 409,
+		"CONTENT_HASH_MISMATCH": 422, "CONTENT_HASH_CONFLICT": 409,
+		"PROVIDER_TASK_FAILED": 422, "GRAPH_RETRY_EXHAUSTED": 503,
+		"GRAPH_RETRY_NOT_SAFE": 409, "GRAPH_STATUS_UNAVAILABLE": 503,
 	}
 	got := map[string]int{}
 	for _, fixture := range fixtures {

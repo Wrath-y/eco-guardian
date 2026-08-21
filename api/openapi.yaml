@@ -150,6 +150,34 @@ paths:
       responses:
         '200': { description: Deterministic structured revision diff, content: { application/json: { schema: { $ref: '#/components/schemas/RevisionDiff' } } } }
         default: { $ref: '#/components/responses/Problem' }
+  /revisions/{id}/graph-sync:
+    post:
+      operationId: ensureGraphSync
+      description: Ensures the exact immutable revision has one admitted Graph sync Job. A retry request requires a stable Idempotency-Key and never changes the revision or snapshot identity.
+      parameters:
+        - { $ref: '#/components/parameters/RevisionID' }
+        - { $ref: '#/components/parameters/GraphRetryIdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GraphSyncRequest' }
+      responses:
+        '202':
+          description: Existing or newly admitted durable Graph Job. The Location header and job URLs identify the same Job.
+          headers:
+            Location: { required: true, schema: { type: string, format: uri-reference } }
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/GraphSyncJobAccepted' } }
+        default: { $ref: '#/components/responses/Problem' }
+  /revisions/{id}/graph-status:
+    get:
+      operationId: getGraphStatus
+      description: Reads only the exact revision's persisted Graph observations. It never starts sync, rebuilds a projection, mutates a provider Snapshot, or falls back to another revision.
+      parameters: [ { $ref: '#/components/parameters/RevisionID' } ]
+      responses:
+        '200': { description: Exact revision Graph state and last safe provider observation, content: { application/json: { schema: { $ref: '#/components/schemas/GraphStatus' } } } }
+        default: { $ref: '#/components/responses/Problem' }
   /release-policies:
     get:
       operationId: listReleasePolicies
@@ -227,6 +255,7 @@ components:
     ReleaseID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     JobID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 256 }, description: Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. }
+    GraphRetryIdempotencyKey: { name: Idempotency-Key, in: header, required: false, schema: { type: string, minLength: 1, maxLength: 256 }, description: Required when graph-sync intent is retry; reuse returns the original retry Job and changed retry input conflicts. It is ignored for ensure. }
     LastEventID: { name: Last-Event-ID, in: header, schema: { type: integer, minimum: 0 }, description: Resume SSE delivery strictly after this persisted event ordinal. }
     IfMatch: { name: If-Match, in: header, required: true, schema: { type: string }, description: Strong ETag returned by GET/create/patch. }
   headers:
@@ -673,6 +702,100 @@ components:
       properties:
         job_id: { $ref: '#/components/schemas/UUIDv7' }
         location: { type: string, format: uri-reference }
+    GraphSyncIntent: { type: string, enum: [ensure, retry] }
+    GraphSyncEnsureRequest:
+      type: object
+      required: [intent]
+      properties:
+        intent: { $ref: '#/components/schemas/GraphSyncIntent', const: ensure }
+    GraphSyncRetryRequest:
+      type: object
+      required: [intent, retry_of_job_id]
+      properties:
+        intent: { $ref: '#/components/schemas/GraphSyncIntent', const: retry }
+        retry_of_job_id: { $ref: '#/components/schemas/UUIDv7', description: The terminal Graph Job being retried; retry eligibility remains server-authoritative. }
+    GraphSyncRequest:
+      oneOf:
+        - $ref: '#/components/schemas/GraphSyncEnsureRequest'
+        - $ref: '#/components/schemas/GraphSyncRetryRequest'
+      discriminator: { propertyName: intent, mapping: { ensure: '#/components/schemas/GraphSyncEnsureRequest', retry: '#/components/schemas/GraphSyncRetryRequest' } }
+    GraphSyncJobAccepted:
+      type: object
+      required: [job, location]
+      properties:
+        job: { $ref: '#/components/schemas/Job' }
+        location: { type: string, format: uri-reference }
+    GraphPipelineState: { type: string, enum: [saved, validating, blocked_validation, graph_queued, graph_building, graph_ready, graph_failed] }
+    GraphFreshness: { type: string, enum: [fresh, stale, unknown] }
+    GraphComponentState: { type: string, enum: [ready, building, failed, unavailable, unknown] }
+    GraphComponent:
+      type: object
+      required: [name, state]
+      properties:
+        name: { type: string, enum: [graph, fts, vector, rerank] }
+        state: { $ref: '#/components/schemas/GraphComponentState' }
+        detail: { type: [string, 'null'], maxLength: 512, description: Safe component diagnostic only. }
+    GraphEvidence:
+      type: object
+      required: [key, value]
+      properties:
+        key: { type: string, minLength: 1, maxLength: 128 }
+        value: { type: string, maxLength: 1024, description: Safe identity, count, capability, or freshness evidence; never Graph records or provider payloads. }
+    GraphWarning:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, minLength: 1 }
+        message: { type: string, maxLength: 1024 }
+        request_id: { type: [string, 'null'] }
+    GraphSafeError:
+      type: object
+      required: [code, retryable]
+      properties:
+        code: { type: string, minLength: 1 }
+        retryable: { type: boolean }
+        message: { type: [string, 'null'], maxLength: 1024 }
+        request_id: { type: [string, 'null'] }
+        provider_code: { type: [string, 'null'], description: Stable provider code only; raw provider error bodies are never exposed. }
+    GraphProjectionSummary:
+      type: object
+      required: [projection_schema_version, projector_version, graph_manifest_hash, node_count, edge_count]
+      properties:
+        projection_schema_version: { type: string, minLength: 1 }
+        projector_version: { type: string, minLength: 1 }
+        graph_manifest_hash: { $ref: '#/components/schemas/Hash' }
+        node_count: { type: integer, minimum: 0 }
+        edge_count: { type: integer, minimum: 0 }
+    GraphProviderObservation:
+      type: object
+      required: [namespace, version, status, query_ready, components, observed_at]
+      properties:
+        namespace: { type: string, description: Stable project UUID namespace. }
+        version: { $ref: '#/components/schemas/UUIDv7' }
+        task_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        status: { type: string, enum: [queued, building, ready, failed, unavailable, unknown] }
+        query_ready: { type: boolean }
+        components: { type: array, items: { $ref: '#/components/schemas/GraphComponent' } }
+        observed_at: { type: string, format: date-time }
+    GraphAction: { type: string, enum: [retry, wait, inspect, none] }
+    GraphStatus:
+      type: object
+      required: [revision_id, config_hash, pipeline_state, freshness, freshness_reasons, warnings, actions, evidence]
+      properties:
+        revision_id: { $ref: '#/components/schemas/UUIDv7' }
+        config_hash: { $ref: '#/components/schemas/Hash' }
+        pipeline_state: { $ref: '#/components/schemas/GraphPipelineState' }
+        freshness: { $ref: '#/components/schemas/GraphFreshness' }
+        freshness_reasons: { type: array, items: { type: string, minLength: 1 } }
+        validation_run_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        validation_result: { type: [string, 'null'], enum: [PASS, REQUIRES_VALIDATION, BLOCKED, null] }
+        projection: { oneOf: [{ $ref: '#/components/schemas/GraphProjectionSummary' }, { type: 'null' }] }
+        job: { oneOf: [{ $ref: '#/components/schemas/Job' }, { type: 'null' }] }
+        provider: { oneOf: [{ $ref: '#/components/schemas/GraphProviderObservation' }, { type: 'null' }] }
+        warnings: { type: array, items: { $ref: '#/components/schemas/GraphWarning' } }
+        error: { oneOf: [{ $ref: '#/components/schemas/GraphSafeError' }, { type: 'null' }] }
+        actions: { type: array, items: { $ref: '#/components/schemas/GraphAction' } }
+        evidence: { type: array, items: { $ref: '#/components/schemas/GraphEvidence' } }
     JobStatus: { type: string, enum: [queued, running, succeeded, failed, canceled, interrupted] }
     JobEvent:
       type: object
@@ -690,10 +813,11 @@ components:
         created_at: { type: string, format: date-time }
     Job:
       type: object
-      required: [id, kind, status, request_hash, events_url, poll_after_ms, created_at]
+      required: [id, kind, revision_id, status, request_hash, events_url, poll_after_ms, created_at]
       properties:
         id: { $ref: '#/components/schemas/UUIDv7' }
-        kind: { type: string, const: release }
+        kind: { type: string, enum: [release, graph_sync] }
+        revision_id: { $ref: '#/components/schemas/UUIDv7' }
         status: { $ref: '#/components/schemas/JobStatus' }
         request_hash: { $ref: '#/components/schemas/Hash' }
         events_url: { type: string, format: uri-reference }
@@ -831,7 +955,7 @@ components:
         status: { type: integer }
         detail: { type: string }
         instance: { type: string }
-        code: { type: string, enum: [INVALID_SELECTION, PROJECT_LOCKED, ACTIVE_PROJECT_CONFLICT, CLOSE_BLOCKED, UNSUPPORTED_KIND, UNSUPPORTED_SCHEMA, DUPLICATE_KEY, PRECONDITION_REQUIRED, REVISION_CONFLICT, ENTITY_REFERENCED, VALIDATION_FAILED, PROJECT_NOT_OPEN, INVALID_VALIDATION_REQUEST, INVALID_VALIDATION_SOURCE, INVALID_VALIDATION_SCOPE, INVALID_VALIDATION_TARGET, VALIDATION_SOURCE_NOT_FOUND, VALIDATION_RUN_NOT_FOUND, VALIDATION_STORAGE_FAILURE, REVISION_NOT_FOUND, REVISION_IMMUTABLE, DIFF_BASE_INVALID, RELEASE_POLICY_INVALID, RELEASE_CAPABILITY_DISABLED, RELEASE_PREFLIGHT_FAILED, RELEASE_BASE_CONFLICT, IDEMPOTENCY_CONFLICT, MANDATORY_BACKUP_FAILED, MIGRATION_BACKUP_REQUIRED, INVALID_CONFIRMATION, HISTORY_NOT_FOUND, STORAGE_FAILURE, EXTERNAL_SERVICE_FAILURE] }
+        code: { type: string, enum: [INVALID_SELECTION, PROJECT_LOCKED, ACTIVE_PROJECT_CONFLICT, CLOSE_BLOCKED, UNSUPPORTED_KIND, UNSUPPORTED_SCHEMA, DUPLICATE_KEY, PRECONDITION_REQUIRED, REVISION_CONFLICT, ENTITY_REFERENCED, VALIDATION_FAILED, PROJECT_NOT_OPEN, INVALID_VALIDATION_REQUEST, INVALID_VALIDATION_SOURCE, INVALID_VALIDATION_SCOPE, INVALID_VALIDATION_TARGET, VALIDATION_SOURCE_NOT_FOUND, VALIDATION_RUN_NOT_FOUND, VALIDATION_STORAGE_FAILURE, REVISION_NOT_FOUND, REVISION_IMMUTABLE, DIFF_BASE_INVALID, RELEASE_POLICY_INVALID, RELEASE_CAPABILITY_DISABLED, RELEASE_PREFLIGHT_FAILED, RELEASE_BASE_CONFLICT, IDEMPOTENCY_CONFLICT, MANDATORY_BACKUP_FAILED, MIGRATION_BACKUP_REQUIRED, INVALID_CONFIRMATION, HISTORY_NOT_FOUND, STORAGE_FAILURE, EXTERNAL_SERVICE_FAILURE, GRAPH_VALIDATION_REQUIRED, GRAPH_VALIDATION_BLOCKED, PROJECTOR_VERSION_UNAVAILABLE, GRAPH_CAPABILITY_UNAVAILABLE, BASE_SNAPSHOT_NOT_FOUND, BASE_SNAPSHOT_NOT_READY, CONTENT_HASH_MISMATCH, CONTENT_HASH_CONFLICT, PROVIDER_TASK_FAILED, GRAPH_RETRY_EXHAUSTED, GRAPH_RETRY_NOT_SAFE, GRAPH_STATUS_UNAVAILABLE] }
         retryable: { type: boolean }
         request_id: { type: string }
         entity_id: { $ref: '#/components/schemas/UUIDv7' }

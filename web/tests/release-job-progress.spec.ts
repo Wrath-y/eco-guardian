@@ -17,7 +17,7 @@ class FakeEventSource {
   emit(type: string, data = '') { for (const listener of this.listeners.get(type) ?? []) listener(new MessageEvent('message', { data })) }
 }
 function job(status: ReleaseJob['status'] = 'queued'): ReleaseJob {
-  return { id, kind: 'release', status, request_hash: 'a'.repeat(64), events_url: `/api/v1/jobs/${id}/events`, poll_after_ms: 100, created_at: '2026-01-01T00:00:00Z', ...(status === 'succeeded' ? { result_type: 'release', result_id: releaseID, result_url: `/api/v1/releases/${releaseID}` } : {}) }
+  return { id, kind: 'release', revision_id: id, status, request_hash: 'a'.repeat(64), events_url: `/api/v1/jobs/${id}/events`, poll_after_ms: 100, created_at: '2026-01-01T00:00:00Z', ...(status === 'succeeded' ? { result_type: 'release', result_id: releaseID, result_url: `/api/v1/releases/${releaseID}` } : {}) }
 }
 function renderProgress() { return render(ReleaseJobProgress, { props: { projectID: id, jobID: id }, global: { plugins: [VueQueryPlugin] } }) }
 

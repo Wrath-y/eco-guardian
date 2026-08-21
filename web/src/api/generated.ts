@@ -228,6 +228,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/revisions/{id}/graph-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Ensures the exact immutable revision has one admitted Graph sync Job. A retry request requires a stable Idempotency-Key and never changes the revision or snapshot identity. */
+        post: operations["ensureGraphSync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/revisions/{id}/graph-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Reads only the exact revision's persisted Graph observations. It never starts sync, rebuilds a projection, mutates a provider Snapshot, or falls back to another revision. */
+        get: operations["getGraphStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/release-policies": {
         parameters: {
             query?: never;
@@ -735,6 +769,99 @@ export interface components {
             location: string;
         };
         /** @enum {string} */
+        GraphSyncIntent: "ensure" | "retry";
+        GraphSyncEnsureRequest: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            intent: "ensure";
+        };
+        GraphSyncRetryRequest: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            intent: "retry";
+            /** @description The terminal Graph Job being retried; retry eligibility remains server-authoritative. */
+            retry_of_job_id: components["schemas"]["UUIDv7"];
+        };
+        GraphSyncRequest: components["schemas"]["GraphSyncEnsureRequest"] | components["schemas"]["GraphSyncRetryRequest"];
+        GraphSyncJobAccepted: {
+            job: components["schemas"]["Job"];
+            /** Format: uri-reference */
+            location: string;
+        };
+        /** @enum {string} */
+        GraphPipelineState: "saved" | "validating" | "blocked_validation" | "graph_queued" | "graph_building" | "graph_ready" | "graph_failed";
+        /** @enum {string} */
+        GraphFreshness: "fresh" | "stale" | "unknown";
+        /** @enum {string} */
+        GraphComponentState: "ready" | "building" | "failed" | "unavailable" | "unknown";
+        GraphComponent: {
+            /** @enum {string} */
+            name: "graph" | "fts" | "vector" | "rerank";
+            state: components["schemas"]["GraphComponentState"];
+            /** @description Safe component diagnostic only. */
+            detail?: string | null;
+        };
+        GraphEvidence: {
+            key: string;
+            /** @description Safe identity */
+            value: string;
+        };
+        GraphWarning: {
+            code: string;
+            message: string;
+            request_id?: string | null;
+        };
+        GraphSafeError: {
+            code: string;
+            retryable: boolean;
+            message?: string | null;
+            request_id?: string | null;
+            /** @description Stable provider code only; raw provider error bodies are never exposed. */
+            provider_code?: string | null;
+        };
+        GraphProjectionSummary: {
+            projection_schema_version: string;
+            projector_version: string;
+            graph_manifest_hash: components["schemas"]["Hash"];
+            node_count: number;
+            edge_count: number;
+        };
+        GraphProviderObservation: {
+            /** @description Stable project UUID namespace. */
+            namespace: string;
+            version: components["schemas"]["UUIDv7"];
+            task_id?: components["schemas"]["UUIDv7"] | null;
+            /** @enum {string} */
+            status: "queued" | "building" | "ready" | "failed" | "unavailable" | "unknown";
+            query_ready: boolean;
+            components: components["schemas"]["GraphComponent"][];
+            /** Format: date-time */
+            observed_at: string;
+        };
+        /** @enum {string} */
+        GraphAction: "retry" | "wait" | "inspect" | "none";
+        GraphStatus: {
+            revision_id: components["schemas"]["UUIDv7"];
+            config_hash: components["schemas"]["Hash"];
+            pipeline_state: components["schemas"]["GraphPipelineState"];
+            freshness: components["schemas"]["GraphFreshness"];
+            freshness_reasons: string[];
+            validation_run_id?: components["schemas"]["UUIDv7"] | null;
+            /** @enum {string|null} */
+            validation_result?: "PASS" | "REQUIRES_VALIDATION" | "BLOCKED" | null;
+            projection?: components["schemas"]["GraphProjectionSummary"] | null;
+            job?: components["schemas"]["Job"] | null;
+            provider?: components["schemas"]["GraphProviderObservation"] | null;
+            warnings: components["schemas"]["GraphWarning"][];
+            error?: components["schemas"]["GraphSafeError"] | null;
+            actions: components["schemas"]["GraphAction"][];
+            evidence: components["schemas"]["GraphEvidence"][];
+        };
+        /** @enum {string} */
         JobStatus: "queued" | "running" | "succeeded" | "failed" | "canceled" | "interrupted";
         JobEvent: {
             job_id: components["schemas"]["UUIDv7"];
@@ -752,8 +879,9 @@ export interface components {
         };
         Job: {
             id: components["schemas"]["UUIDv7"];
-            /** @constant */
-            kind: "release";
+            /** @enum {string} */
+            kind: "release" | "graph_sync";
+            revision_id: components["schemas"]["UUIDv7"];
             status: components["schemas"]["JobStatus"];
             request_hash: components["schemas"]["Hash"];
             /** Format: uri-reference */
@@ -893,7 +1021,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "INVALID_SELECTION" | "PROJECT_LOCKED" | "ACTIVE_PROJECT_CONFLICT" | "CLOSE_BLOCKED" | "UNSUPPORTED_KIND" | "UNSUPPORTED_SCHEMA" | "DUPLICATE_KEY" | "PRECONDITION_REQUIRED" | "REVISION_CONFLICT" | "ENTITY_REFERENCED" | "VALIDATION_FAILED" | "PROJECT_NOT_OPEN" | "INVALID_VALIDATION_REQUEST" | "INVALID_VALIDATION_SOURCE" | "INVALID_VALIDATION_SCOPE" | "INVALID_VALIDATION_TARGET" | "VALIDATION_SOURCE_NOT_FOUND" | "VALIDATION_RUN_NOT_FOUND" | "VALIDATION_STORAGE_FAILURE" | "REVISION_NOT_FOUND" | "REVISION_IMMUTABLE" | "DIFF_BASE_INVALID" | "RELEASE_POLICY_INVALID" | "RELEASE_CAPABILITY_DISABLED" | "RELEASE_PREFLIGHT_FAILED" | "RELEASE_BASE_CONFLICT" | "IDEMPOTENCY_CONFLICT" | "MANDATORY_BACKUP_FAILED" | "MIGRATION_BACKUP_REQUIRED" | "INVALID_CONFIRMATION" | "HISTORY_NOT_FOUND" | "STORAGE_FAILURE" | "EXTERNAL_SERVICE_FAILURE";
+            code: "INVALID_SELECTION" | "PROJECT_LOCKED" | "ACTIVE_PROJECT_CONFLICT" | "CLOSE_BLOCKED" | "UNSUPPORTED_KIND" | "UNSUPPORTED_SCHEMA" | "DUPLICATE_KEY" | "PRECONDITION_REQUIRED" | "REVISION_CONFLICT" | "ENTITY_REFERENCED" | "VALIDATION_FAILED" | "PROJECT_NOT_OPEN" | "INVALID_VALIDATION_REQUEST" | "INVALID_VALIDATION_SOURCE" | "INVALID_VALIDATION_SCOPE" | "INVALID_VALIDATION_TARGET" | "VALIDATION_SOURCE_NOT_FOUND" | "VALIDATION_RUN_NOT_FOUND" | "VALIDATION_STORAGE_FAILURE" | "REVISION_NOT_FOUND" | "REVISION_IMMUTABLE" | "DIFF_BASE_INVALID" | "RELEASE_POLICY_INVALID" | "RELEASE_CAPABILITY_DISABLED" | "RELEASE_PREFLIGHT_FAILED" | "RELEASE_BASE_CONFLICT" | "IDEMPOTENCY_CONFLICT" | "MANDATORY_BACKUP_FAILED" | "MIGRATION_BACKUP_REQUIRED" | "INVALID_CONFIRMATION" | "HISTORY_NOT_FOUND" | "STORAGE_FAILURE" | "EXTERNAL_SERVICE_FAILURE" | "GRAPH_VALIDATION_REQUIRED" | "GRAPH_VALIDATION_BLOCKED" | "PROJECTOR_VERSION_UNAVAILABLE" | "GRAPH_CAPABILITY_UNAVAILABLE" | "BASE_SNAPSHOT_NOT_FOUND" | "BASE_SNAPSHOT_NOT_READY" | "CONTENT_HASH_MISMATCH" | "CONTENT_HASH_CONFLICT" | "PROVIDER_TASK_FAILED" | "GRAPH_RETRY_EXHAUSTED" | "GRAPH_RETRY_NOT_SAFE" | "GRAPH_STATUS_UNAVAILABLE";
             retryable: boolean;
             request_id: string;
             entity_id?: components["schemas"]["UUIDv7"];
@@ -924,6 +1052,8 @@ export interface components {
         JobID: components["schemas"]["UUIDv7"];
         /** @description Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. */
         IdempotencyKey: string;
+        /** @description Required when graph-sync intent is retry; reuse returns the original retry Job and changed retry input conflicts. It is ignored for ensure. */
+        GraphRetryIdempotencyKey: string;
         /** @description Resume SSE delivery strictly after this persisted event ordinal. */
         LastEventID: number;
         /** @description Strong ETag returned by GET/create/patch. */
@@ -1382,6 +1512,60 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RevisionDiff"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    ensureGraphSync: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Required when graph-sync intent is retry; reuse returns the original retry Job and changed retry input conflicts. It is ignored for ensure. */
+                "Idempotency-Key"?: components["parameters"]["GraphRetryIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["RevisionID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GraphSyncRequest"];
+            };
+        };
+        responses: {
+            /** @description Existing or newly admitted durable Graph Job. The Location header and job URLs identify the same Job. */
+            202: {
+                headers: {
+                    Location: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GraphSyncJobAccepted"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getGraphStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["RevisionID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Exact revision Graph state and last safe provider observation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GraphStatus"];
                 };
             };
             default: components["responses"]["Problem"];
