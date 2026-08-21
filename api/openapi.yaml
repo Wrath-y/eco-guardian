@@ -791,6 +791,8 @@ components:
         validation_result: { type: [string, 'null'], enum: [PASS, REQUIRES_VALIDATION, BLOCKED, null] }
         projection: { oneOf: [{ $ref: '#/components/schemas/GraphProjectionSummary' }, { type: 'null' }] }
         job: { oneOf: [{ $ref: '#/components/schemas/Job' }, { type: 'null' }] }
+        job_phase: { type: [string, 'null'] }
+        job_progress: { type: [integer, 'null'], minimum: 0, maximum: 100 }
         provider: { oneOf: [{ $ref: '#/components/schemas/GraphProviderObservation' }, { type: 'null' }] }
         impact_state: { type: [string, 'null'], enum: [queued, consumed, failed, unavailable, null] }
         warnings: { type: array, items: { $ref: '#/components/schemas/GraphWarning' } }

@@ -855,6 +855,8 @@ export interface components {
             validation_result?: "PASS" | "REQUIRES_VALIDATION" | "BLOCKED" | null;
             projection?: components["schemas"]["GraphProjectionSummary"] | null;
             job?: components["schemas"]["Job"] | null;
+            job_phase?: string | null;
+            job_progress?: number | null;
             provider?: components["schemas"]["GraphProviderObservation"] | null;
             /** @enum {string|null} */
             impact_state?: "queued" | "consumed" | "failed" | "unavailable" | null;

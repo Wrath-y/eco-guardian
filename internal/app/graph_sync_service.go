@@ -42,6 +42,8 @@ type GraphStatus struct {
 	SafeError              string
 	ExternalTaskID         string
 	ImpactState            string
+	JobPhase               string
+	JobProgress            *int
 	Provider               *graphsync.Snapshot
 	ProviderError          *graphsync.ProviderError
 	ProviderObservedAt     time.Time
@@ -69,6 +71,10 @@ type graphImpactSource interface {
 	GraphImpactHandoffStatus(context.Context, domain.ID, string) (string, bool, error)
 }
 
+type graphEventSource interface {
+	ListGraphJobEvents(context.Context, domain.ID, int64) ([]graphsync.GraphJobEvent, error)
+}
+
 // GraphSyncApplication composes existing immutable revision, validation, and
 // durable Job seams. It does not run a provider effect; worker ownership stays
 // in the composition root.
@@ -78,6 +84,7 @@ type GraphSyncApplication struct {
 	States     graphStateSource
 	Summaries  graphSummarySource
 	Impact     graphImpactSource
+	Events     graphEventSource
 	Validation graphsync.FullValidationGate
 	Provider   graphsync.GraphProvider
 	Clock      func() time.Time
@@ -112,6 +119,16 @@ func (s GraphSyncApplication) GraphStatus(ctx context.Context, revisionID domain
 		job, jobErr := s.Jobs.GetGraphJob(ctx, domain.ID(state.LatestJobID))
 		if jobErr == nil {
 			status.Job = &job
+		}
+		if s.Events != nil {
+			events, eventErr := s.Events.ListGraphJobEvents(ctx, domain.ID(state.LatestJobID), 0)
+			if eventErr != nil {
+				return GraphStatus{}, ErrGraphOperationUnavailable
+			}
+			if len(events) > 0 {
+				last := events[len(events)-1]
+				status.JobPhase, status.JobProgress = string(last.Phase), &last.Progress
+			}
 		}
 	}
 	if summary, summaryFound, summaryErr := s.Summaries.GraphProjectionSummary(ctx, revisionID); summaryErr == nil && summaryFound {

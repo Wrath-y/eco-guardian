@@ -39,7 +39,7 @@ func GraphSyncServiceFromProjectManagerWithProvider(manager *project.Manager, pr
 			return nil
 		}
 		s := storeProvider.Store()
-		return app.GraphSyncApplication{Revisions: s, Jobs: s, States: s, Summaries: s, Impact: s, Validation: validation.NewValidationGate(s), Provider: provider, Submit: submit}
+		return app.GraphSyncApplication{Revisions: s, Jobs: s, States: s, Summaries: s, Impact: s, Events: s, Validation: validation.NewValidationGate(s), Provider: provider, Submit: submit}
 	}
 }
 
@@ -147,6 +147,10 @@ func (h *GraphHandler) status(c *gin.Context) {
 		response["job"] = graphJobJSON(*status.Job)
 	} else {
 		response["job"] = nil
+	}
+	if status.JobProgress != nil {
+		response["job_phase"] = status.JobPhase
+		response["job_progress"] = *status.JobProgress
 	}
 	if status.Provider != nil {
 		response["provider"] = graphProviderJSON(*status.Provider, status.ProviderObservedAt)
