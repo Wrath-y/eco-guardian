@@ -41,12 +41,13 @@ type Attribute struct {
 }
 
 type Action struct {
-	ID       string      `json:"id"`
-	EventID  string      `json:"event_id"`
-	AtMS     int64       `json:"at_ms"`
-	SourceID string      `json:"source_id"`
-	TargetID string      `json:"target_id"`
-	Inputs   []Attribute `json:"inputs,omitempty"`
+	ID          string      `json:"id"`
+	EventID     string      `json:"event_id"`
+	EvaluatorID string      `json:"evaluator_id"`
+	AtMS        int64       `json:"at_ms"`
+	SourceID    string      `json:"source_id"`
+	TargetID    string      `json:"target_id"`
+	Inputs      []Attribute `json:"inputs,omitempty"`
 }
 
 type ParameterType string
@@ -110,7 +111,7 @@ func (d Definition) Validate() error {
 	}
 	actions := make(map[string]struct{}, len(d.Actions))
 	for _, action := range d.Actions {
-		if !stableID(action.ID) || !stableID(action.EventID) || action.AtMS < 0 || action.AtMS > d.DurationMS {
+		if !stableID(action.ID) || !stableID(action.EventID) || !stableID(action.EvaluatorID) || action.AtMS < 0 || action.AtMS > d.DurationMS {
 			return fmt.Errorf("invalid scenario action %q", action.ID)
 		}
 		if _, duplicate := actions[action.ID]; duplicate {
