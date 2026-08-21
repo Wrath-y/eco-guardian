@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -71,6 +72,7 @@ type SimulationRun struct {
 	ID, JobID, ProjectID, RevisionID, ScenarioDefinitionID  domain.ID
 	InputHash, FingerprintHash, ResultHash, CanonicalResult string
 	CreatedAt                                               time.Time
+	Implementations                                         []contract.Descriptor
 }
 
 // FailSimulationJob atomically persists the terminal Job failure and its
@@ -143,6 +145,14 @@ func (run SimulationRun) valid() bool {
 	return run.ID.Valid() && run.JobID.Valid() && run.ProjectID.Valid() && run.RevisionID.Valid() && run.ScenarioDefinitionID.Valid() && validSimulationHash(run.InputHash) && validSimulationHash(run.FingerprintHash) && validSimulationHash(run.ResultHash) && run.CanonicalResult != "" && !run.CreatedAt.IsZero()
 }
 
+func (run SimulationRun) validForInsert() bool {
+	if !run.valid() {
+		return false
+	}
+	_, err := contract.NewManifestRegistry(contract.RequiredV1Descriptors, run.Implementations)
+	return err == nil
+}
+
 func validSimulationMaterialization(materialization SimulationJobMaterialization) bool {
 	return materialization.JobID.Valid() && materialization.ProjectID.Valid() && materialization.RevisionID.Valid() && materialization.ScenarioDefinitionID.Valid() && len(materialization.CanonicalInput) > 0 && validSimulationHash(materialization.InputHash) && validSimulationHash(materialization.FingerprintHash) && materialization.CancelGeneration >= 0 && !materialization.CreatedAt.IsZero() && hashSimulationBytes(materialization.CanonicalInput) == materialization.InputHash
 }
@@ -210,7 +220,7 @@ func (s *Store) ListRecoverableSimulationJobs(ctx context.Context) ([]sharedjob.
 }
 
 func (s *Store) InsertSimulationRun(ctx context.Context, run SimulationRun, metrics []SimulationMetricResult) error {
-	if !run.valid() || run.ProjectID != s.projectID || len(metrics) == 0 {
+	if !run.validForInsert() || run.ProjectID != s.projectID || len(metrics) == 0 {
 		return ErrSimulationRunInvalid
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -218,16 +228,8 @@ func (s *Store) InsertSimulationRun(ctx context.Context, run SimulationRun, metr
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `INSERT INTO simulation_runs(id,job_id,project_uuid,revision_id,scenario_definition_id,input_hash,fingerprint_hash,result_hash,canonical_result,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, run.ID, run.JobID, run.ProjectID, run.RevisionID, run.ScenarioDefinitionID, run.InputHash, run.FingerprintHash, run.ResultHash, run.CanonicalResult, run.CreatedAt.UTC().Format(time.RFC3339Nano)); err != nil {
+	if err = insertSimulationRun(ctx, tx, run, metrics); err != nil {
 		return err
-	}
-	for _, metric := range metrics {
-		if metric.MetricID == "" || metric.MetricVersion == "" || (metric.Status != "available" && metric.Status != "unavailable") || metric.CanonicalResult == "" {
-			return ErrSimulationRunInvalid
-		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO simulation_metric_results(run_id,metric_id,metric_version,status,canonical_result) VALUES(?,?,?,?,?)`, run.ID, metric.MetricID, metric.MetricVersion, metric.Status, metric.CanonicalResult); err != nil {
-			return err
-		}
 	}
 	return tx.Commit()
 }
@@ -237,7 +239,7 @@ func (s *Store) InsertSimulationRun(ctx context.Context, run SimulationRun, metr
 // generation. The run facts and shared Job success result commit in one short
 // transaction.
 func (s *Store) SealSimulationRun(ctx context.Context, run SimulationRun, metrics []SimulationMetricResult, requiredSamples int, cancelGeneration int64) error {
-	if !run.valid() || run.ProjectID != s.projectID || len(metrics) == 0 || requiredSamples < 1 || cancelGeneration < 0 {
+	if !run.validForInsert() || run.ProjectID != s.projectID || len(metrics) == 0 || requiredSamples < 1 || cancelGeneration < 0 {
 		return ErrSimulationSeal
 	}
 	s.writes.Lock()
@@ -283,8 +285,20 @@ func (s *Store) SealSimulationRun(ctx context.Context, run SimulationRun, metric
 }
 
 func insertSimulationRun(ctx context.Context, tx *sql.Tx, run SimulationRun, metrics []SimulationMetricResult) error {
+	if !run.validForInsert() {
+		return ErrSimulationRunInvalid
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO simulation_runs(id,job_id,project_uuid,revision_id,scenario_definition_id,input_hash,fingerprint_hash,result_hash,canonical_result,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, run.ID, run.JobID, run.ProjectID, run.RevisionID, run.ScenarioDefinitionID, run.InputHash, run.FingerprintHash, run.ResultHash, run.CanonicalResult, run.CreatedAt.UTC().Format(time.RFC3339Nano)); err != nil {
 		return err
+	}
+	for _, implementation := range run.Implementations {
+		dependencies, err := json.Marshal(implementation.Dependencies)
+		if err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO simulation_run_implementations(run_id,descriptor_id,descriptor_version,descriptor_hash,dependencies_json) VALUES(?,?,?,?,?)`, run.ID, implementation.ID, implementation.Version, implementation.Hash, dependencies); err != nil {
+			return err
+		}
 	}
 	for _, metric := range metrics {
 		if metric.MetricID == "" || metric.MetricVersion == "" || (metric.Status != "available" && metric.Status != "unavailable") || metric.CanonicalResult == "" {
@@ -310,6 +324,9 @@ func (s *Store) GetSimulationRun(ctx context.Context, id domain.ID) (SimulationR
 	if run.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt); err != nil || !run.valid() {
 		return SimulationRun{}, nil, ErrSimulationRunInvalid
 	}
+	if run.Implementations, err = s.listSimulationRunImplementations(ctx, id); err != nil {
+		return SimulationRun{}, nil, err
+	}
 	rows, err := s.db.QueryContext(ctx, `SELECT metric_id,metric_version,status,canonical_result FROM simulation_metric_results WHERE run_id=? ORDER BY metric_id`, id)
 	if err != nil {
 		return SimulationRun{}, nil, err
@@ -324,6 +341,27 @@ func (s *Store) GetSimulationRun(ctx context.Context, id domain.ID) (SimulationR
 		metrics = append(metrics, metric)
 	}
 	return run, metrics, rows.Err()
+}
+
+func (s *Store) listSimulationRunImplementations(ctx context.Context, runID domain.ID) ([]contract.Descriptor, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT descriptor_id,descriptor_version,descriptor_hash,dependencies_json FROM simulation_run_implementations WHERE run_id=? ORDER BY descriptor_id`, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	implementations := []contract.Descriptor{}
+	for rows.Next() {
+		var implementation contract.Descriptor
+		var dependencies []byte
+		if err = rows.Scan(&implementation.ID, &implementation.Version, &implementation.Hash, &dependencies); err != nil {
+			return nil, err
+		}
+		if err = json.Unmarshal(dependencies, &implementation.Dependencies); err != nil || !implementation.Valid() {
+			return nil, ErrSimulationRunInvalid
+		}
+		implementations = append(implementations, implementation)
+	}
+	return implementations, rows.Err()
 }
 
 // ListSimulationVerifications returns immutable comparisons involving a scoped

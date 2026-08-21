@@ -9,6 +9,7 @@ import (
 	"time"
 
 	sharedjob "github.com/zouyi/eco-guardian/internal/job"
+	"github.com/zouyi/eco-guardian/internal/simulation/contract"
 )
 
 func TestSimulationRunAndMetricFactsAreInsertOnlyWhileCheckpointIsRecoverable(t *testing.T) {
@@ -25,13 +26,16 @@ func TestSimulationRunAndMetricFactsAreInsertOnlyWhileCheckpointIsRecoverable(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	run := SimulationRun{ID: mustID(t), JobID: job.ID, ProjectID: store.ProjectID(), RevisionID: revision.ID, ScenarioDefinitionID: scene.ID, InputHash: strings.Repeat("a", 64), FingerprintHash: strings.Repeat("c", 64), ResultHash: strings.Repeat("d", 64), CanonicalResult: `{"schema_version":"v1"}`, CreatedAt: time.Now().UTC()}
+	run := SimulationRun{ID: mustID(t), JobID: job.ID, ProjectID: store.ProjectID(), RevisionID: revision.ID, ScenarioDefinitionID: scene.ID, InputHash: strings.Repeat("a", 64), FingerprintHash: strings.Repeat("c", 64), ResultHash: strings.Repeat("d", 64), CanonicalResult: `{"schema_version":"v1"}`, CreatedAt: time.Now().UTC(), Implementations: contract.V1Descriptors()}
 	if err = store.InsertSimulationRun(context.Background(), run, []SimulationMetricResult{{MetricID: "metric-dps", MetricVersion: "v1", Status: "available", CanonicalResult: `{"value":"1"}`}}); err != nil {
 		t.Fatal(err)
 	}
 	loaded, metrics, err := store.GetSimulationRun(context.Background(), run.ID)
-	if err != nil || loaded.ResultHash != run.ResultHash || len(metrics) != 1 {
+	if err != nil || loaded.ResultHash != run.ResultHash || len(metrics) != 1 || len(loaded.Implementations) != len(contract.RequiredV1Descriptors) {
 		t.Fatalf("run=%#v metrics=%#v err=%v", loaded, metrics, err)
+	}
+	if _, err = store.db.Exec(`UPDATE simulation_run_implementations SET descriptor_hash=? WHERE run_id=? AND descriptor_id='simulation-engine'`, strings.Repeat("e", 64), run.ID); err == nil {
+		t.Fatal("expected immutable implementation history")
 	}
 	reconciled, replay, err := store.ReconcileSealedSimulationRun(context.Background(), job.ID, run.InputHash, run.ResultHash)
 	if err != nil || replay || reconciled.Status != sharedjob.Succeeded || reconciled.Result == nil || reconciled.Result.ID != run.ID {
@@ -146,7 +150,7 @@ func TestSimulationSealIsAtomicAndRejectsNewCancellationGeneration(t *testing.T)
 	if _, changed, err := store.Transition(context.Background(), job.ID, sharedjob.Queued, sharedjob.Running, nil, 0); err != nil || !changed {
 		t.Fatalf("start changed=%v err=%v", changed, err)
 	}
-	run := SimulationRun{ID: mustID(t), JobID: job.ID, ProjectID: store.ProjectID(), RevisionID: revision.ID, ScenarioDefinitionID: scene.ID, InputHash: strings.Repeat("a", 64), FingerprintHash: strings.Repeat("c", 64), ResultHash: strings.Repeat("d", 64), CanonicalResult: `{"schema_version":"v1"}`, CreatedAt: time.Now().UTC()}
+	run := SimulationRun{ID: mustID(t), JobID: job.ID, ProjectID: store.ProjectID(), RevisionID: revision.ID, ScenarioDefinitionID: scene.ID, InputHash: strings.Repeat("a", 64), FingerprintHash: strings.Repeat("c", 64), ResultHash: strings.Repeat("d", 64), CanonicalResult: `{"schema_version":"v1"}`, CreatedAt: time.Now().UTC(), Implementations: contract.V1Descriptors()}
 	metrics := []SimulationMetricResult{{MetricID: "metric-dps", MetricVersion: "v1", Status: "available", CanonicalResult: `{"value":"1"}`}}
 	if err = store.SealSimulationRun(context.Background(), run, metrics, 1, 0); err == nil {
 		t.Fatal("expected incomplete sample seal rejection")
@@ -253,7 +257,7 @@ func TestSimulationSealFaultsDoNotExposeRunOrJobSuccess(t *testing.T) {
 			if _, _, err = store.Transition(context.Background(), job.ID, sharedjob.Queued, sharedjob.Running, nil, 0); err != nil {
 				t.Fatal(err)
 			}
-			run := SimulationRun{ID: mustID(t), JobID: job.ID, ProjectID: store.ProjectID(), RevisionID: revision.ID, ScenarioDefinitionID: scene.ID, InputHash: strings.Repeat("a", 64), FingerprintHash: strings.Repeat("c", 64), ResultHash: strings.Repeat("d", 64), CanonicalResult: `{"schema_version":"v1"}`, CreatedAt: time.Now().UTC()}
+			run := SimulationRun{ID: mustID(t), JobID: job.ID, ProjectID: store.ProjectID(), RevisionID: revision.ID, ScenarioDefinitionID: scene.ID, InputHash: strings.Repeat("a", 64), FingerprintHash: strings.Repeat("c", 64), ResultHash: strings.Repeat("d", 64), CanonicalResult: `{"schema_version":"v1"}`, CreatedAt: time.Now().UTC(), Implementations: contract.V1Descriptors()}
 			if err = store.SaveSimulationCheckpoint(context.Background(), SimulationCheckpoint{JobID: job.ID, InputHash: run.InputHash, FingerprintHash: run.FingerprintHash, Accumulator: `{"sample":0}`, AccumulatorHash: SimulationAccumulatorHash(`{"sample":0}`), CompletedAt: time.Now().UTC()}); err != nil {
 				t.Fatal(err)
 			}
