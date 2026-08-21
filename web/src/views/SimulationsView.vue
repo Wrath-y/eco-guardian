@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useProjectStore } from '@/stores/project'
 import { useReleaseHistory, useRevisionDetail, useRevisionHistory } from '@/api/versions'
@@ -38,8 +38,10 @@ const maxSteps = ref<number | undefined>()
 const maxRuntimeMS = ref<number | undefined>()
 const submitting = ref(false)
 const error = ref('')
+const errorSummary = ref<HTMLElement>()
 const jobID = ref('')
 const runID = ref('')
+const runHeading = ref<HTMLElement>()
 const verifyRunID = ref('')
 const run = useSimulationRun(() => projectID.value, () => runID.value)
 const scene = computed(() => scenes.find(value => value.id === sceneID.value) ?? scenes[0])
@@ -112,9 +114,11 @@ async function submit() {
     error.value = cause instanceof SimulationApiError && cause.code ? `${cause.message}（${cause.code}）` : cause instanceof Error ? cause.message : '无法创建模拟任务'
   } finally { submitting.value = false }
 }
-function runReady(id: string) { runID.value = id; sessionStorage.removeItem(jobStorageKey()) }
-function openHistoricalRun(id: string) { runID.value = id }
+function focusRun() { void nextTick(() => runHeading.value?.focus()) }
+function runReady(id: string) { runID.value = id; sessionStorage.removeItem(jobStorageKey()); focusRun() }
+function openHistoricalRun(id: string) { runID.value = id; focusRun() }
 watch(projectID, value => { jobID.value = value ? sessionStorage.getItem(jobStorageKey()) ?? '' : '' }, { immediate: true })
+watch(error, value => { if (value) void nextTick(() => errorSummary.value?.focus()) })
 </script>
 
 <template>
@@ -159,10 +163,10 @@ watch(projectID, value => { jobID.value = value ? sessionStorage.getItem(jobStor
       </fieldset>
       <button type="submit" :disabled="submitting">{{ submitting ? '正在提交…' : '运行模拟' }}</button>
     </form>
-    <p v-if="error" role="alert">{{ error }}</p>
+    <p v-if="error" ref="errorSummary" role="alert" tabindex="-1">{{ error }}</p>
     <SimulationJobProgress v-if="jobID && projectID" :project-i-d="projectID" :job-i-d="jobID" @run-ready="runReady" />
     <section aria-labelledby="run-heading">
-      <h2 id="run-heading">历史 Run</h2>
+      <h2 id="run-heading" ref="runHeading" tabindex="-1">历史 Run</h2>
       <label>Run ID <input v-model="runID"></label>
       <p v-if="run.isPending.value" role="status">正在读取…</p>
       <p v-else-if="run.isError.value" role="alert">{{ run.error.value?.message }}</p>

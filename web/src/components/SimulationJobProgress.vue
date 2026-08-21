@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useQueryClient } from '@tanstack/vue-query'
 import { cancelSimulationJob, getSimulationJob, simulationKeys, type SimulationJob, type SimulationJobEvent, useSimulationJob } from '@/api/simulation'
 
@@ -11,6 +11,7 @@ const events = ref<SimulationJobEvent[]>([])
 const streamState = ref<'connecting' | 'connected' | 'polling'>('connecting')
 const canceling = ref(false)
 const cancelError = ref('')
+const progressHeading = ref<HTMLElement>()
 let stream: EventSource | undefined
 let pollTimer: number | undefined
 
@@ -73,17 +74,23 @@ async function cancel() {
   try { const value = await cancelSimulationJob(props.jobID); storeJob(value); if (terminal(value.status)) { closeStream(); clearPolling() } } catch (cause) { cancelError.value = cause instanceof Error ? cause.message : '无法请求取消模拟任务' } finally { canceling.value = false }
 }
 watch(() => [props.projectID, props.jobID] as const, () => { events.value = []; closeStream(); clearPolling() }, { immediate: true })
-watch(job, value => { if (!value) return; if (terminal(value.status)) { closeStream(); clearPolling(); useResult(value) } else if (streamState.value === 'polling') schedulePoll(value); else startStream(value) }, { immediate: true })
+watch(job, (value, previous) => {
+  if (!value) return
+  if (terminal(value.status)) {
+    closeStream(); clearPolling(); useResult(value)
+    if (!terminal(previous?.status)) void nextTick(() => progressHeading.value?.focus())
+  } else if (streamState.value === 'polling') schedulePoll(value); else startStream(value)
+}, { immediate: true })
 onBeforeUnmount(() => { closeStream(); clearPolling() })
 </script>
 
 <template>
   <section aria-labelledby="simulation-job-heading">
-    <h2 id="simulation-job-heading">模拟任务进度</h2>
+    <h2 id="simulation-job-heading" ref="progressHeading" tabindex="-1">模拟任务进度</h2>
     <p v-if="query.isPending.value" role="status">正在读取模拟任务…</p>
     <p v-else-if="query.isError.value" role="alert">{{ query.error.value?.message }} <button type="button" @click="refresh">重试状态查询</button></p>
     <template v-else-if="job">
-      <p>任务 {{ job.id }} · 状态：<strong>{{ job.status }}</strong> · 阶段：{{ currentPhase }} · {{ streamState === 'polling' ? 'SSE 已断开，正在按服务端建议轮询。' : streamState === 'connected' ? '已连接到实时事件流。' : '正在连接实时事件流。' }}</p>
+      <p aria-live="polite">任务 {{ job.id }} · 状态：<strong>{{ job.status }}</strong> · 阶段：{{ currentPhase }} · {{ streamState === 'polling' ? 'SSE 已断开，正在按服务端建议轮询。' : streamState === 'connected' ? '已连接到实时事件流。' : '正在连接实时事件流。' }}</p>
       <p v-if="canceling" role="status">正在持久化取消请求；在安全边界前不推断最终状态。</p>
       <p v-if="job.status === 'canceled'">任务已取消；不将部分样本显示为成功结果。</p>
       <p v-else-if="job.status === 'interrupted'">任务已中断；恢复时会核对已捕获的输入与实现指纹。</p>
