@@ -1,6 +1,8 @@
 package gate
 
 import (
+	"context"
+	"errors"
 	"sort"
 
 	"github.com/zouyi/eco-guardian/internal/domain"
@@ -15,6 +17,8 @@ const (
 	SimulationGateContract = "simulation-v1"
 )
 
+var ErrEvidenceUnavailable = errors.New("simulation gate evidence is unavailable")
+
 // MetricEvidence is an immutable result row needed for a simulation Gate.
 type MetricEvidence struct{ ID, Version, Status string }
 
@@ -28,6 +32,38 @@ type RunEvidence struct {
 	Metrics                                []MetricEvidence
 	Reproducible                           bool
 }
+
+// EvidenceSource is the only persistence dependency of the Gate. Its caller
+// supplies sealed, project-scoped rows for exactly one immutable revision.
+type EvidenceSource interface {
+	SimulationEvidence(context.Context, domain.ID) ([]RunEvidence, error)
+}
+
+// ResultSource implements release.GateResultSource structurally. It is kept
+// independent of the release package so simulation does not depend on a
+// release worker or persistence implementation.
+type ResultSource struct {
+	Evidence              EvidenceSource
+	ImplementationVersion string
+	Implementations       map[string]string
+}
+
+func (s ResultSource) Results(ctx context.Context, candidate versioningrevision.CandidateContext, policy versioningpolicy.ReleasePolicy) ([]versioninggate.Result, error) {
+	if s.Evidence == nil || s.ImplementationVersion == "" || !candidate.Valid() || !policy.Valid() {
+		return nil, ErrEvidenceUnavailable
+	}
+	runs, err := s.Evidence.SimulationEvidence(ctx, candidate.RevisionID)
+	if err != nil {
+		return nil, err
+	}
+	return EvaluatePolicy(candidate, policy, s.ImplementationVersion, s.Implementations, runs), nil
+}
+
+// Provider registers the stable simulation Gate descriptor with #7's Gate
+// Registry. Result evaluation remains a separate read-only port.
+type Provider struct{ ImplementationVersion string }
+
+func (p Provider) Descriptor() versioninggate.Descriptor { return Descriptor(p.ImplementationVersion) }
 
 func Descriptor(implementationVersion string) versioninggate.Descriptor {
 	return versioninggate.Descriptor{CapabilityID: SimulationCapabilityID, GateID: SimulationGateID, ContractVersion: SimulationGateContract, ImplementationVersion: implementationVersion, RequiredInputs: []string{"candidate_revision", "config_hash", "scene_id", "scene_version", "sample_count", "seed", "input_hash", "fingerprint_hash", "result_hash", "reproducible"}, SupportedStates: []versioninggate.ResultState{versioninggate.Pass, versioninggate.Warning, versioninggate.Block, versioninggate.Unavailable, versioninggate.Stale}, OverridableNumericBlock: false}

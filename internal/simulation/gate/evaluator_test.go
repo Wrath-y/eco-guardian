@@ -1,6 +1,7 @@
 package gate
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,12 @@ import (
 	versioningpolicy "github.com/zouyi/eco-guardian/internal/versioning/policy"
 	versioningrevision "github.com/zouyi/eco-guardian/internal/versioning/revision"
 )
+
+type evidenceSourceFake struct{ runs []RunEvidence }
+
+func (f evidenceSourceFake) SimulationEvidence(context.Context, domain.ID) ([]RunEvidence, error) {
+	return append([]RunEvidence(nil), f.runs...), nil
+}
 
 func TestEvaluatePolicyRequiresExactImmutableSimulationEvidence(t *testing.T) {
 	revisionID, _ := domain.NewID()
@@ -39,5 +46,23 @@ func TestEvaluatePolicyRequiresExactImmutableSimulationEvidence(t *testing.T) {
 		if len(result) != 1 || (result[0].State != versioninggate.Stale && result[0].State != versioninggate.Unavailable) || !result[0].Valid() {
 			t.Fatalf("non-exact evidence result=%#v", result)
 		}
+	}
+}
+
+func TestResultSourceImplementsReadOnlyGateResultPort(t *testing.T) {
+	id, _ := domain.NewID()
+	policyID, _ := domain.NewID()
+	hash := strings.Repeat("a", 64)
+	seed := uint64(11)
+	candidate := versioningrevision.CandidateContext{RevisionID: id, ConfigHash: hash, ManifestHash: hash, PolicyID: policyID}
+	policy := versioningpolicy.ReleasePolicy{Definition: versioningpolicy.Definition{Samples: 1, ThresholdID: "threshold", ThresholdOn: true, Capabilities: []versioningpolicy.CapabilityRequirement{{CapabilityID: SimulationCapabilityID, GateID: SimulationGateID, ContractVersion: SimulationGateContract}}, Scenes: []versioningpolicy.Scene{{ID: "scene", Seed: &seed, Required: true, Metrics: []versioningpolicy.Metric{{ID: "metric", Required: true}}}}}, ID: policyID, DisplayVersion: 1, CanonicalHash: hash, CreatedAt: time.Now().UTC()}
+	source := ResultSource{Evidence: evidenceSourceFake{}, ImplementationVersion: "simulation-v1"}
+	results, err := source.Results(context.Background(), candidate, policy)
+	if err != nil || len(results) != 1 || results[0].State != versioninggate.Unavailable || !results[0].Valid() {
+		t.Fatalf("results=%#v err=%v", results, err)
+	}
+	registry, err := versioninggate.NewRegistry()
+	if err != nil || registry.RegisterProvider(Provider{ImplementationVersion: "simulation-v1"}) != nil {
+		t.Fatalf("registry err=%v", err)
 	}
 }
