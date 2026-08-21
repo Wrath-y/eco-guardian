@@ -211,3 +211,21 @@ func TestSimulationFailureAtomicallyRetainsDiagnosticWithoutRun(t *testing.T) {
 		t.Fatalf("failure created visible run err=%v", err)
 	}
 }
+
+func TestSimulationCheckpointFaultDoesNotExposePartialState(t *testing.T) {
+	store := newStore(t)
+	jobID := mustID(t)
+	store.failStage = func(stage string) error {
+		if stage == "simulation-checkpoint-before-write" {
+			return errors.New("injected")
+		}
+		return nil
+	}
+	err := store.SaveSimulationCheckpoint(context.Background(), SimulationCheckpoint{JobID: jobID, SampleOrdinal: 0, InputHash: strings.Repeat("a", 64), FingerprintHash: strings.Repeat("b", 64), Accumulator: `{"sample":0}`, AccumulatorHash: SimulationAccumulatorHash(`{"sample":0}`), CompletedAt: time.Now().UTC()})
+	if err == nil {
+		t.Fatal("expected injected checkpoint failure")
+	}
+	if rows, queryErr := store.ListSimulationCheckpoints(context.Background(), jobID, strings.Repeat("a", 64), strings.Repeat("b", 64), 0); queryErr != nil || len(rows) != 0 {
+		t.Fatalf("rows=%#v err=%v", rows, queryErr)
+	}
+}

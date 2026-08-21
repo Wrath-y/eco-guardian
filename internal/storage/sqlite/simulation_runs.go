@@ -269,7 +269,13 @@ func (s *Store) SealSimulationRun(ctx context.Context, run SimulationRun, metric
 	if checkpointCount != requiredSamples || !firstOrdinal.Valid || !lastOrdinal.Valid || firstOrdinal.Int64 != 0 || lastOrdinal.Int64 != int64(requiredSamples-1) {
 		return ErrSimulationSeal
 	}
+	if err = s.inject("simulation-seal-before-run"); err != nil {
+		return err
+	}
 	if err = insertSimulationRun(ctx, tx, run, metrics); err != nil {
+		return err
+	}
+	if err = s.inject("simulation-seal-after-run"); err != nil {
 		return err
 	}
 	write, err := tx.ExecContext(ctx, `UPDATE jobs SET status='succeeded',result_type='simulation_run',result_id=?,result_url=?,updated_at=? WHERE id=? AND project_uuid=? AND status='running' AND cancel_generation=?`, run.ID, "/api/v1/simulation-runs/"+string(run.ID), s.now().UTC().Format(time.RFC3339Nano), run.JobID, s.projectID, cancelGeneration)
@@ -329,6 +335,9 @@ func (s *Store) GetSimulationRun(ctx context.Context, id domain.ID) (SimulationR
 func (s *Store) SaveSimulationCheckpoint(ctx context.Context, checkpoint SimulationCheckpoint) error {
 	if !checkpoint.JobID.Valid() || checkpoint.SampleOrdinal > uint64(^uint64(0)>>1) || !validSimulationHash(checkpoint.InputHash) || !validSimulationHash(checkpoint.FingerprintHash) || checkpoint.CancelGeneration < 0 || checkpoint.Accumulator == "" || checkpoint.AccumulatorHash != SimulationAccumulatorHash(checkpoint.Accumulator) || checkpoint.CompletedAt.IsZero() {
 		return ErrSimulationRunInvalid
+	}
+	if err := s.inject("simulation-checkpoint-before-write"); err != nil {
+		return err
 	}
 	write, err := s.db.ExecContext(ctx, `INSERT INTO simulation_job_checkpoints(job_id,sample_ordinal,input_hash,fingerprint_hash,cancel_generation,accumulator,accumulator_hash,completed_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(job_id,sample_ordinal) DO UPDATE SET accumulator=excluded.accumulator,accumulator_hash=excluded.accumulator_hash,completed_at=excluded.completed_at WHERE simulation_job_checkpoints.input_hash=excluded.input_hash AND simulation_job_checkpoints.fingerprint_hash=excluded.fingerprint_hash AND simulation_job_checkpoints.cancel_generation=excluded.cancel_generation`, checkpoint.JobID, checkpoint.SampleOrdinal, checkpoint.InputHash, checkpoint.FingerprintHash, checkpoint.CancelGeneration, checkpoint.Accumulator, checkpoint.AccumulatorHash, checkpoint.CompletedAt.UTC().Format(time.RFC3339Nano))
 	if err != nil {
