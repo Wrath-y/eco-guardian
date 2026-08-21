@@ -1,6 +1,7 @@
 package metric
 
 import (
+	"errors"
 	"math/rand/v2"
 	"testing"
 
@@ -10,6 +11,53 @@ import (
 func observation(id, value string) Observation {
 	decimal, _ := formula.ParseDecimal(value)
 	return Observation{ID: id, Value: decimal, Unit: "points_per_second"}
+}
+
+func TestReducerRejectsIncompleteTerminalAndContractMismatchedSamples(t *testing.T) {
+	registry, err := NewRegistry([]Module{observationModule{descriptor: metricDescriptor("metric-dps"), observationID: "damage"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed := Sample{Ordinal: 0, Status: SampleSucceeded, Observations: []Observation{observation("damage", "1")}}
+	if _, err = ReduceExpected(registry, []Sample{completed}, 2); !errors.Is(err, ErrReductionInvalid) {
+		t.Fatalf("expected incomplete rejection, got %v", err)
+	}
+	failed := completed
+	failed.Status = SampleFailed
+	if _, err = ReduceExpected(registry, []Sample{failed}, 1); !errors.Is(err, ErrReductionInvalid) {
+		t.Fatalf("expected failed rejection, got %v", err)
+	}
+	canceled := completed
+	canceled.Status = SampleCanceled
+	if _, err = ReduceExpected(registry, []Sample{canceled}, 1); !errors.Is(err, ErrReductionInvalid) {
+		t.Fatalf("expected canceled rejection, got %v", err)
+	}
+	if _, err = ReduceExpected(registry, []Sample{completed, {Ordinal: 2, Status: SampleSucceeded, Observations: []Observation{observation("damage", "1")}}}, 2); !errors.Is(err, ErrReductionInvalid) {
+		t.Fatalf("expected ordinal gap rejection, got %v", err)
+	}
+	wrongDescriptor := metricDescriptor("metric-other")
+	badContract := fakeModule{descriptor: metricDescriptor("metric-dps"), result: MissingResult(wrongDescriptor, []string{"damage"}, "MISSING", "missing")}
+	badRegistry, err := NewRegistry([]Module{badContract})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = ReduceExpected(badRegistry, []Sample{completed}, 1); !errors.Is(err, ErrReductionInvalid) {
+		t.Fatalf("expected contract mismatch rejection, got %v", err)
+	}
+	failingRegistry, err := NewRegistry([]Module{failingModule{descriptor: metricDescriptor("metric-dps")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = ReduceExpected(failingRegistry, []Sample{completed}, 1); err == nil {
+		t.Fatal("expected aggregation failure")
+	}
+}
+
+type failingModule struct{ descriptor Descriptor }
+
+func (module failingModule) Descriptor() Descriptor { return module.descriptor }
+func (failingModule) Evaluate(Sample) (Result, error) {
+	return Result{}, errors.New("aggregation failed")
 }
 func TestReducerSortsSamplesAndMetricsWithoutCompletionOrder(t *testing.T) {
 	registry, err := NewRegistry([]Module{observationModule{descriptor: metricDescriptor("metric-z"), observationID: "damage"}, observationModule{descriptor: metricDescriptor("metric-a"), observationID: "damage"}})

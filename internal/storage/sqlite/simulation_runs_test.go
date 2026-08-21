@@ -72,7 +72,14 @@ func TestSimulationSealIsAtomicAndRejectsNewCancellationGeneration(t *testing.T)
 	}
 	run := SimulationRun{ID: mustID(t), JobID: job.ID, ProjectID: store.ProjectID(), RevisionID: revision.ID, ScenarioDefinitionID: scene.ID, InputHash: strings.Repeat("a", 64), FingerprintHash: strings.Repeat("c", 64), ResultHash: strings.Repeat("d", 64), CanonicalResult: `{"schema_version":"v1"}`, CreatedAt: time.Now().UTC()}
 	metrics := []SimulationMetricResult{{MetricID: "metric-dps", MetricVersion: "v1", Status: "available", CanonicalResult: `{"value":"1"}`}}
-	if err = store.SealSimulationRun(context.Background(), run, metrics, 0); err != nil {
+	if err = store.SealSimulationRun(context.Background(), run, metrics, 1, 0); err == nil {
+		t.Fatal("expected incomplete sample seal rejection")
+	}
+	checkpoint := SimulationCheckpoint{JobID: job.ID, SampleOrdinal: 0, InputHash: run.InputHash, FingerprintHash: run.FingerprintHash, CancelGeneration: 0, Accumulator: `{"sample":0}`, AccumulatorHash: strings.Repeat("f", 64), CompletedAt: time.Now().UTC()}
+	if err = store.SaveSimulationCheckpoint(context.Background(), checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.SealSimulationRun(context.Background(), run, metrics, 1, 0); err != nil {
 		t.Fatal(err)
 	}
 	sealed, err := store.GetJob(context.Background(), job.ID)
@@ -93,7 +100,7 @@ func TestSimulationSealIsAtomicAndRejectsNewCancellationGeneration(t *testing.T)
 		t.Fatal(err)
 	}
 	run.ID, run.JobID, run.InputHash = mustID(t), second.ID, strings.Repeat("e", 64)
-	if err = store.SealSimulationRun(context.Background(), run, metrics, 0); err == nil {
+	if err = store.SealSimulationRun(context.Background(), run, metrics, 1, 0); err == nil {
 		t.Fatal("expected cancellation generation seal rejection")
 	}
 	if _, _, err = store.GetSimulationRun(context.Background(), run.ID); !errors.Is(err, ErrNotFound) {

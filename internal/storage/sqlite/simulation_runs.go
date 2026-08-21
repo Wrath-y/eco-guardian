@@ -63,11 +63,12 @@ func (s *Store) InsertSimulationRun(ctx context.Context, run SimulationRun, metr
 	return tx.Commit()
 }
 
-// SealSimulationRun makes the immutable run visible only while its owning Job
-// is still running at the captured cancellation generation. The run facts and
-// shared Job success result commit in one short transaction.
-func (s *Store) SealSimulationRun(ctx context.Context, run SimulationRun, metrics []SimulationMetricResult, cancelGeneration int64) error {
-	if !run.valid() || run.ProjectID != s.projectID || len(metrics) == 0 || cancelGeneration < 0 {
+// SealSimulationRun makes the immutable run visible only after every required
+// sample checkpoint matches the captured Job identity and cancellation
+// generation. The run facts and shared Job success result commit in one short
+// transaction.
+func (s *Store) SealSimulationRun(ctx context.Context, run SimulationRun, metrics []SimulationMetricResult, requiredSamples int, cancelGeneration int64) error {
+	if !run.valid() || run.ProjectID != s.projectID || len(metrics) == 0 || requiredSamples < 1 || cancelGeneration < 0 {
 		return ErrSimulationSeal
 	}
 	s.writes.Lock()
@@ -77,12 +78,20 @@ func (s *Store) SealSimulationRun(ctx context.Context, run SimulationRun, metric
 		return err
 	}
 	defer tx.Rollback()
-	var status string
+	var kind, status, inputHash, revisionID string
 	var generation int64
-	if err = tx.QueryRowContext(ctx, `SELECT status,cancel_generation FROM jobs WHERE id=? AND project_uuid=?`, run.JobID, s.projectID).Scan(&status, &generation); err != nil {
+	if err = tx.QueryRowContext(ctx, `SELECT kind,status,cancel_generation,input_hash,revision_id FROM jobs WHERE id=? AND project_uuid=?`, run.JobID, s.projectID).Scan(&kind, &status, &generation, &inputHash, &revisionID); err != nil {
 		return ErrSimulationSeal
 	}
-	if status != "running" || generation != cancelGeneration {
+	if kind != "simulation" || status != "running" || generation != cancelGeneration || inputHash != run.InputHash || revisionID != string(run.RevisionID) {
+		return ErrSimulationSeal
+	}
+	var checkpointCount int
+	var firstOrdinal, lastOrdinal sql.NullInt64
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*),MIN(sample_ordinal),MAX(sample_ordinal) FROM simulation_job_checkpoints WHERE job_id=? AND input_hash=? AND fingerprint_hash=? AND cancel_generation=?`, run.JobID, run.InputHash, run.FingerprintHash, cancelGeneration).Scan(&checkpointCount, &firstOrdinal, &lastOrdinal); err != nil {
+		return err
+	}
+	if checkpointCount != requiredSamples || !firstOrdinal.Valid || !lastOrdinal.Valid || firstOrdinal.Int64 != 0 || lastOrdinal.Int64 != int64(requiredSamples-1) {
 		return ErrSimulationSeal
 	}
 	if err = insertSimulationRun(ctx, tx, run, metrics); err != nil {

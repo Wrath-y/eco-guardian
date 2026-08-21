@@ -2,10 +2,15 @@ package orchestration
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/zouyi/eco-guardian/internal/formula"
 	"github.com/zouyi/eco-guardian/internal/simulation/contract"
+	"github.com/zouyi/eco-guardian/internal/simulation/metric"
 )
 
 type concurrentExecutor struct{}
@@ -71,5 +76,68 @@ func TestSamplePlanBoundsWorkersAndCopiesWorkerPayload(t *testing.T) {
 	payload[0] = '!'
 	if string(results[0].Payload) != "sample" {
 		t.Fatalf("result payload leaked worker mutation: %q", results[0].Payload)
+	}
+}
+
+func TestSampleResultsKeepHashesAndFinalMetricHashAcrossWorkerCounts(t *testing.T) {
+	registry, err := metric.V1Registry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputHash, fingerprintHash := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	var expectedResultHash string
+	expectedSampleHashes := map[uint64]string{}
+	for _, workers := range []int{1, 2, 3, 12} {
+		plan, err := NewSamplePlan(12, workers)
+		if err != nil {
+			t.Fatal(err)
+		}
+		results, err := ExecuteSamples(context.Background(), concurrentExecutor{}, plan, func(_ context.Context, ordinal uint64) (SampleResult, error) {
+			time.Sleep(time.Duration((ordinal*7)%5) * time.Millisecond)
+			return SampleResult{Ordinal: ordinal, InputHash: inputHash, FingerprintHash: fingerprintHash, Payload: []byte(fmt.Sprintf("sample-%d", ordinal))}, nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		samples := make([]metric.Sample, 0, len(results))
+		for _, result := range results {
+			value, parseErr := formula.ParseDecimal(fmt.Sprintf("%d", result.Ordinal%3+1))
+			if parseErr != nil {
+				t.Fatal(parseErr)
+			}
+			observations := []metric.Observation{{ID: "damage_per_second", Unit: "points_per_second", Value: value}, {ID: "healing_per_second", Unit: "points_per_second", Value: value}, {ID: "survival_seconds", Unit: "milliseconds", Value: value}, {ID: "resource_efficiency", Unit: "ratio", Value: value}, {ID: "control_duration", Unit: "milliseconds", Value: value}}
+			if result.Ordinal%2 == 1 {
+				observations[0], observations[4] = observations[4], observations[0]
+			}
+			samples = append(samples, metric.Sample{Ordinal: result.Ordinal, Status: metric.SampleSucceeded, Observations: observations})
+		}
+		aggregates, reduceErr := metric.ReduceExpected(registry, samples, plan.SampleCount)
+		if reduceErr != nil {
+			t.Fatal(reduceErr)
+		}
+		canonical, resultErr := metric.NewCanonicalResult(inputHash, fingerprintHash, aggregates, nil)
+		if resultErr != nil {
+			t.Fatal(resultErr)
+		}
+		resultHash, hashErr := canonical.Hash()
+		if hashErr != nil {
+			t.Fatal(hashErr)
+		}
+		for _, sample := range samples {
+			sampleHash, sampleErr := metric.SampleHash(sample)
+			if sampleErr != nil {
+				t.Fatal(sampleErr)
+			}
+			if expected, found := expectedSampleHashes[sample.Ordinal]; found && sampleHash != expected {
+				t.Fatalf("workers=%d sample %d hash changed: %s != %s", workers, sample.Ordinal, sampleHash, expected)
+			} else {
+				expectedSampleHashes[sample.Ordinal] = sampleHash
+			}
+		}
+		if expectedResultHash == "" {
+			expectedResultHash = resultHash
+		} else if resultHash != expectedResultHash {
+			t.Fatalf("workers=%d result hash changed: %s != %s", workers, resultHash, expectedResultHash)
+		}
 	}
 }

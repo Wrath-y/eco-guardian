@@ -61,9 +61,21 @@ type Observation struct {
 	Value formula.Decimal
 	Unit  string
 }
+
+type SampleStatus string
+
+const (
+	SampleSucceeded SampleStatus = "succeeded"
+	SampleFailed    SampleStatus = "failed"
+	SampleCanceled  SampleStatus = "canceled"
+)
+
 type Sample struct {
 	Ordinal      uint64
 	Observations []Observation
+	// Status is empty only for backwards-compatible pure callers and has the
+	// same meaning as succeeded. Orchestrators should always set it explicitly.
+	Status SampleStatus
 }
 type UnavailableReason struct {
 	Code    string

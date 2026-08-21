@@ -3,6 +3,7 @@ package metric
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 
 	"github.com/zouyi/eco-guardian/internal/formula"
@@ -38,14 +39,36 @@ func (result AggregateResult) Valid() bool {
 // Reduce copies and sorts samples by ordinal, then invokes modules by their raw
 // UTF-8 IDs. No worker completion order or map iteration enters aggregation.
 func Reduce(registry *Registry, samples []Sample) ([]AggregateResult, error) {
+	return reduce(registry, samples, 0)
+}
+
+// ReduceExpected refuses incomplete, failed, or canceled sample sets before a
+// result can be materialized. Accepted ordinals are exactly 0..expected-1.
+func ReduceExpected(registry *Registry, samples []Sample, expected int) ([]AggregateResult, error) {
+	if expected < 1 {
+		return nil, ErrReductionInvalid
+	}
+	return reduce(registry, samples, expected)
+}
+
+func reduce(registry *Registry, samples []Sample, expected int) ([]AggregateResult, error) {
 	if registry == nil || len(samples) == 0 {
 		return nil, ErrReductionInvalid
 	}
+	if expected > 0 && len(samples) != expected {
+		return nil, fmt.Errorf("%w: expected %d samples, got %d", ErrReductionInvalid, expected, len(samples))
+	}
 	ordered := append([]Sample(nil), samples...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Ordinal < ordered[j].Ordinal })
-	for index := 1; index < len(ordered); index++ {
-		if ordered[index-1].Ordinal == ordered[index].Ordinal {
+	for index, sample := range ordered {
+		if sample.Status != "" && sample.Status != SampleSucceeded {
+			return nil, fmt.Errorf("%w: sample %d is %s", ErrReductionInvalid, sample.Ordinal, sample.Status)
+		}
+		if index > 0 && ordered[index-1].Ordinal == sample.Ordinal {
 			return nil, fmt.Errorf("%w: duplicate sample ordinal", ErrReductionInvalid)
+		}
+		if expected > 0 && sample.Ordinal != uint64(index) {
+			return nil, fmt.Errorf("%w: incomplete ordinal set", ErrReductionInvalid)
 		}
 	}
 	descriptors := registry.Descriptors()
@@ -69,6 +92,9 @@ func reduceModule(module Module, samples []Sample) (AggregateResult, error) {
 		result, err := module.Evaluate(sample)
 		if err != nil {
 			return AggregateResult{}, err
+		}
+		if !result.Valid() || !reflect.DeepEqual(result.Descriptor, descriptor) {
+			return AggregateResult{}, fmt.Errorf("%w: metric module contract mismatch", ErrReductionInvalid)
 		}
 		if result.Status == Unavailable {
 			missing = append(missing, result.Unavailable.Missing...)
