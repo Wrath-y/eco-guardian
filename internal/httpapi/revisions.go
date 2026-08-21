@@ -43,7 +43,7 @@ func VersioningServiceFromProjectManagerWithDependencies(manager *project.Manage
 			return nil
 		}
 		s := provider.Store()
-		return app.VersioningApplication{Revisions: s, Diff: s, Policies: s, Releases: s, Jobs: s, Catalog: dependencies.Catalog, Registry: dependencies.Registry, Submit: dependencies.Submit, Cancel: dependencies.Cancel}
+		return app.VersioningApplication{Revisions: s, Diff: s, Policies: s, Releases: s, Jobs: s, Catalog: dependencies.Catalog, Registry: dependencies.Registry, Submit: dependencies.Submit, Cancel: dependencies.Cancel, GraphRuntime: dependencies.GraphRuntime}
 	}
 }
 
@@ -483,5 +483,6 @@ func (h *VersionHandler) capability(c *gin.Context) {
 		}
 		reasons = append(reasons, gin.H{"capability_id": reason.CapabilityID, "gate_id": reason.GateID, "code": code, "detail": nullable(reason.Reason)})
 	}
-	c.JSON(http.StatusOK, gin.H{"release": gin.H{"enabled": capability.Enabled, "disabled_reasons": reasons}})
+	graph := s.GraphRuntimeCapability(c.Request.Context())
+	c.JSON(http.StatusOK, gin.H{"release": gin.H{"enabled": capability.Enabled, "disabled_reasons": reasons}, "graph": gin.H{"available": graph.Available, "compatible": graph.Compatible, "required_capabilities": graph.RequiredCapabilities, "degradations": graph.Degradations, "disabled_reasons": graph.Reasons, "release_disabled_reasons": graph.Reasons, "observed_at": graph.ObservedAt}})
 }

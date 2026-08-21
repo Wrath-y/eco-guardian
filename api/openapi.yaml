@@ -844,10 +844,23 @@ components:
         disabled_reasons: { type: array, items: { $ref: '#/components/schemas/ReleaseDisabledReason' } }
     RuntimeCapabilities:
       type: object
-      required: [release]
+      required: [release, graph]
       description: Safe runtime availability projection. It deliberately omits backup credentials, service endpoints, and client-computed Gate pass state.
       properties:
         release: { $ref: '#/components/schemas/ReleaseCapability' }
+        graph: { $ref: '#/components/schemas/GraphRuntimeCapability' }
+    GraphRuntimeCapability:
+      type: object
+      required: [available, compatible, required_capabilities, degradations, disabled_reasons, release_disabled_reasons]
+      description: Server-authoritative Graph provider health and compatibility. Graph release readiness remains a Gate result for an exact candidate revision.
+      properties:
+        available: { type: boolean }
+        compatible: { type: boolean }
+        required_capabilities: { type: array, items: { type: string } }
+        degradations: { type: array, items: { type: string } }
+        disabled_reasons: { type: array, items: { type: string } }
+        release_disabled_reasons: { type: array, items: { type: string }, description: Same stable Graph capability reasons consumed when Graph disables release admission. }
+        observed_at: { type: [string, 'null'], format: date-time }
     LocalValidationSummary:
       type: object
       required: [run_id, scope, error, block, warning, info]

@@ -36,6 +36,7 @@ type VersioningService interface {
 	ListReleaseJobEvents(context.Context, domain.ID, int64) ([]versioningrelease.Event, error)
 	CancelReleaseJob(context.Context, domain.ID) (versioningrelease.Job, bool, error)
 	ReleaseCapability(context.Context) (versioninggate.ReleaseCapability, error)
+	GraphRuntimeCapability(context.Context) GraphRuntimeStatus
 }
 
 // ReleaseDetail combines immutable release audit data with the singleton
@@ -74,15 +75,16 @@ type jobReader interface {
 // domain port, so tests may use fakes and transports cannot accidentally gain
 // direct SQL access.
 type VersioningApplication struct {
-	Revisions revisionOperations
-	Diff      diffReader
-	Policies  policyOperations
-	Releases  releaseOperations
-	Jobs      jobReader
-	Catalog   versioningpolicy.ContractCatalog
-	Registry  *versioninggate.Registry
-	Submit    func(context.Context, versioningrelease.Command) (versioningrelease.Job, error)
-	Cancel    func(context.Context, domain.ID) (versioningrelease.Job, bool, error)
+	Revisions    revisionOperations
+	Diff         diffReader
+	Policies     policyOperations
+	Releases     releaseOperations
+	Jobs         jobReader
+	Catalog      versioningpolicy.ContractCatalog
+	Registry     *versioninggate.Registry
+	Submit       func(context.Context, versioningrelease.Command) (versioningrelease.Job, error)
+	Cancel       func(context.Context, domain.ID) (versioningrelease.Job, bool, error)
+	GraphRuntime GraphRuntimeStatusService
 }
 
 // VersioningDependencies are process-owned dependencies supplied at
@@ -90,10 +92,11 @@ type VersioningApplication struct {
 // not installed; missing dependencies make only the affected release action
 // unavailable, never revision history or diff.
 type VersioningDependencies struct {
-	Catalog  versioningpolicy.ContractCatalog
-	Registry *versioninggate.Registry
-	Submit   func(context.Context, versioningrelease.Command) (versioningrelease.Job, error)
-	Cancel   func(context.Context, domain.ID) (versioningrelease.Job, bool, error)
+	Catalog      versioningpolicy.ContractCatalog
+	Registry     *versioninggate.Registry
+	Submit       func(context.Context, versioningrelease.Command) (versioningrelease.Job, error)
+	Cancel       func(context.Context, domain.ID) (versioningrelease.Job, bool, error)
+	GraphRuntime GraphRuntimeStatusService
 }
 
 func (s VersioningApplication) ListRevisionRecords(ctx context.Context, cursor string, limit int) (versioningrevision.HistoryPage, error) {
@@ -200,6 +203,13 @@ func (s VersioningApplication) ReleaseCapability(ctx context.Context) (versionin
 		return versioninggate.ReleaseCapability{Reasons: []versioninggate.DisabledReason{{Reason: "no release policy is available"}}}, nil
 	}
 	return versioninggate.CalculateReleaseCapability(s.Registry, page.Items[0]), nil
+}
+
+func (s VersioningApplication) GraphRuntimeCapability(ctx context.Context) GraphRuntimeStatus {
+	if s.GraphRuntime == nil {
+		return GraphRuntimeStatus{RequiredCapabilities: append([]string(nil), graphRequiredCapabilities...), Degradations: []string{}, Reasons: []string{"GRAPH_PROVIDER_NOT_CONFIGURED"}}
+	}
+	return s.GraphRuntime.GraphRuntimeStatus(ctx)
 }
 
 var _ VersioningService = VersioningApplication{}

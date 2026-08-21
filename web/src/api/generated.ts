@@ -913,6 +913,19 @@ export interface components {
         /** @description Safe runtime availability projection. It deliberately omits backup credentials, service endpoints, and client-computed Gate pass state. */
         RuntimeCapabilities: {
             release: components["schemas"]["ReleaseCapability"];
+            graph: components["schemas"]["GraphRuntimeCapability"];
+        };
+        /** @description Server-authoritative Graph provider health and compatibility. Graph release readiness remains a Gate result for an exact candidate revision. */
+        GraphRuntimeCapability: {
+            available: boolean;
+            compatible: boolean;
+            required_capabilities: string[];
+            degradations: string[];
+            disabled_reasons: string[];
+            /** @description Same stable Graph capability reasons consumed when Graph disables release admission. */
+            release_disabled_reasons: string[];
+            /** Format: date-time */
+            observed_at?: string | null;
         };
         LocalValidationSummary: {
             run_id: components["schemas"]["UUIDv7"];

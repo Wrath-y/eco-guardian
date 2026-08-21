@@ -34,6 +34,9 @@ func (f *fakeVersionService) ListPolicies(context.Context, string, int) (version
 func (f *fakeVersionService) ReleaseCapability(context.Context) (versioninggate.ReleaseCapability, error) {
 	return f.capability, nil
 }
+func (f *fakeVersionService) GraphRuntimeCapability(context.Context) app.GraphRuntimeStatus {
+	return app.GraphRuntimeStatus{RequiredCapabilities: []string{"snapshot_lifecycle", "task_polling", "activation", "core_graph_query", "bm25"}, Degradations: []string{}, Reasons: []string{"GRAPH_PROVIDER_NOT_CONFIGURED"}}
+}
 func (f *fakeVersionService) CreateRelease(_ context.Context, command versioningrelease.Command) (versioningrelease.Job, error) {
 	f.created, f.createCalls = command, f.createCalls+1
 	return f.createdJob, f.createErr
@@ -81,7 +84,7 @@ func TestVersionHandlerDelegatesPolicyCapabilityAndReleaseCommands(t *testing.T)
 	}
 	capabilityResponse := httptest.NewRecorder()
 	engine.ServeHTTP(capabilityResponse, httptest.NewRequest(http.MethodGet, "/api/v1/runtime/capabilities", nil))
-	if capabilityResponse.Code != http.StatusOK || !strings.Contains(capabilityResponse.Body.String(), "MISSING") {
+	if capabilityResponse.Code != http.StatusOK || !strings.Contains(capabilityResponse.Body.String(), "MISSING") || !strings.Contains(capabilityResponse.Body.String(), "GRAPH_PROVIDER_NOT_CONFIGURED") {
 		t.Fatalf("capability response=%d body=%s", capabilityResponse.Code, capabilityResponse.Body.String())
 	}
 
