@@ -34,7 +34,7 @@ function label(status: string[], id: string) { return [status.includes('working'
 </script>
 <template>
   <section>
-    <RouterLink to="/projects">项目</RouterLink>
+    <RouterLink to="/projects">项目</RouterLink> · <RouterLink to="/simulations">模拟</RouterLink>
     <h1>版本历史</h1>
     <p v-if="history.isPending.value" role="status">正在加载版本历史…</p>
     <p v-else-if="history.isError.value" role="alert">{{ history.error.value?.message }} <button @click="history.refetch()">重试</button></p>
