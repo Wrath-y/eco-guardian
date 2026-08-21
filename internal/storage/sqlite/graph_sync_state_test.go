@@ -129,6 +129,33 @@ func TestMarkGraphReadyCompletesLinkedRunningJob(t *testing.T) {
 	}
 }
 
+func TestCommitGraphFailureAtomicallyFailsLinkedJob(t *testing.T) {
+	store := newStore(t)
+	_, revision, err := store.Create(context.Background(), "tag", tagDraft("failedjob"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, _, err := store.CreateOrGetGraphJob(context.Background(), graphsync.GraphJobRequest{ProjectID: store.ProjectID(), RevisionID: revision.ID, InputHash: revision.ConfigHash, IdempotencyKey: "failed-job", RequestHash: strings.Repeat("a", 64)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, swapped, err := store.TransitionGraphJob(context.Background(), job.ID, graphsync.JobQueued, graphsync.JobRunning, nil); err != nil || !swapped {
+		t.Fatalf("job start swapped=%v err=%v", swapped, err)
+	}
+	state := graphsync.SyncState{RevisionID: string(revision.ID), Pipeline: graphsync.StateBuilding, LatestJobID: string(job.ID), ExternalTaskID: "provider-task", ProviderTaskID: "provider-task", Warnings: []string{}}
+	if err = store.CreateGraphSyncState(context.Background(), state); err != nil {
+		t.Fatal(err)
+	}
+	failed, replay, err := store.CommitGraphFailure(context.Background(), state, "REIMPORT_REQUIRED")
+	if err != nil || replay || failed.Pipeline != graphsync.StateFailed || failed.SafeError != "REIMPORT_REQUIRED" || failed.ExternalTaskID != "provider-task" {
+		t.Fatalf("failed=%#v replay=%v err=%v", failed, replay, err)
+	}
+	stored, err := store.GetGraphJob(context.Background(), job.ID)
+	if err != nil || stored.Status != graphsync.JobFailed {
+		t.Fatalf("job=%#v err=%v", stored, err)
+	}
+}
+
 func TestCommitGraphReadyAtomicallyStoresProjectionEvidence(t *testing.T) {
 	store := newStore(t)
 	_, revision, err := store.Create(context.Background(), "tag", tagDraft("summaryready"))

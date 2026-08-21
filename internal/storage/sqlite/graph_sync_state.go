@@ -87,6 +87,55 @@ func (s *Store) CommitGraphReady(ctx context.Context, expected graphsync.SyncSta
 	return s.commitGraphReady(ctx, expected, summary.ManifestHash, &summary, evidence)
 }
 
+// CommitGraphFailure changes only derived Graph state and the linked Job in
+// one transaction. It retains the accepted provider identity for audit and
+// explicit retry; it never performs cleanup or creates replacement work.
+func (s *Store) CommitGraphFailure(ctx context.Context, expected graphsync.SyncState, safeCode string) (graphsync.SyncState, bool, error) {
+	if !expected.Valid() || (expected.Pipeline != graphsync.StateQueued && expected.Pipeline != graphsync.StateBuilding) || safeCode == "" {
+		return graphsync.SyncState{}, false, ErrGraphSyncStateInvalid
+	}
+	next := expected
+	next.Pipeline, next.Generation, next.SafeError = graphsync.StateFailed, expected.Generation+1, safeCode
+	if !next.Valid() {
+		return graphsync.SyncState{}, false, ErrGraphSyncStateInvalid
+	}
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return graphsync.SyncState{}, false, err
+	}
+	defer tx.Rollback()
+	write, err := tx.ExecContext(ctx, `UPDATE graph_sync_states SET pipeline_state=?,generation=?,safe_error=?,updated_at=? WHERE revision_id=? AND generation=?`, next.Pipeline, next.Generation, next.SafeError, s.now().UTC().Format(time.RFC3339Nano), next.RevisionID, expected.Generation)
+	if err != nil {
+		return graphsync.SyncState{}, false, err
+	}
+	rows, err := write.RowsAffected()
+	if err != nil || rows != 1 {
+		if err != nil {
+			return graphsync.SyncState{}, false, err
+		}
+		return graphsync.SyncState{}, false, ErrGraphSyncStateInvalid
+	}
+	if next.LatestJobID == "" || !domain.ID(next.LatestJobID).Valid() {
+		return graphsync.SyncState{}, false, ErrGraphSyncStateInvalid
+	}
+	jobWrite, err := tx.ExecContext(ctx, `UPDATE jobs SET status='failed',updated_at=? WHERE id=? AND project_uuid=? AND kind='graph_sync' AND status IN ('queued','running','interrupted')`, s.now().UTC().Format(time.RFC3339Nano), next.LatestJobID, s.projectID)
+	if err != nil {
+		return graphsync.SyncState{}, false, err
+	}
+	if rows, err = jobWrite.RowsAffected(); err != nil || rows != 1 {
+		if err != nil {
+			return graphsync.SyncState{}, false, err
+		}
+		return graphsync.SyncState{}, false, ErrGraphJobTransition
+	}
+	if err = tx.Commit(); err != nil {
+		return graphsync.SyncState{}, false, err
+	}
+	return next, false, nil
+}
+
 func (s *Store) commitGraphReady(ctx context.Context, expected graphsync.SyncState, graphHash string, summary *projector.Summary, evidence string) (graphsync.SyncState, bool, error) {
 	next := expected
 	next.Pipeline, next.Generation = graphsync.StateReady, expected.Generation+1
