@@ -137,19 +137,13 @@ type SimulationCheckpoint struct {
 	Accumulator, AccumulatorHash string
 	CompletedAt                  time.Time
 }
-type SimulationJobMaterialization struct {
-	JobID, ProjectID, RevisionID, ScenarioDefinitionID domain.ID
-	CanonicalInput                                     []byte
-	InputHash, FingerprintHash                         string
-	CancelGeneration                                   int64
-	CreatedAt                                          time.Time
-}
+type SimulationJobMaterialization = contract.JobMaterialization
 
 func (run SimulationRun) valid() bool {
 	return run.ID.Valid() && run.JobID.Valid() && run.ProjectID.Valid() && run.RevisionID.Valid() && run.ScenarioDefinitionID.Valid() && validSimulationHash(run.InputHash) && validSimulationHash(run.FingerprintHash) && validSimulationHash(run.ResultHash) && run.CanonicalResult != "" && !run.CreatedAt.IsZero()
 }
 
-func (materialization SimulationJobMaterialization) valid() bool {
+func validSimulationMaterialization(materialization SimulationJobMaterialization) bool {
 	return materialization.JobID.Valid() && materialization.ProjectID.Valid() && materialization.RevisionID.Valid() && materialization.ScenarioDefinitionID.Valid() && len(materialization.CanonicalInput) > 0 && validSimulationHash(materialization.InputHash) && validSimulationHash(materialization.FingerprintHash) && materialization.CancelGeneration >= 0 && !materialization.CreatedAt.IsZero() && hashSimulationBytes(materialization.CanonicalInput) == materialization.InputHash
 }
 
@@ -166,7 +160,7 @@ func hashSimulationBytes(body []byte) string {
 // before execution. A materialization is immutable and must agree with the
 // shared Job's project, revision, and input hash.
 func (s *Store) SaveSimulationJobMaterialization(ctx context.Context, materialization SimulationJobMaterialization) error {
-	if !materialization.valid() || materialization.ProjectID != s.projectID {
+	if !validSimulationMaterialization(materialization) || materialization.ProjectID != s.projectID {
 		return ErrSimulationRunInvalid
 	}
 	write, err := s.db.ExecContext(ctx, `INSERT INTO simulation_job_materializations(job_id,project_uuid,revision_id,scenario_definition_id,canonical_input,input_hash,fingerprint_hash,cancel_generation,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM jobs WHERE id=? AND project_uuid=? AND kind='simulation' AND revision_id=? AND input_hash=?)`, materialization.JobID, materialization.ProjectID, materialization.RevisionID, materialization.ScenarioDefinitionID, materialization.CanonicalInput, materialization.InputHash, materialization.FingerprintHash, materialization.CancelGeneration, materialization.CreatedAt.UTC().Format(time.RFC3339Nano), materialization.JobID, materialization.ProjectID, materialization.RevisionID, materialization.InputHash)
@@ -189,7 +183,7 @@ func (s *Store) GetSimulationJobMaterialization(ctx context.Context, jobID domai
 	if err != nil {
 		return SimulationJobMaterialization{}, err
 	}
-	if materialization.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt); err != nil || !materialization.valid() {
+	if materialization.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt); err != nil || !validSimulationMaterialization(materialization) {
 		return SimulationJobMaterialization{}, ErrSimulationRunInvalid
 	}
 	return materialization, nil

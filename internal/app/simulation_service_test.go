@@ -28,9 +28,9 @@ func (f *simulationJobsFake) RequestCancellation(context.Context, domain.ID) (sh
 	return f.record, false, nil
 }
 
-type simulationMaterializationsFake struct{ value SimulationMaterialization }
+type simulationMaterializationsFake struct{ value contract.JobMaterialization }
 
-func (f *simulationMaterializationsFake) SaveSimulationJobMaterialization(_ context.Context, value SimulationMaterialization) error {
+func (f *simulationMaterializationsFake) SaveSimulationJobMaterialization(_ context.Context, value contract.JobMaterialization) error {
 	f.value = value
 	return nil
 }
