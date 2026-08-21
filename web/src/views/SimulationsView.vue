@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useProjectStore } from '@/stores/project'
 import { useReleaseHistory, useRevisionHistory } from '@/api/versions'
 import { SimulationApiError, createSimulationJob, useSimulationRun } from '@/api/simulation'
 import type { components } from '@/api/generated'
+import SimulationJobProgress from '@/components/SimulationJobProgress.vue'
 
 type SourceKind = 'revision' | 'release'
 type MetricID = 'metric-dps' | 'metric-healing' | 'metric-survivability' | 'metric-resource' | 'metric-control'
@@ -45,7 +46,16 @@ const sourceOptions = computed(() => sourceKind.value === 'revision'
 const sourceLabel = computed(() => sourceKind.value === 'revision' ? '不可变 revision' : '已发布 release')
 const fingerprintSummary = computed(() => `场景 ${scene.value.id}@v1 · Metric ${selectedMetrics.value.map(value => `${value}@v1`).join('、') || '未选择'} · 默认 seed ${scene.value.defaultSeed} · 采样 ${sampleCount.value || 1000}；input 与实现指纹由服务端在接收时固定。`)
 
-function key() { return crypto.randomUUID() }
+function attemptStorageKey() { return `simulation-attempt:${projectID.value}:${sourceKind.value}:${sourceID.value}:${sceneID.value}` }
+function jobStorageKey() { return `simulation-active-job:${projectID.value}` }
+function key() {
+  const storageKey = attemptStorageKey()
+  const existing = sessionStorage.getItem(storageKey)
+  if (existing) return existing
+  const value = crypto.randomUUID()
+  sessionStorage.setItem(storageKey, value)
+  return value
+}
 function selectSourceKind(value: SourceKind) { sourceKind.value = value; sourceID.value = '' }
 function budget(): components['schemas']['SimulationBudget'] | undefined {
   const value = { max_events: maxEvents.value, max_steps: maxSteps.value, max_runtime_ms: maxRuntimeMS.value }
@@ -69,10 +79,14 @@ async function submit() {
   try {
     const accepted = await createSimulationJob(request, key())
     jobID.value = accepted.job.id
+    sessionStorage.setItem(jobStorageKey(), accepted.job.id)
+    sessionStorage.removeItem(attemptStorageKey())
   } catch (cause) {
     error.value = cause instanceof SimulationApiError && cause.code ? `${cause.message}（${cause.code}）` : cause instanceof Error ? cause.message : '无法创建模拟任务'
   } finally { submitting.value = false }
 }
+function runReady(id: string) { runID.value = id; sessionStorage.removeItem(jobStorageKey()) }
+watch(projectID, value => { jobID.value = value ? sessionStorage.getItem(jobStorageKey()) ?? '' : '' }, { immediate: true })
 </script>
 
 <template>
@@ -108,7 +122,7 @@ async function submit() {
       <button type="submit" :disabled="submitting">{{ submitting ? '正在提交…' : '运行模拟' }}</button>
     </form>
     <p v-if="error" role="alert">{{ error }}</p>
-    <p v-if="jobID" role="status">已创建 Job：{{ jobID }}；可通过统一 Job 状态跟踪进度。</p>
+    <SimulationJobProgress v-if="jobID && projectID" :project-i-d="projectID" :job-i-d="jobID" @run-ready="runReady" />
     <section><h2>历史 Run</h2><label>Run ID <input v-model="runID"></label><p v-if="run.isPending.value" role="status">正在读取…</p><p v-else-if="run.isError.value" role="alert">{{ run.error.value?.message }}</p><pre v-else-if="run.data.value">{{ run.data.value.canonical_result }}</pre></section>
     <small v-if="projectID">项目 {{ projectID }}</small>
   </section>
