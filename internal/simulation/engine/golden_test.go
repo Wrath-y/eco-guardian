@@ -1,7 +1,11 @@
 package engine
 
 import (
+	"fmt"
+	"os"
+	"os/exec"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/zouyi/eco-guardian/internal/simulation/random"
@@ -78,4 +82,37 @@ func TestGoldenDurationBoundaryAndSampleStreams(t *testing.T) {
 			t.Fatalf("draw %d diverged", draw)
 		}
 	}
+}
+
+func TestGoldenIndependentProcessReplay(t *testing.T) {
+	if os.Getenv("SIMULATION_GOLDEN_REPLAY") == "1" {
+		fmt.Print(goldenReplay())
+		return
+	}
+	command := exec.Command(os.Args[0], "-test.run=^TestGoldenIndependentProcessReplay$")
+	command.Env = append(os.Environ(), "SIMULATION_GOLDEN_REPLAY=1")
+	output, err := command.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.TrimSuffix(string(output), "PASS\n"), goldenReplay(); got != want {
+		t.Fatalf("independent replay=%q want=%q", got, want)
+	}
+}
+
+func goldenReplay() string {
+	parts := []string{}
+	for _, template := range scenario.BuiltinTemplates() {
+		events, err := InitialEvents(template.Definition)
+		if err != nil {
+			panic(err)
+		}
+		ordered := make([]string, len(events))
+		for index, event := range events {
+			ordered[index] = event.String()
+		}
+		stream := random.New(template.Definition.DefaultSeed, 0)
+		parts = append(parts, template.Definition.ID+":"+strings.Join(ordered, ",")+fmt.Sprintf(":%016x", stream.Uint64()))
+	}
+	return strings.Join(parts, "\n")
 }
