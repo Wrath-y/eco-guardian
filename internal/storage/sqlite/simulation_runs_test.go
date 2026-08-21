@@ -229,3 +229,46 @@ func TestSimulationCheckpointFaultDoesNotExposePartialState(t *testing.T) {
 		t.Fatalf("rows=%#v err=%v", rows, queryErr)
 	}
 }
+
+func TestSimulationSealFaultsDoNotExposeRunOrJobSuccess(t *testing.T) {
+	for _, stage := range []string{"simulation-seal-before-run", "simulation-seal-after-run"} {
+		t.Run(stage, func(t *testing.T) {
+			store := newStore(t)
+			_, revision, err := store.Create(context.Background(), "tag", tagDraft("simulationsealfault"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			scene, err := store.GetScenarioDefinition(context.Background(), "single-target-30s", "v1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			job, _, err := store.CreateOrGet(context.Background(), sharedjob.Request{ProjectID: store.ProjectID(), Kind: "simulation", RevisionID: revision.ID, InputHash: strings.Repeat("a", 64), IdempotencyKey: stage, RequestHash: strings.Repeat("b", 64)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err = store.Transition(context.Background(), job.ID, sharedjob.Queued, sharedjob.Running, nil, 0); err != nil {
+				t.Fatal(err)
+			}
+			run := SimulationRun{ID: mustID(t), JobID: job.ID, ProjectID: store.ProjectID(), RevisionID: revision.ID, ScenarioDefinitionID: scene.ID, InputHash: strings.Repeat("a", 64), FingerprintHash: strings.Repeat("c", 64), ResultHash: strings.Repeat("d", 64), CanonicalResult: `{"schema_version":"v1"}`, CreatedAt: time.Now().UTC()}
+			if err = store.SaveSimulationCheckpoint(context.Background(), SimulationCheckpoint{JobID: job.ID, InputHash: run.InputHash, FingerprintHash: run.FingerprintHash, Accumulator: `{"sample":0}`, AccumulatorHash: SimulationAccumulatorHash(`{"sample":0}`), CompletedAt: time.Now().UTC()}); err != nil {
+				t.Fatal(err)
+			}
+			store.failStage = func(at string) error {
+				if at == stage {
+					return errors.New("injected")
+				}
+				return nil
+			}
+			if err = store.SealSimulationRun(context.Background(), run, []SimulationMetricResult{{MetricID: "metric-dps", MetricVersion: "v1", Status: "available", CanonicalResult: `{"value":"1"}`}}, 1, 0); err == nil {
+				t.Fatal("expected seal fault")
+			}
+			if _, _, err = store.GetSimulationRun(context.Background(), run.ID); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("run visible: %v", err)
+			}
+			current, err := store.GetJob(context.Background(), job.ID)
+			if err != nil || current.Status != sharedjob.Running || current.Result != nil {
+				t.Fatalf("job=%#v err=%v", current, err)
+			}
+		})
+	}
+}
