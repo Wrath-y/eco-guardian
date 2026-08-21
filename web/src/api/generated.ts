@@ -358,6 +358,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/simulation-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createSimulationJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/simulation-runs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getSimulationRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runtime/capabilities": {
         parameters: {
             query?: never;
@@ -909,6 +941,52 @@ export interface components {
             /** Format: date-time */
             updated_at?: string;
         };
+        SimulationSource: {
+            revision_id: components["schemas"]["UUIDv7"];
+        } | {
+            release_id: components["schemas"]["UUIDv7"];
+        };
+        SimulationMetricRequest: {
+            id: string;
+            version: string;
+        };
+        SimulationBudget: {
+            max_events?: number;
+            max_steps?: number;
+            max_runtime_ms?: number;
+        };
+        CreateSimulationJobRequest: {
+            source: components["schemas"]["SimulationSource"];
+            scene_id: string;
+            scene_version: string;
+            parameters?: {
+                [key: string]: unknown;
+            };
+            metrics: components["schemas"]["SimulationMetricRequest"][];
+            /** @default 1000 */
+            sample_count: number;
+            seed?: number;
+            budget?: components["schemas"]["SimulationBudget"];
+            verify_run_id?: components["schemas"]["UUIDv7"];
+        };
+        SimulationJobAccepted: {
+            job: components["schemas"]["Job"];
+            /** Format: uri-reference */
+            location: string;
+        };
+        SimulationRun: {
+            id: components["schemas"]["UUIDv7"];
+            job_id: components["schemas"]["UUIDv7"];
+            revision_id: components["schemas"]["UUIDv7"];
+            input_hash: components["schemas"]["Hash"];
+            fingerprint_hash: components["schemas"]["Hash"];
+            result_hash: components["schemas"]["Hash"];
+            canonical_result: string;
+            reproducible: boolean;
+            reasons: string[];
+            /** Format: date-time */
+            created_at: string;
+        };
         ReleaseDisabledReason: {
             capability_id: string;
             gate_id: string;
@@ -1074,6 +1152,7 @@ export interface components {
         RevisionID: components["schemas"]["UUIDv7"];
         ReleaseID: components["schemas"]["UUIDv7"];
         JobID: components["schemas"]["UUIDv7"];
+        SimulationRunID: components["schemas"]["UUIDv7"];
         /** @description Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. */
         IdempotencyKey: string;
         /** @description Required when graph-sync intent is retry; reuse returns the original retry Job and changed retry input conflicts. It is ignored for ensure. */
@@ -1788,6 +1867,58 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Job"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createSimulationJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSimulationJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Existing or newly admitted durable simulation Job. */
+            202: {
+                headers: {
+                    Location: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationJobAccepted"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getSimulationRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["SimulationRunID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable simulation result with read-time reproducibility projection. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationRun"];
                 };
             };
             default: components["responses"]["Problem"];

@@ -239,6 +239,24 @@ paths:
       responses:
         '202': { description: Cancellation intent persisted for a registered Job; feature workers resolve it at their documented safe boundary, content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
         default: { $ref: '#/components/responses/Problem' }
+  /simulation-jobs:
+    post:
+      operationId: createSimulationJob
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateSimulationJobRequest' } } } }
+      responses:
+        '202':
+          description: Existing or newly admitted durable simulation Job.
+          headers: { Location: { required: true, schema: { type: string, format: uri-reference } } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/SimulationJobAccepted' } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /simulation-runs/{id}:
+    get:
+      operationId: getSimulationRun
+      parameters: [ { $ref: '#/components/parameters/SimulationRunID' } ]
+      responses:
+        '200': { description: Immutable simulation result with read-time reproducibility projection., content: { application/json: { schema: { $ref: '#/components/schemas/SimulationRun' } } } }
+        default: { $ref: '#/components/responses/Problem' }
   /runtime/capabilities:
     get:
       operationId: getRuntimeCapabilities
@@ -254,6 +272,7 @@ components:
     RevisionID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     ReleaseID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     JobID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
+    SimulationRunID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 256 }, description: Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. }
     GraphRetryIdempotencyKey: { name: Idempotency-Key, in: header, required: false, schema: { type: string, minLength: 1, maxLength: 256 }, description: Required when graph-sync intent is retry; reuse returns the original retry Job and changed retry input conflicts. It is ignored for ensure. }
     LastEventID: { name: Last-Event-ID, in: header, schema: { type: integer, minimum: 0 }, description: Resume SSE delivery strictly after this persisted event ordinal. }
@@ -833,6 +852,57 @@ components:
         cancel_requested_at: { type: [string, 'null'], format: date-time, description: Time the current cancellation intent was recorded, if any. }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    SimulationSource:
+      oneOf:
+        - type: object
+          required: [revision_id]
+          properties: { revision_id: { $ref: '#/components/schemas/UUIDv7' } }
+        - type: object
+          required: [release_id]
+          properties: { release_id: { $ref: '#/components/schemas/UUIDv7' } }
+    SimulationMetricRequest:
+      type: object
+      required: [id, version]
+      properties: { id: { type: string, minLength: 1 }, version: { type: string, minLength: 1 } }
+    SimulationBudget:
+      type: object
+      properties:
+        max_events: { type: integer, minimum: 1 }
+        max_steps: { type: integer, minimum: 1 }
+        max_runtime_ms: { type: integer, minimum: 1 }
+    CreateSimulationJobRequest:
+      type: object
+      required: [source, scene_id, scene_version, metrics]
+      properties:
+        source: { $ref: '#/components/schemas/SimulationSource' }
+        scene_id: { type: string, minLength: 1 }
+        scene_version: { type: string, minLength: 1 }
+        parameters: { type: object, additionalProperties: true }
+        metrics: { type: array, minItems: 1, items: { $ref: '#/components/schemas/SimulationMetricRequest' } }
+        sample_count: { type: integer, minimum: 1, default: 1000 }
+        seed: { type: integer, minimum: 0 }
+        budget: { $ref: '#/components/schemas/SimulationBudget' }
+        verify_run_id: { $ref: '#/components/schemas/UUIDv7' }
+    SimulationJobAccepted:
+      type: object
+      required: [job, location]
+      properties:
+        job: { $ref: '#/components/schemas/Job' }
+        location: { type: string, format: uri-reference }
+    SimulationRun:
+      type: object
+      required: [id, job_id, revision_id, input_hash, fingerprint_hash, result_hash, canonical_result, reproducible, reasons, created_at]
+      properties:
+        id: { $ref: '#/components/schemas/UUIDv7' }
+        job_id: { $ref: '#/components/schemas/UUIDv7' }
+        revision_id: { $ref: '#/components/schemas/UUIDv7' }
+        input_hash: { $ref: '#/components/schemas/Hash' }
+        fingerprint_hash: { $ref: '#/components/schemas/Hash' }
+        result_hash: { $ref: '#/components/schemas/Hash' }
+        canonical_result: { type: string, minLength: 1 }
+        reproducible: { type: boolean }
+        reasons: { type: array, items: { type: string } }
+        created_at: { type: string, format: date-time }
     ReleaseDisabledReason:
       type: object
       required: [capability_id, gate_id, code]
