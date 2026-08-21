@@ -123,7 +123,23 @@ watch(projectID, value => { jobID.value = value ? sessionStorage.getItem(jobStor
     </form>
     <p v-if="error" role="alert">{{ error }}</p>
     <SimulationJobProgress v-if="jobID && projectID" :project-i-d="projectID" :job-i-d="jobID" @run-ready="runReady" />
-    <section><h2>历史 Run</h2><label>Run ID <input v-model="runID"></label><p v-if="run.isPending.value" role="status">正在读取…</p><p v-else-if="run.isError.value" role="alert">{{ run.error.value?.message }}</p><pre v-else-if="run.data.value">{{ run.data.value.canonical_result }}</pre></section>
+    <section aria-labelledby="run-heading">
+      <h2 id="run-heading">历史 Run</h2>
+      <label>Run ID <input v-model="runID"></label>
+      <p v-if="run.isPending.value" role="status">正在读取…</p>
+      <p v-else-if="run.isError.value" role="alert">{{ run.error.value?.message }}</p>
+      <template v-else-if="run.data.value">
+        <p>input hash：<code>{{ run.data.value.input_hash }}</code> · result hash：<code>{{ run.data.value.result_hash }}</code></p>
+        <p>实现指纹：<code>{{ run.data.value.fingerprint_hash }}</code> · {{ run.data.value.reproducible ? '当前可复现' : `当前不可复现：${run.data.value.reasons.join('；')}` }}</p>
+        <ul aria-label="模拟 Metric 结果"><li v-for="metric in run.data.value.metrics" :key="`${metric.id}:${metric.version}`">
+          <strong>{{ metric.id }}@{{ metric.version }}</strong> · {{ metric.direction }}
+          <template v-if="metric.status === 'available'"> · {{ metric.value }} {{ metric.unit }} · CI {{ metric.confidence_low }}–{{ metric.confidence_high }} · {{ metric.sample_count }} 样本</template>
+          <template v-else> · UNAVAILABLE：{{ metric.unavailable?.code }} · {{ metric.unavailable?.message }}</template>
+          <span v-if="metric.assumptions.length"> · 假设：{{ metric.assumptions.join('；') }}</span>
+        </li></ul>
+        <p v-if="run.data.value.verification_refs.length">复现关系：<span v-for="reference in run.data.value.verification_refs" :key="reference.id">{{ reference.status }}（{{ reference.source_run_id }} → {{ reference.reproduction_run_id }}）</span></p>
+      </template>
+    </section>
     <small v-if="projectID">项目 {{ projectID }}</small>
   </section>
 </template>
