@@ -547,7 +547,7 @@ components:
       properties:
         id: { type: string, minLength: 1 }
         occurred_at: { type: string, format: date-time }
-        type: { type: string, enum: [revision_created, validation_completed, gate_evaluated, release_queued, release_completed, active_pointer_changed] }
+        type: { type: string, enum: [revision_created, validation_completed, gate_evaluated, release_queued, release_completed, active_pointer_changed, simulation_queued, simulation_result] }
         revision_id: { $ref: '#/components/schemas/UUIDv7' }
         subject_id: { type: [string, 'null'] }
         status: { type: [string, 'null'] }

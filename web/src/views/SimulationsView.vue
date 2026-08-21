@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useProjectStore } from '@/stores/project'
-import { useReleaseHistory, useRevisionHistory } from '@/api/versions'
+import { useReleaseHistory, useRevisionDetail, useRevisionHistory } from '@/api/versions'
 import { SimulationApiError, createSimulationJob, useSimulationRun } from '@/api/simulation'
 import type { components } from '@/api/generated'
 import SimulationJobProgress from '@/components/SimulationJobProgress.vue'
@@ -26,6 +26,8 @@ const revisions = useRevisionHistory(() => projectID.value)
 const releases = useReleaseHistory(() => projectID.value)
 const sourceKind = ref<SourceKind>('revision')
 const sourceID = ref('')
+const selectedRevisionID = computed(() => sourceKind.value === 'revision' ? sourceID.value : '')
+const selectedRevision = useRevisionDetail(() => projectID.value, () => selectedRevisionID.value)
 const sceneID = ref<(typeof scenes)[number]['id']>('single-target-30s')
 const amount = ref('10')
 const selectedMetrics = ref<MetricID[]>(['metric-dps'])
@@ -46,6 +48,7 @@ const sourceOptions = computed(() => sourceKind.value === 'revision'
   : (releases.data.value?.items ?? []).map(value => ({ id: value.id, label: `${value.id} · revision ${value.revision_id}` })))
 const sourceLabel = computed(() => sourceKind.value === 'revision' ? '不可变 revision' : '已发布 release')
 const fingerprintSummary = computed(() => `场景 ${scene.value.id}@v1 · Metric ${selectedMetrics.value.map(value => `${value}@v1`).join('、') || '未选择'} · 默认 seed ${scene.value.defaultSeed} · 采样 ${sampleCount.value || 1000}；input 与实现指纹由服务端在接收时固定。`)
+const historicalRuns = computed(() => (selectedRevision.data.value?.timeline ?? []).filter(event => event.type === 'simulation_result' && Boolean(event.subject_id)))
 
 function attemptStorageKey() { return `simulation-attempt:${projectID.value}:${sourceKind.value}:${sourceID.value}:${sceneID.value}` }
 function jobStorageKey() { return `simulation-active-job:${projectID.value}` }
@@ -110,6 +113,7 @@ async function submit() {
   } finally { submitting.value = false }
 }
 function runReady(id: string) { runID.value = id; sessionStorage.removeItem(jobStorageKey()) }
+function openHistoricalRun(id: string) { runID.value = id }
 watch(projectID, value => { jobID.value = value ? sessionStorage.getItem(jobStorageKey()) ?? '' : '' }, { immediate: true })
 </script>
 
@@ -128,6 +132,16 @@ watch(projectID, value => { jobID.value = value ? sessionStorage.getItem(jobStor
         </label>
         <p v-if="!(sourceKind === 'revision' ? revisions : releases).isPending.value && !sourceOptions.length" role="status">没有可选择的{{ sourceLabel }}。</p>
       </fieldset>
+      <section v-if="selectedRevisionID" aria-labelledby="historical-runs-heading">
+        <h2 id="historical-runs-heading">此 revision 的历史 Run</h2>
+        <p v-if="selectedRevision.isPending.value" role="status">正在读取历史 Run…</p>
+        <p v-else-if="selectedRevision.isError.value" role="status">历史 Run 暂不可读取：{{ selectedRevision.error.value?.message }}</p>
+        <p v-else-if="!historicalRuns.length" role="status">该 revision 尚无已完成的模拟 Run。</p>
+        <ul v-else aria-label="历史模拟 Run"><li v-for="event in historicalRuns" :key="event.id">
+          <button type="button" @click="openHistoricalRun(event.subject_id!)">打开不可变 Run {{ event.subject_id }}</button>
+          <span> · {{ event.occurred_at }} · {{ event.status || 'completed' }}</span>
+        </li></ul>
+      </section>
       <fieldset><legend>固定场景</legend>
         <label>场景 <select v-model="sceneID" aria-label="场景"><option v-for="item in scenes" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
         <p>参与者：1 个来源、{{ scene.targets }} 个目标；初始状态：来源 power 100 points、每个目标 health 1000 points；持续时间：{{ scene.duration }}；动作：{{ scene.actions.join('、') }}。</p>
@@ -153,6 +167,11 @@ watch(projectID, value => { jobID.value = value ? sessionStorage.getItem(jobStor
       <p v-if="run.isPending.value" role="status">正在读取…</p>
       <p v-else-if="run.isError.value" role="alert">{{ run.error.value?.message }}</p>
       <template v-else-if="run.data.value">
+        <p>来源 revision：<code>{{ run.data.value.revision_id }}</code>
+          <template v-if="run.data.value.input"> · 场景：{{ run.data.value.input.scene_id }}@{{ run.data.value.input.scene_version }} · seed：{{ run.data.value.input.seed }} · {{ run.data.value.input.sample_count }} 样本</template>
+        </p>
+        <p v-if="run.data.value.input">输入版本：{{ run.data.value.input.schema_version }} · Metric：{{ run.data.value.input.metrics.map(metric => `${metric.id}@${metric.version}`).join('、') }} · 配置：<code>{{ run.data.value.input.config_hash }}</code></p>
+        <p v-else role="status">已捕获输入不可用；此历史记录保持只读，不能据当前配置重建或验证。</p>
         <p>input hash：<code>{{ run.data.value.input_hash }}</code> · result hash：<code>{{ run.data.value.result_hash }}</code></p>
         <p>实现指纹：<code>{{ run.data.value.fingerprint_hash }}</code> · {{ run.data.value.reproducible ? '当前可复现' : `当前不可复现：${run.data.value.reasons.join('；')}` }}</p>
         <ul aria-label="模拟 Metric 结果"><li v-for="metric in run.data.value.metrics" :key="`${metric.id}:${metric.version}`">

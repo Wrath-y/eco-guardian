@@ -651,7 +651,7 @@ export interface components {
             /** Format: date-time */
             occurred_at: string;
             /** @enum {string} */
-            type: "revision_created" | "validation_completed" | "gate_evaluated" | "release_queued" | "release_completed" | "active_pointer_changed";
+            type: "revision_created" | "validation_completed" | "gate_evaluated" | "release_queued" | "release_completed" | "active_pointer_changed" | "simulation_queued" | "simulation_result";
             revision_id: components["schemas"]["UUIDv7"];
             subject_id?: string | null;
             status?: string | null;
