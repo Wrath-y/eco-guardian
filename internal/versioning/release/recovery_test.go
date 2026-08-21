@@ -77,7 +77,7 @@ func TestIntentRecoveryContinuesWhenGraphAcceptedBeforeTransportFailure(t *testi
 	if err != nil || len(results) != 1 || results[0].Outcome != RecoveryContinued {
 		t.Fatalf("results=%#v err=%v", results, err)
 	}
-	if store.intent.Phase != IntentSucceeded || store.job.Status != JobSucceeded || len(graph.reads) != 2 {
+	if store.intent.Phase != IntentSucceeded || store.job.Status != JobSucceeded || len(graph.reads) != 2 || graph.reads[0].ProjectID != job.ProjectID || graph.reads[0].RevisionID != job.RevisionID || graph.reads[0].ConfigHash != job.InputHash || graph.reads[1] != graph.reads[0] {
 		t.Fatalf("intent=%#v job=%#v reads=%#v", store.intent, store.job, graph.reads)
 	}
 }
