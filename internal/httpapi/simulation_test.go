@@ -243,3 +243,20 @@ func TestSimulationAdmissionHandlerRejectsUnsupportedAndBlockedInputs(t *testing
 		})
 	}
 }
+
+func TestSimulationAdmissionHandlerRejectsInvalidSeedBeforeAdmission(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	projectID := domain.ID("01948c1e-0000-7000-8000-000000000000")
+	jobs := &simulationJobReaderFake{job: sharedjob.Record{ProjectID: projectID}}
+	service := &simulationAdmissionServiceFake{}
+	engine := gin.New()
+	NewSimulationAdmissionHandler(func() app.SimulationAdmissionService { return service }, func() simulationJobReader { return jobs }).Register(engine)
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/simulation-jobs", strings.NewReader(`{"source":{"revision_id":"01948c1e-0000-7000-8000-000000000002"},"scene_id":"scene","scene_version":"v1","metrics":[{"id":"metric-dps","version":"v1"}],"seed":"not-a-seed"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Idempotency-Key", "key")
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"SIMULATION_SEED_INVALID"`) || service.seen.IdempotencyKey != "" {
+		t.Fatalf("status=%d admission=%#v body=%s", response.Code, service.seen, response.Body.String())
+	}
+}
