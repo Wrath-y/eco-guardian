@@ -856,6 +856,8 @@ export interface components {
             projection?: components["schemas"]["GraphProjectionSummary"] | null;
             job?: components["schemas"]["Job"] | null;
             provider?: components["schemas"]["GraphProviderObservation"] | null;
+            /** @enum {string|null} */
+            impact_state?: "queued" | "consumed" | "failed" | "unavailable" | null;
             warnings: components["schemas"]["GraphWarning"][];
             error?: components["schemas"]["GraphSafeError"] | null;
             actions: components["schemas"]["GraphAction"][];

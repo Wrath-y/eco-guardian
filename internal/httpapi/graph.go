@@ -39,7 +39,7 @@ func GraphSyncServiceFromProjectManagerWithProvider(manager *project.Manager, pr
 			return nil
 		}
 		s := storeProvider.Store()
-		return app.GraphSyncApplication{Revisions: s, Jobs: s, States: s, Summaries: s, Validation: validation.NewValidationGate(s), Provider: provider, Submit: submit}
+		return app.GraphSyncApplication{Revisions: s, Jobs: s, States: s, Summaries: s, Impact: s, Validation: validation.NewValidationGate(s), Provider: provider, Submit: submit}
 	}
 }
 
@@ -137,7 +137,7 @@ func (h *GraphHandler) status(c *gin.Context) {
 	if status.Freshness.Fresh {
 		freshness = "fresh"
 	}
-	response := gin.H{"revision_id": status.RevisionID, "config_hash": status.ConfigHash, "pipeline_state": status.Pipeline, "freshness": freshness, "freshness_reasons": status.Freshness.Reasons, "validation_result": status.Validation, "warnings": graphWarningsJSON(status.Warnings), "actions": graphActions(status), "evidence": []gin.H{{"key": "config_hash", "value": status.ConfigHash}}}
+	response := gin.H{"revision_id": status.RevisionID, "config_hash": status.ConfigHash, "pipeline_state": status.Pipeline, "freshness": freshness, "freshness_reasons": status.Freshness.Reasons, "validation_result": status.Validation, "impact_state": nullable(status.ImpactState), "warnings": graphWarningsJSON(status.Warnings), "actions": graphActions(status), "evidence": []gin.H{{"key": "config_hash", "value": status.ConfigHash}}}
 	if status.Summary != nil {
 		response["projection"] = gin.H{"projection_schema_version": status.Summary.SchemaVersion, "projector_version": status.Summary.ProjectorVersion, "graph_manifest_hash": status.Summary.ManifestHash, "node_count": status.Summary.NodeCount, "edge_count": status.Summary.EdgeCount}
 	} else {

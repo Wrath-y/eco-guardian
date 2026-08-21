@@ -41,6 +41,7 @@ type GraphStatus struct {
 	Warnings               []string
 	SafeError              string
 	ExternalTaskID         string
+	ImpactState            string
 	Provider               *graphsync.Snapshot
 	ProviderError          *graphsync.ProviderError
 	ProviderObservedAt     time.Time
@@ -64,6 +65,10 @@ type graphSummarySource interface {
 	GraphProjectionSummary(context.Context, domain.ID) (projector.Summary, bool, error)
 }
 
+type graphImpactSource interface {
+	GraphImpactHandoffStatus(context.Context, domain.ID, string) (string, bool, error)
+}
+
 // GraphSyncApplication composes existing immutable revision, validation, and
 // durable Job seams. It does not run a provider effect; worker ownership stays
 // in the composition root.
@@ -72,6 +77,7 @@ type GraphSyncApplication struct {
 	Jobs       graphJobSource
 	States     graphStateSource
 	Summaries  graphSummarySource
+	Impact     graphImpactSource
 	Validation graphsync.FullValidationGate
 	Provider   graphsync.GraphProvider
 	Clock      func() time.Time
@@ -112,6 +118,17 @@ func (s GraphSyncApplication) GraphStatus(ctx context.Context, revisionID domain
 		status.Summary = &summary
 	} else if summaryErr != nil {
 		return GraphStatus{}, ErrGraphOperationUnavailable
+	}
+	if status.Summary != nil && s.Impact != nil {
+		impact, impactFound, impactErr := s.Impact.GraphImpactHandoffStatus(ctx, revisionID, status.Summary.ManifestHash)
+		if impactErr != nil {
+			return GraphStatus{}, ErrGraphOperationUnavailable
+		}
+		if impactFound {
+			status.ImpactState = impact
+		} else {
+			status.ImpactState = "unavailable"
+		}
 	}
 	status.Freshness = graphsync.ComputeFreshness(graphsync.FreshnessInput{RevisionID: revisionID, InputHash: record.Metadata.ConfigHash, State: state, Job: status.Job})
 	if s.Provider != nil {

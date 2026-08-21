@@ -792,6 +792,7 @@ components:
         projection: { oneOf: [{ $ref: '#/components/schemas/GraphProjectionSummary' }, { type: 'null' }] }
         job: { oneOf: [{ $ref: '#/components/schemas/Job' }, { type: 'null' }] }
         provider: { oneOf: [{ $ref: '#/components/schemas/GraphProviderObservation' }, { type: 'null' }] }
+        impact_state: { type: [string, 'null'], enum: [queued, consumed, failed, unavailable, null] }
         warnings: { type: array, items: { $ref: '#/components/schemas/GraphWarning' } }
         error: { oneOf: [{ $ref: '#/components/schemas/GraphSafeError' }, { type: 'null' }] }
         actions: { type: array, items: { $ref: '#/components/schemas/GraphAction' } }
