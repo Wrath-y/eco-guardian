@@ -14,6 +14,7 @@ import (
 	"github.com/zouyi/eco-guardian/internal/domain"
 	sharedjob "github.com/zouyi/eco-guardian/internal/job"
 	"github.com/zouyi/eco-guardian/internal/simulation/contract"
+	simulationgate "github.com/zouyi/eco-guardian/internal/simulation/gate"
 )
 
 var (
@@ -387,6 +388,51 @@ func (s *Store) GetSimulationRun(ctx context.Context, id domain.ID) (SimulationR
 		metrics = append(metrics, metric)
 	}
 	return run, metrics, rows.Err()
+}
+
+// SimulationEvidence implements simulation/gate.EvidenceSource using only
+// sealed rows and each Job's captured canonical input. It never materializes
+// a current revision or scene definition while evaluating release policy.
+func (s *Store) SimulationEvidence(ctx context.Context, revisionID domain.ID) ([]simulationgate.RunEvidence, error) {
+	if !revisionID.Valid() {
+		return nil, ErrSimulationRunInvalid
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM simulation_runs WHERE project_uuid=? AND revision_id=? ORDER BY id`, s.projectID, revisionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	evidence := []simulationgate.RunEvidence{}
+	for rows.Next() {
+		var id domain.ID
+		if err = rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		run, metrics, err := s.GetSimulationRun(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		value := simulationgate.RunEvidence{ID: run.ID, RevisionID: run.RevisionID, InputHash: run.InputHash, FingerprintHash: run.FingerprintHash, ResultHash: run.ResultHash, Reproducible: true, Metrics: make([]simulationgate.MetricEvidence, 0, len(metrics))}
+		for _, metric := range metrics {
+			value.Metrics = append(value.Metrics, simulationgate.MetricEvidence{ID: metric.MetricID, Version: metric.MetricVersion, Status: metric.Status})
+		}
+		materialization, materializationErr := s.GetSimulationJobMaterialization(ctx, run.JobID)
+		if materializationErr == nil {
+			input, inputErr := contract.ParseCanonicalInput(materialization.CanonicalInput)
+			if inputErr == nil {
+				value.Input = input
+			} else {
+				value.Reproducible = false
+			}
+		} else {
+			value.Reproducible = false
+		}
+		evidence = append(evidence, value)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	return evidence, nil
 }
 
 func (s *Store) listSimulationRunImplementations(ctx context.Context, runID domain.ID) ([]contract.Descriptor, error) {
