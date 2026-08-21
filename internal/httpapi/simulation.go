@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -10,6 +11,7 @@ import (
 	sharedjob "github.com/zouyi/eco-guardian/internal/job"
 	"github.com/zouyi/eco-guardian/internal/project"
 	"github.com/zouyi/eco-guardian/internal/simulation/contract"
+	"github.com/zouyi/eco-guardian/internal/simulation/metric"
 	store "github.com/zouyi/eco-guardian/internal/storage/sqlite"
 )
 
@@ -199,19 +201,42 @@ func (h *SimulationHandler) getRun(c *gin.Context) {
 		problem(c, http.StatusServiceUnavailable, "SIMULATION_RUN_UNAVAILABLE", "Simulation run is unavailable")
 		return
 	}
-	c.JSON(http.StatusOK, simulationRunJSON(run, metrics, verifications, projection, input))
+	response, err := simulationRunJSON(run, metrics, verifications, projection, input)
+	if err != nil {
+		problem(c, http.StatusServiceUnavailable, "SIMULATION_RUN_UNAVAILABLE", "Simulation run is unavailable")
+		return
+	}
+	c.JSON(http.StatusOK, response)
 }
 
-func simulationRunJSON(run store.SimulationRun, metrics []store.SimulationMetricResult, verifications []store.SimulationVerification, projection contract.HistoricalRunProjection, input *contract.SimulationInputV1) gin.H {
+func simulationRunJSON(run store.SimulationRun, metrics []store.SimulationMetricResult, verifications []store.SimulationVerification, projection contract.HistoricalRunProjection, input *contract.SimulationInputV1) (gin.H, error) {
 	metricItems := make([]gin.H, 0, len(metrics))
 	for _, metric := range metrics {
-		metricItems = append(metricItems, gin.H{"id": metric.MetricID, "version": metric.MetricVersion, "status": metric.Status, "canonical_result": metric.CanonicalResult})
+		item, err := simulationMetricJSON(metric)
+		if err != nil {
+			return nil, err
+		}
+		metricItems = append(metricItems, item)
 	}
 	verificationItems := make([]gin.H, 0, len(verifications))
 	for _, verification := range verifications {
 		verificationItems = append(verificationItems, gin.H{"id": verification.ID, "source_run_id": verification.SourceRunID, "reproduction_run_id": verification.ReproductionRunID, "status": verification.Status, "input_hash": verification.InputHash, "fingerprint_hash": verification.FingerprintHash, "source_result_hash": verification.SourceResultHash, "reproduction_result_hash": verification.ReproductionResultHash, "created_at": verification.CreatedAt})
 	}
-	return gin.H{"id": run.ID, "job_id": run.JobID, "revision_id": run.RevisionID, "scenario_definition_id": run.ScenarioDefinitionID, "input": input, "input_hash": projection.InputHash, "fingerprint_hash": projection.FingerprintHash, "result_hash": projection.ResultHash, "canonical_result": projection.CanonicalResult, "metrics": metricItems, "verification_refs": verificationItems, "reproducible": projection.Reproducible, "reasons": projection.Reasons, "created_at": run.CreatedAt}
+	return gin.H{"id": run.ID, "job_id": run.JobID, "revision_id": run.RevisionID, "scenario_definition_id": run.ScenarioDefinitionID, "input": input, "input_hash": projection.InputHash, "fingerprint_hash": projection.FingerprintHash, "result_hash": projection.ResultHash, "canonical_result": projection.CanonicalResult, "metrics": metricItems, "verification_refs": verificationItems, "reproducible": projection.Reproducible, "reasons": projection.Reasons, "created_at": run.CreatedAt}, nil
+}
+
+func simulationMetricJSON(stored store.SimulationMetricResult) (gin.H, error) {
+	var value metric.CanonicalMetric
+	if err := json.Unmarshal([]byte(stored.CanonicalResult), &value); err != nil || value.ID != stored.MetricID || value.Version != stored.MetricVersion || string(value.Status) != stored.Status || value.SampleCount < 1 || value.Unit == "" || (value.Direction != metric.HigherIsRisk && value.Direction != metric.LowerIsRisk && value.Direction != metric.TargetRange) {
+		return nil, errors.New("invalid stored simulation metric")
+	}
+	if value.Status == metric.Available && (value.Value == "" || value.ConfidenceLow == "" || value.ConfidenceHigh == "") {
+		return nil, errors.New("invalid available simulation metric")
+	}
+	if value.Status == metric.Unavailable && (value.Unavailable == nil || !value.Unavailable.Valid()) {
+		return nil, errors.New("invalid unavailable simulation metric")
+	}
+	return gin.H{"id": value.ID, "version": value.Version, "status": value.Status, "unit": value.Unit, "direction": value.Direction, "value": nullable(value.Value), "confidence_low": nullable(value.ConfidenceLow), "confidence_high": nullable(value.ConfidenceHigh), "sample_count": value.SampleCount, "assumptions": value.Assumptions, "unavailable": value.Unavailable, "canonical_result": stored.CanonicalResult}, nil
 }
 
 func simulationJobJSON(job sharedjob.Record) gin.H {

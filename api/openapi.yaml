@@ -891,11 +891,27 @@ components:
         location: { type: string, format: uri-reference }
     SimulationMetricResult:
       type: object
-      required: [id, version, status, canonical_result]
+      required: [id, version, status, unit, direction, value, confidence_low, confidence_high, sample_count, assumptions, unavailable, canonical_result]
       properties:
         id: { type: string, minLength: 1 }
         version: { type: string, minLength: 1 }
         status: { type: string, enum: [available, unavailable] }
+        unit: { type: string, minLength: 1 }
+        direction: { type: string, enum: [higher_is_risk, lower_is_risk, target_range] }
+        value: { type: [string, 'null'], description: Canonical decimal value; null when unavailable. }
+        confidence_low: { type: [string, 'null'], description: Canonical decimal lower confidence bound; null when unavailable. }
+        confidence_high: { type: [string, 'null'], description: Canonical decimal upper confidence bound; null when unavailable. }
+        sample_count: { type: integer, minimum: 1 }
+        assumptions: { type: array, items: { type: string } }
+        unavailable:
+          oneOf:
+            - type: object
+              required: [code, missing, message]
+              properties:
+                code: { type: string }
+                missing: { type: array, items: { type: string } }
+                message: { type: string }
+            - type: 'null'
         canonical_result: { type: string, minLength: 1 }
     SimulationVerificationRef:
       type: object

@@ -979,6 +979,22 @@ export interface components {
             version: string;
             /** @enum {string} */
             status: "available" | "unavailable";
+            unit: string;
+            /** @enum {string} */
+            direction: "higher_is_risk" | "lower_is_risk" | "target_range";
+            /** @description Canonical decimal value; null when unavailable. */
+            value: string | null;
+            /** @description Canonical decimal lower confidence bound; null when unavailable. */
+            confidence_low: string | null;
+            /** @description Canonical decimal upper confidence bound; null when unavailable. */
+            confidence_high: string | null;
+            sample_count: number;
+            assumptions: string[];
+            unavailable: {
+                code: string;
+                missing: string[];
+                message: string;
+            } | null;
             canonical_result: string;
         };
         SimulationVerificationRef: {
