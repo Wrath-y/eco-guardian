@@ -57,7 +57,7 @@ func (w PhaseWorker) Checkpoint(ctx context.Context, jobID domain.ID, phase Work
 	if err != nil {
 		return GraphJobEvent{}, false, err
 	}
-	if job.Status != JobRunning {
+	if job.Status != JobRunning && !(job.Status == JobSucceeded && (phase == PhaseReady || phase == PhaseImpactHandoffRecorded)) {
 		return GraphJobEvent{}, false, ErrWorkerCheckpoint
 	}
 	events, err := w.Events.ListGraphJobEvents(ctx, jobID, 0)
