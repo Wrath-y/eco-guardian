@@ -30,7 +30,7 @@ type SimulationRun struct {
 // FailSimulationJob atomically persists the terminal Job failure and its
 // diagnostic event. It never writes a run, metric, or checkpoint fact.
 func (s *Store) FailSimulationJob(ctx context.Context, jobID domain.ID, cancelGeneration int64, code, detail string) (sharedjob.Record, bool, error) {
-	if !jobID.Valid() || cancelGeneration < 0 || (code != "BUDGET_EXCEEDED" && code != "TIMEOUT") || detail == "" || len(code)+len(detail)+2 > 1024 {
+	if !jobID.Valid() || cancelGeneration < 0 || (code != "BUDGET_EXCEEDED" && code != "TIMEOUT" && code != "RECOVERY_MISMATCH" && code != "RECOVERY_UNAVAILABLE") || detail == "" || len(code)+len(detail)+2 > 1024 {
 		return sharedjob.Record{}, false, ErrSimulationFailure
 	}
 	s.writes.Lock()

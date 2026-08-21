@@ -61,3 +61,17 @@ func TestPersistExecutionFailureUsesOnlyStableDiagnostics(t *testing.T) {
 		t.Fatalf("expected invalid failure rejection, got %v", err)
 	}
 }
+
+func TestPersistRecoveryRefusalMapsDriftAndCorruptionToStableFailures(t *testing.T) {
+	id, err := domain.NewID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &failureStoreFake{}
+	if _, _, err = PersistRecoveryRefusal(context.Background(), store, id, 0, ErrRecoveryUnavailable); err != nil || store.code != FailureRecoveryUnavailable {
+		t.Fatalf("code=%q err=%v", store.code, err)
+	}
+	if _, _, err = PersistRecoveryRefusal(context.Background(), store, id, 0, ErrRecoveryCorrupt); err != nil || store.code != FailureRecoveryMismatch {
+		t.Fatalf("code=%q err=%v", store.code, err)
+	}
+}

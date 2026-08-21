@@ -13,8 +13,10 @@ import (
 )
 
 const (
-	FailureBudgetExceeded = "BUDGET_EXCEEDED"
-	FailureTimeout        = "TIMEOUT"
+	FailureBudgetExceeded      = "BUDGET_EXCEEDED"
+	FailureTimeout             = "TIMEOUT"
+	FailureRecoveryMismatch    = "RECOVERY_MISMATCH"
+	FailureRecoveryUnavailable = "RECOVERY_UNAVAILABLE"
 )
 
 var ErrExecutionFailure = errors.New("simulation execution failed")
@@ -71,8 +73,20 @@ func PersistExecutionFailure(ctx context.Context, store FailureStore, jobID doma
 		return sharedjob.Record{}, false, ErrSimulationJobInvalid
 	}
 	var diagnostic ExecutionFailure
-	if !errors.As(failure, &diagnostic) || (diagnostic.Code != FailureBudgetExceeded && diagnostic.Code != FailureTimeout) || diagnostic.Detail == "" {
+	if !errors.As(failure, &diagnostic) || !stableFailureCode(diagnostic.Code) || diagnostic.Detail == "" {
 		return sharedjob.Record{}, false, ErrSimulationJobInvalid
 	}
 	return store.FailSimulationJob(ctx, jobID, generation, diagnostic.Code, diagnostic.Detail)
+}
+
+func PersistRecoveryRefusal(ctx context.Context, store FailureStore, jobID domain.ID, generation int64, cause error) (sharedjob.Record, bool, error) {
+	code, detail := FailureRecoveryMismatch, "captured source, scene, or checkpoint does not match"
+	if errors.Is(cause, ErrRecoveryUnavailable) {
+		code, detail = FailureRecoveryUnavailable, "captured implementation fingerprint is unavailable or drifted"
+	}
+	return PersistExecutionFailure(ctx, store, jobID, generation, ExecutionFailure{Code: code, Detail: detail})
+}
+
+func stableFailureCode(code string) bool {
+	return code == FailureBudgetExceeded || code == FailureTimeout || code == FailureRecoveryMismatch || code == FailureRecoveryUnavailable
 }
