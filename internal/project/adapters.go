@@ -49,6 +49,7 @@ func (l *fileLock) Release() error {
 type SQLiteFactory struct {
 	Registry                *domain.Registry
 	GraphVersionContributor versioningrevision.VersionContributor
+	GraphRecovery           graphsync.RecoveryDispatcher
 	Recover                 func(context.Context, *store.Store) error
 	AfterRevision           func(context.Context, *store.Store, domain.RevisionSummary)
 }
@@ -76,6 +77,12 @@ func (f SQLiteFactory) Open(ctx context.Context, dir string) (ProjectHandle, err
 	if err = f.configureGraphVersion(s); err != nil {
 		_ = s.Close()
 		return nil, err
+	}
+	if f.GraphRecovery != nil {
+		if _, err = (graphsync.RecoveryService{States: s, Jobs: s, Events: s, Dispatcher: f.GraphRecovery}).Recover(ctx); err != nil {
+			_ = s.Close()
+			return nil, err
+		}
 	}
 	if f.Recover != nil {
 		if err := f.Recover(ctx, s); err != nil {

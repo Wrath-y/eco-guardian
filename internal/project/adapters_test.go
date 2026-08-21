@@ -38,6 +38,50 @@ func TestSQLiteFactoryRunsConfiguredRecoveryOnProjectOpen(t *testing.T) {
 	}
 }
 
+type projectGraphRecoveryFake struct{ resumed int }
+
+func (f *projectGraphRecoveryFake) ResumeGraphJob(context.Context, graphsync.RecoveryWork) error {
+	f.resumed++
+	return nil
+}
+func (*projectGraphRecoveryFake) ReconcileInterruptedGraphJob(context.Context, graphsync.RecoveryWork) error {
+	return nil
+}
+
+func TestSQLiteFactoryRunsGraphRecoveryForQueuedJobOnProjectOpen(t *testing.T) {
+	registry, err := domain.NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := t.TempDir()
+	created, _, err := store.Create(context.Background(), directory, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, revision, err := created.Create(context.Background(), domain.KindTag, domain.EntityDraft{Key: "recover", Name: "Recover", Payload: map[string]json.RawMessage{"category": json.RawMessage(`"element"`), "parent_tag_ids": json.RawMessage(`[]`)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, _, err := created.CreateOrGetGraphJob(context.Background(), graphsync.GraphJobRequest{ProjectID: created.ProjectID(), RevisionID: revision.ID, InputHash: revision.ConfigHash, IdempotencyKey: "graph-recover", RequestHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = created.CreateGraphSyncState(context.Background(), graphsync.SyncState{RevisionID: string(revision.ID), Pipeline: graphsync.StateQueued, LatestJobID: string(job.ID), Warnings: []string{}}); err != nil {
+		t.Fatal(err)
+	}
+	if err = created.Close(); err != nil {
+		t.Fatal(err)
+	}
+	dispatcher := &projectGraphRecoveryFake{}
+	handle, err := (SQLiteFactory{Registry: registry, GraphRecovery: dispatcher}).Open(context.Background(), directory)
+	if err != nil || dispatcher.resumed != 1 {
+		t.Fatalf("handle=%v resumed=%d err=%v", handle, dispatcher.resumed, err)
+	}
+	if err = handle.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSQLiteFactoryOptionallyRegistersGraphVersionContributor(t *testing.T) {
 	registry, err := domain.NewRegistry()
 	if err != nil {
