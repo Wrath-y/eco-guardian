@@ -1,3 +1,5 @@
+import { useQuery } from '@tanstack/vue-query'
+import { computed } from 'vue'
 import type { components } from './generated'
 
 export type GraphStatus = components['schemas']['GraphStatus']
@@ -8,6 +10,8 @@ export class GraphApiError extends Error {
   constructor(message: string, readonly code?: string, readonly retryable?: boolean) { super(message) }
 }
 
+export const graphKeys = { status: (projectID: string, revisionID: string) => ['graph', projectID, revisionID, 'status'] as const }
+
 async function graphResponse<T>(response: Response): Promise<T> {
   if (response.ok) return response.json() as Promise<T>
   const problem = await response.json().catch(() => null) as { title?: string; code?: string; retryable?: boolean } | null
@@ -16,6 +20,9 @@ async function graphResponse<T>(response: Response): Promise<T> {
 
 export async function getGraphStatus(revisionID: string): Promise<GraphStatus> {
   return graphResponse<GraphStatus>(await fetch(`/api/v1/revisions/${encodeURIComponent(revisionID)}/graph-status`))
+}
+export function useGraphStatus(projectID: () => string, revisionID: () => string) {
+  return useQuery({ queryKey: computed(() => graphKeys.status(projectID(), revisionID())), queryFn: () => getGraphStatus(revisionID()), enabled: computed(() => Boolean(projectID() && revisionID())), retry: false })
 }
 
 export async function ensureGraphSync(revisionID: string): Promise<GraphSyncJobAccepted> {

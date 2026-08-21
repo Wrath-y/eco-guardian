@@ -6,6 +6,8 @@ import { usePolicyHistory, useReleaseHistory, useRevisionDetail, useRevisionDiff
 import ReleaseGateChecklist from '@/components/ReleaseGateChecklist.vue'
 import ReleaseConfirmationForm from '@/components/ReleaseConfirmationForm.vue'
 import ReleaseJobProgress from '@/components/ReleaseJobProgress.vue'
+import GraphStatusPanel from '@/components/GraphStatusPanel.vue'
+import GraphRuntimeBanner from '@/components/GraphRuntimeBanner.vue'
 
 const route = useRoute(); const router = useRouter(); const project = useProjectStore()
 const projectID = computed(() => project.current?.id ?? '')
@@ -37,6 +39,8 @@ watch(() => [detail.isError.value, diff.isError.value, policies.isError.value, c
     <p v-else-if="detail.isError.value" ref="errorSummary" tabindex="-1" role="alert">{{ detail.error.value?.message }}</p>
     <template v-else-if="detail.data.value">
       <p>候选版本：{{ detail.data.value.display_revision }} · {{ detail.data.value.config_hash }}</p>
+      <GraphRuntimeBanner :capability="capabilities.data.value?.graph" />
+      <GraphStatusPanel :project-i-d="projectID" :revision-i-d="targetID" />
       <form @submit.prevent="compare"><label>基准版本 ID <input v-model="baseDraft" aria-label="基准版本 ID"></label><button type="submit">比较</button></form>
       <p v-if="!baseID">NO_BASELINE：尚未选择不可变基准。首次发布不是“无变化”或通过比较，仍需完成全部门禁并明确建立基线。</p>
       <p v-else-if="diff.isPending.value" role="status">正在计算差异…</p>

@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useProjectStore } from '@/stores/project'
 import { createCheckpoint, restoreRelease, useReleaseHistory, useRevisionDetail, useRevisionHistory } from '@/api/versions'
+import GraphStatusPanel from '@/components/GraphStatusPanel.vue'
 
 const project = useProjectStore(); const route = useRoute(); const router = useRouter()
 const projectID = computed(() => project.current?.id ?? '')
@@ -45,6 +46,7 @@ function label(status: string[], id: string) { return [status.includes('working'
         <RouterLink :to="{ path: `/versions/${revision.id}/diff`, query: { base: candidateID || undefined } }">查看差异</RouterLink>
         <span> · {{ revision.metadata.name || revision.config_hash.slice(0, 12) }} · {{ label(revision.status, revision.id) }}</span>
         <span v-if="revision.metadata.source_release_id"> · 从正式版本回滚</span><span v-else-if="revision.metadata.parent_revision_id"> · 检查点</span>
+        <GraphStatusPanel :project-i-d="projectID" :revision-i-d="revision.id" compact />
       </li>
     </ul>
     <button v-if="history.data.value?.next_cursor" @click="revisionCursor = history.data.value!.next_cursor!">加载更多版本</button>
@@ -54,6 +56,7 @@ function label(status: string[], id: string) { return [status.includes('working'
       <p v-if="selected.isPending.value" role="status">正在加载时间线…</p>
       <p v-else-if="selected.isError.value" role="alert">{{ selected.error.value?.message }}</p>
       <template v-else-if="selected.data.value"><ol><li v-for="event in selected.data.value.timeline" :key="`${event.id}:${event.type}`">{{ event.occurred_at }} · {{ event.type }} <span v-if="event.status">· {{ event.status }}</span></li></ol><form aria-label="创建检查点" @submit.prevent="checkpoint"><label>检查点名称 <input v-model="checkpointName" aria-label="检查点名称"></label><button type="submit" :disabled="checkpointBusy">{{ checkpointBusy ? '正在创建检查点…' : '创建同内容检查点' }}</button></form><p v-if="checkpointError" role="alert">{{ checkpointError }}</p></template>
+      <GraphStatusPanel :project-i-d="projectID" :revision-i-d="selectedID" />
     </section>
 
     <section aria-labelledby="release-heading">
