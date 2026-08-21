@@ -604,7 +604,7 @@ func seedStarterReleasePolicy(ctx context.Context, tx *sql.Tx) error {
 	}
 	definition := versioningpolicy.Definition{Samples: 1000, ThresholdID: "starter-threshold-v1", ThresholdOn: true,
 		Capabilities: []versioningpolicy.CapabilityRequirement{{CapabilityID: "graph", GateID: "projection", ContractVersion: "1"}, {CapabilityID: "simulation", GateID: "scenario", ContractVersion: "1"}, {CapabilityID: "risk", GateID: "threshold", ContractVersion: "1"}, {CapabilityID: "backup", GateID: "online-backup", ContractVersion: "1"}},
-		Scenes:       []versioningpolicy.Scene{{ID: "single-target-30s", Required: true, Metrics: []versioningpolicy.Metric{{ID: "damage", Required: true}}}, {ID: "extreme-stack-60s", Required: true, Metrics: []versioningpolicy.Metric{{ID: "damage", Required: true}}}, {ID: "single-target-180s", Required: false, Metrics: []versioningpolicy.Metric{{ID: "damage", Required: false}}}, {ID: "three-target-60s", Required: false, Metrics: []versioningpolicy.Metric{{ID: "damage", Required: false}}}}}
+		Scenes:       []versioningpolicy.Scene{{ID: "single-target-30s", Version: "v1", Seed: uint64ptr(11), Required: true, Metrics: []versioningpolicy.Metric{{ID: "metric-dps", Required: true}}}, {ID: "extreme-stacking-60s", Version: "v1", Seed: uint64ptr(14), Required: true, Metrics: []versioningpolicy.Metric{{ID: "metric-dps", Required: true}}}, {ID: "single-target-180s", Version: "v1", Seed: uint64ptr(12), Required: false, Metrics: []versioningpolicy.Metric{{ID: "metric-dps", Required: false}}}, {ID: "three-target-60s", Version: "v1", Seed: uint64ptr(13), Required: false, Metrics: []versioningpolicy.Metric{{ID: "metric-dps", Required: false}}}}}
 	canonical, err := definition.CanonicalJSON()
 	if err != nil {
 		return err
@@ -616,6 +616,8 @@ func seedStarterReleasePolicy(ctx context.Context, tx *sql.Tx) error {
 	_, err = tx.ExecContext(ctx, `INSERT INTO release_policies(id,display_version,canonical_body,canonical_hash,created_at) VALUES(?,?,?,?,?)`, id, 1, string(canonical), versioning.SHA256(canonical), time.Now().UTC().Format(time.RFC3339Nano))
 	return err
 }
+
+func uint64ptr(value uint64) *uint64 { return &value }
 
 // backfillRevisionMetadata only reads historical immutable facts. It takes the
 // #6 version manifest from a revision-source validation run when present and

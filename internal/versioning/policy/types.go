@@ -19,6 +19,8 @@ type Metric struct {
 }
 type Scene struct {
 	ID       string   `json:"id"`
+	Version  string   `json:"scene_version,omitempty"`
+	Seed     *uint64  `json:"seed,omitempty"`
 	Required bool     `json:"required"`
 	Metrics  []Metric `json:"metrics"`
 }
@@ -57,7 +59,7 @@ func (d Definition) Valid() bool {
 	seenScenes, seenCapabilities := map[string]struct{}{}, map[string]struct{}{}
 	hasRequiredMetric := false
 	for _, scene := range d.Scenes {
-		if strings.TrimSpace(scene.ID) == "" {
+		if strings.TrimSpace(scene.ID) == "" || (scene.Version != "" && strings.TrimSpace(scene.Version) == "") {
 			return false
 		}
 		if _, ok := seenScenes[scene.ID]; ok {

@@ -714,6 +714,8 @@ export interface components {
         };
         ReleaseScene: {
             id: string;
+            scene_version?: string | null;
+            seed?: number | null;
             required: boolean;
             metrics: components["schemas"]["ReleaseMetric"][];
         };
