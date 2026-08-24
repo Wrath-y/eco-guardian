@@ -110,6 +110,22 @@ func TestVersioningDTOsAreGeneratedRatherThanHandwritten(t *testing.T) {
 	}
 }
 
+func TestSimulationClientUsesGeneratedDTOsRatherThanHandwrittenDuplicates(t *testing.T) {
+	path := "../../web/src/api/simulation.ts"
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(contents)
+	if !strings.Contains(text, "import type { components } from './generated'") {
+		t.Fatal("simulation client must use OpenAPI-generated component schemas")
+	}
+	duplicate := regexp.MustCompile(`(?m)^(?:export\s+)?(?:interface\s+Simulation\w*|type\s+Simulation\w*\s*=\s*\{)`)
+	if duplicate.MatchString(text) {
+		t.Fatal("simulation client declares a handwritten DTO; use generated component schemas")
+	}
+}
+
 func TestVersioningProblemFixturesHaveStableStatusMappings(t *testing.T) {
 	raw, err := os.ReadFile("../../api/fixtures/problems.json")
 	if err != nil {
