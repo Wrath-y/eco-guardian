@@ -15,6 +15,29 @@ func (t SymbolTable) Resolve(scope, symbol string) (Type, bool) {
 	return value, ok
 }
 
+// RuntimeResolver is the typed evaluator port for a validated AST.  It keeps
+// type checking and value lookup coupled to the same immutable scope names so
+// callers cannot substitute untyped strings or reparse formula source at run
+// time.
+type RuntimeResolver interface {
+	SymbolResolver
+	ResolveValue(scope, symbol string) (Result, bool)
+}
+
+// RuntimeTable is a small read-only evaluator context keyed by
+// "scope:symbol". Values must carry their schema-validated type and unit.
+type RuntimeTable map[string]Result
+
+func (t RuntimeTable) Resolve(scope, symbol string) (Type, bool) {
+	value, ok := t[scope+":"+symbol]
+	return value.Type, ok
+}
+
+func (t RuntimeTable) ResolveValue(scope, symbol string) (Result, bool) {
+	value, ok := t[scope+":"+symbol]
+	return value, ok
+}
+
 type Diagnostic struct {
 	Code    string
 	Span    Span
@@ -151,15 +174,25 @@ type Result struct {
 }
 
 func Evaluate(node Node, registry *Registry) (Result, []Diagnostic) {
-	typeInfo, issues := Infer(node, registry, SymbolTable{})
+	return EvaluateWithSymbols(node, registry, RuntimeTable{})
+}
+
+// EvaluateWithSymbols evaluates a typed, already-parsed AST against a
+// read-only runtime context. It deliberately accepts no formula source text;
+// parser admission remains the responsibility of validation.
+func EvaluateWithSymbols(node Node, registry *Registry, symbols RuntimeResolver) (Result, []Diagnostic) {
+	if symbols == nil {
+		symbols = RuntimeTable{}
+	}
+	typeInfo, issues := Infer(node, registry, symbols)
 	if len(issues) > 0 {
 		return Result{}, issues
 	}
-	value, issues := evaluate(node, registry)
+	value, issues := evaluate(node, registry, symbols)
 	value.Type = typeInfo
 	return value, issues
 }
-func evaluate(node Node, registry *Registry) (Result, []Diagnostic) {
+func evaluate(node Node, registry *Registry, symbols RuntimeResolver) (Result, []Diagnostic) {
 	switch node.Kind {
 	case NodeDecimal, NodeQuantity:
 		d, err := ParseDecimal(node.Text)
@@ -170,8 +203,14 @@ func evaluate(node Node, registry *Registry) (Result, []Diagnostic) {
 	case NodeBoolean:
 		b := node.Text == "true"
 		return Result{Boolean: &b}, nil
+	case NodeSelector:
+		value, ok := symbols.ResolveValue(node.Scope, node.Symbol)
+		if !ok || (value.Decimal == nil && value.Boolean == nil) || (value.Decimal != nil && value.Boolean != nil) {
+			return Result{}, []Diagnostic{{"FORMULA_UNKNOWN_VARIABLE", node.Span, "unknown variable"}}
+		}
+		return value, nil
 	case NodeUnary:
-		value, issues := evaluate(node.Args[0], registry)
+		value, issues := evaluate(node.Args[0], registry, symbols)
 		if len(issues) > 0 {
 			return Result{}, issues
 		}
@@ -187,7 +226,7 @@ func evaluate(node Node, registry *Registry) (Result, []Diagnostic) {
 		return Result{Decimal: &result}, nil
 	case NodeBinary:
 		if node.Operator == "&&" || node.Operator == "||" {
-			left, issues := evaluate(node.Args[0], registry)
+			left, issues := evaluate(node.Args[0], registry, symbols)
 			if len(issues) > 0 {
 				return Result{}, issues
 			}
@@ -199,13 +238,13 @@ func evaluate(node Node, registry *Registry) (Result, []Diagnostic) {
 				b := true
 				return Result{Boolean: &b}, nil
 			}
-			return evaluate(node.Args[1], registry)
+			return evaluate(node.Args[1], registry, symbols)
 		}
-		left, issues := evaluate(node.Args[0], registry)
+		left, issues := evaluate(node.Args[0], registry, symbols)
 		if len(issues) > 0 {
 			return Result{}, issues
 		}
-		right, issues := evaluate(node.Args[1], registry)
+		right, issues := evaluate(node.Args[1], registry, symbols)
 		if len(issues) > 0 {
 			return Result{}, issues
 		}
@@ -252,18 +291,18 @@ func evaluate(node Node, registry *Registry) (Result, []Diagnostic) {
 		return Result{Decimal: &value}, nil
 	case NodeCall:
 		if node.Text == "if" {
-			condition, issues := evaluate(node.Args[0], registry)
+			condition, issues := evaluate(node.Args[0], registry, symbols)
 			if len(issues) > 0 {
 				return Result{}, issues
 			}
 			if *condition.Boolean {
-				return evaluate(node.Args[1], registry)
+				return evaluate(node.Args[1], registry, symbols)
 			}
-			return evaluate(node.Args[2], registry)
+			return evaluate(node.Args[2], registry, symbols)
 		}
 		values := []Decimal{}
 		for _, arg := range node.Args {
-			value, issues := evaluate(arg, registry)
+			value, issues := evaluate(arg, registry, symbols)
 			if len(issues) > 0 {
 				return Result{}, issues
 			}
