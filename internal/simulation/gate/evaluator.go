@@ -66,7 +66,7 @@ type Provider struct{ ImplementationVersion string }
 func (p Provider) Descriptor() versioninggate.Descriptor { return Descriptor(p.ImplementationVersion) }
 
 func Descriptor(implementationVersion string) versioninggate.Descriptor {
-	return versioninggate.Descriptor{CapabilityID: SimulationCapabilityID, GateID: SimulationGateID, ContractVersion: SimulationGateContract, ImplementationVersion: implementationVersion, RequiredInputs: []string{"candidate_revision", "config_hash", "scene_id", "scene_version", "sample_count", "seed", "input_hash", "fingerprint_hash", "result_hash", "reproducible"}, SupportedStates: []versioninggate.ResultState{versioninggate.Pass, versioninggate.Warning, versioninggate.Block, versioninggate.Unavailable, versioninggate.Stale}, OverridableNumericBlock: false}
+	return versioninggate.Descriptor{CapabilityID: SimulationCapabilityID, GateID: SimulationGateID, ContractVersion: SimulationGateContract, ImplementationVersion: implementationVersion, RequiredInputs: []string{"candidate_revision", "config_hash", "scene_id", "scene_version", "sample_count", "seed", "rule_materialization_hash", "input_hash", "fingerprint_hash", "result_hash", "reproducible"}, SupportedStates: []versioninggate.ResultState{versioninggate.Pass, versioninggate.Warning, versioninggate.Block, versioninggate.Unavailable, versioninggate.Stale}, OverridableNumericBlock: false}
 }
 
 // EvaluatePolicy emits one exact Gate result for every policy scene/Metric.
@@ -107,7 +107,7 @@ func findExactEvidence(candidate versioningrevision.CandidateContext, policy ver
 		if !run.Reproducible {
 			return versioninggate.Unavailable, nil
 		}
-		if run.Input.SceneID != scene.ID || (scene.Version != "" && run.Input.SceneVersion != scene.Version) || run.Input.SampleCount != policy.Samples || (scene.Seed != nil && run.Input.Seed != *scene.Seed) || len(run.InputHash) != 64 || len(run.FingerprintHash) != 64 || len(run.ResultHash) != 64 {
+		if !exactRunIdentity(run) || run.Input.SceneID != scene.ID || (scene.Version != "" && run.Input.SceneVersion != scene.Version) || run.Input.SampleCount != policy.Samples || (scene.Seed != nil && run.Input.Seed != *scene.Seed) || !containsMetric(run.Input.Metrics, metric.ID, "v1") {
 			continue
 		}
 		for _, actual := range run.Metrics {
@@ -123,6 +123,35 @@ func findExactEvidence(candidate versioningrevision.CandidateContext, policy ver
 		return versioninggate.Stale, nil
 	}
 	return versioninggate.Unavailable, nil
+}
+
+func exactRunIdentity(run RunEvidence) bool {
+	if !simulationHash(run.Input.RuleMaterializationHash) || !simulationHash(run.InputHash) || !simulationHash(run.FingerprintHash) || !simulationHash(run.ResultHash) {
+		return false
+	}
+	inputHash, err := run.Input.Hash()
+	return err == nil && inputHash == run.InputHash
+}
+
+func containsMetric(metrics []contract.MetricIdentity, id, version string) bool {
+	for _, metric := range metrics {
+		if metric.ID == id && metric.Version == version {
+			return true
+		}
+	}
+	return false
+}
+
+func simulationHash(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, char := range value {
+		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
 
 func resultHash(state versioninggate.ResultState, evidence []versioninggate.Evidence) string {

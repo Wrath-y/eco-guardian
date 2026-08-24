@@ -20,6 +20,7 @@ func (f evidenceSourceFake) SimulationEvidence(context.Context, domain.ID) ([]Ru
 }
 
 func TestEvaluatePolicyRequiresExactImmutableSimulationEvidence(t *testing.T) {
+	projectID, _ := domain.NewID()
 	revisionID, _ := domain.NewID()
 	policyID, _ := domain.NewID()
 	runID, _ := domain.NewID()
@@ -28,15 +29,22 @@ func TestEvaluatePolicyRequiresExactImmutableSimulationEvidence(t *testing.T) {
 	candidate := versioningrevision.CandidateContext{RevisionID: revisionID, ConfigHash: hash, ManifestHash: hash, PolicyID: policyID}
 	definition := versioningpolicy.Definition{Samples: 1000, ThresholdID: "threshold", ThresholdOn: true, Capabilities: []versioningpolicy.CapabilityRequirement{{CapabilityID: SimulationCapabilityID, GateID: SimulationGateID, ContractVersion: SimulationGateContract}}, Scenes: []versioningpolicy.Scene{{ID: "single-target-30s", Version: "v1", Seed: &seed, Required: true, Metrics: []versioningpolicy.Metric{{ID: "metric-dps", Required: true}}}}}
 	policy := versioningpolicy.ReleasePolicy{Definition: definition, ID: policyID, DisplayVersion: 1, CanonicalHash: hash, CreatedAt: time.Now().UTC()}
-	run := RunEvidence{ID: runID, RevisionID: revisionID, Input: contract.SimulationInputV1{SchemaVersion: "v1", RevisionID: contract.ID(revisionID), ConfigHash: hash, ManifestHash: hash, SceneID: "single-target-30s", SceneVersion: "v1", SampleCount: 1000, Seed: seed}, InputHash: hash, FingerprintHash: hash, ResultHash: hash, Reproducible: true, Metrics: []MetricEvidence{{ID: "metric-dps", Version: "v1", Status: "available"}}}
+	run := RunEvidence{ID: runID, RevisionID: revisionID, Input: contract.SimulationInputV1{SchemaVersion: "v1", ProjectID: contract.ID(projectID), RevisionID: contract.ID(revisionID), ConfigHash: hash, ManifestHash: hash, RuleMaterializationHash: hash, SceneID: "single-target-30s", SceneVersion: "v1", SampleCount: 1000, Seed: seed, Metrics: []contract.MetricIdentity{{ID: "metric-dps", Version: "v1"}}}, FingerprintHash: hash, ResultHash: hash, Reproducible: true, Metrics: []MetricEvidence{{ID: "metric-dps", Version: "v1", Status: "available"}}}
+	inputHash, err := run.Input.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	run.InputHash = inputHash
 	results := EvaluatePolicy(candidate, policy, "implementation-v1", map[string]string{"numeric-policy": "numeric-v1"}, []RunEvidence{run})
 	if len(results) != 1 || results[0].State != versioninggate.Pass || !results[0].Valid() || len(results[0].Evidence) != 1 || results[0].Evidence[0].ID != string(runID) {
 		t.Fatalf("results=%#v", results)
 	}
 	for _, mutate := range []func(*RunEvidence){
 		func(value *RunEvidence) { value.Reproducible = false },
+		func(value *RunEvidence) { value.InputHash = hash },
 		func(value *RunEvidence) { value.Input.Seed++ },
 		func(value *RunEvidence) { value.Metrics[0].Status = "unavailable" },
+		func(value *RunEvidence) { value.Input.Metrics = nil },
 		func(value *RunEvidence) { value.Input.SceneVersion = "v2" },
 	} {
 		copy := run
