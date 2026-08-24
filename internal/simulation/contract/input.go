@@ -25,12 +25,13 @@ type MetricIdentity struct {
 }
 
 type InputRequest struct {
-	Revision    Revision
-	Scene       scenario.Template
-	SampleCount int
-	Seed        *uint64
-	Budget      *BudgetOverride
-	Metrics     []MetricIdentity
+	Revision                Revision
+	RuleMaterializationHash string
+	Scene                   scenario.Template
+	SampleCount             int
+	Seed                    *uint64
+	Budget                  *BudgetOverride
+	Metrics                 []MetricIdentity
 }
 
 // BudgetOverride can only tighten the versioned scenario limits. Nil leaves
@@ -45,21 +46,22 @@ type BudgetOverride struct {
 // UI fields, Job IDs, request time, workers, and mutable source pointers are
 // intentionally absent.
 type SimulationInputV1 struct {
-	SchemaVersion string                 `json:"schema_version"`
-	ProjectID     ID                     `json:"project_id"`
-	RevisionID    ID                     `json:"revision_id"`
-	ConfigHash    string                 `json:"config_hash"`
-	ManifestHash  string                 `json:"version_manifest_hash"`
-	SceneID       string                 `json:"scene_id"`
-	SceneVersion  string                 `json:"scene_version"`
-	SceneBodyHash string                 `json:"scene_body_hash"`
-	Participants  []scenario.Participant `json:"participants"`
-	Actions       []scenario.Action      `json:"actions"`
-	DurationMS    int64                  `json:"duration_ms"`
-	Budgets       scenario.Budgets       `json:"budgets"`
-	SampleCount   int                    `json:"sample_count"`
-	Seed          uint64                 `json:"seed"`
-	Metrics       []MetricIdentity       `json:"metrics"`
+	SchemaVersion           string                 `json:"schema_version"`
+	ProjectID               ID                     `json:"project_id"`
+	RevisionID              ID                     `json:"revision_id"`
+	ConfigHash              string                 `json:"config_hash"`
+	ManifestHash            string                 `json:"version_manifest_hash"`
+	RuleMaterializationHash string                 `json:"rule_materialization_hash,omitempty"`
+	SceneID                 string                 `json:"scene_id"`
+	SceneVersion            string                 `json:"scene_version"`
+	SceneBodyHash           string                 `json:"scene_body_hash"`
+	Participants            []scenario.Participant `json:"participants"`
+	Actions                 []scenario.Action      `json:"actions"`
+	DurationMS              int64                  `json:"duration_ms"`
+	Budgets                 scenario.Budgets       `json:"budgets"`
+	SampleCount             int                    `json:"sample_count"`
+	Seed                    uint64                 `json:"seed"`
+	Metrics                 []MetricIdentity       `json:"metrics"`
 }
 
 func NormalizeInput(request InputRequest) (SimulationInputV1, error) {
@@ -97,7 +99,19 @@ func NormalizeInput(request InputRequest) (SimulationInputV1, error) {
 	if err != nil {
 		return SimulationInputV1{}, err
 	}
-	return SimulationInputV1{SchemaVersion: SimulationInputSchemaV1, ProjectID: request.Revision.ProjectID, RevisionID: request.Revision.ID, ConfigHash: request.Revision.ConfigHash, ManifestHash: request.Revision.ManifestHash, SceneID: definition.ID, SceneVersion: definition.Version, SceneBodyHash: request.Scene.BodyHash, Participants: append([]scenario.Participant(nil), definition.Participants...), Actions: append([]scenario.Action(nil), definition.Actions...), DurationMS: definition.DurationMS, Budgets: budgets, SampleCount: sampleCount, Seed: seed, Metrics: metrics}, nil
+	if request.RuleMaterializationHash != "" && (len(request.RuleMaterializationHash) != 64 || !isLowerHex(request.RuleMaterializationHash)) {
+		return SimulationInputV1{}, fmt.Errorf("%w: rule materialization hash", ErrInputInvalid)
+	}
+	return SimulationInputV1{SchemaVersion: SimulationInputSchemaV1, ProjectID: request.Revision.ProjectID, RevisionID: request.Revision.ID, ConfigHash: request.Revision.ConfigHash, ManifestHash: request.Revision.ManifestHash, RuleMaterializationHash: request.RuleMaterializationHash, SceneID: definition.ID, SceneVersion: definition.Version, SceneBodyHash: request.Scene.BodyHash, Participants: append([]scenario.Participant(nil), definition.Participants...), Actions: append([]scenario.Action(nil), definition.Actions...), DurationMS: definition.DurationMS, Budgets: budgets, SampleCount: sampleCount, Seed: seed, Metrics: metrics}, nil
+}
+
+func isLowerHex(value string) bool {
+	for _, r := range value {
+		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeBudgets(base scenario.Budgets, override *BudgetOverride) (scenario.Budgets, error) {

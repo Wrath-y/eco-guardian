@@ -39,7 +39,7 @@ func SimulationAdmissionServiceFromProjectManager(manager *project.Manager) Simu
 		if err != nil {
 			return nil
 		}
-		return app.SimulationAdmissionApplication{Revisions: s, Releases: s, Gate: simulationgate.FullValidationAdapter{Revisions: s, Gate: validation.NewValidationGate(s)}, Scenarios: s, Fingerprints: app.SimulationFingerprintResolver{Revisions: s, Registry: registry}, Verifications: s, Jobs: app.SimulationApplication{Jobs: s, Materializations: s}}
+		return app.SimulationAdmissionApplication{Revisions: s, Releases: s, Gate: simulationgate.FullValidationAdapter{Revisions: s, Gate: validation.NewValidationGate(s)}, Scenarios: s, Rules: app.RuleMaterializationApplication{Sources: s}, Fingerprints: app.SimulationFingerprintResolver{Revisions: s, Registry: registry}, Verifications: s, Jobs: app.SimulationApplication{Jobs: s, Materializations: s}}
 	}
 }
 

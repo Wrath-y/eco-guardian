@@ -12,7 +12,7 @@ import (
 )
 
 func TestFormulaAndValidationHaveNoAdapterDependencies(t *testing.T) {
-	for _, dir := range []string{"../formula", "../validation"} {
+	for _, dir := range []string{"../formula", "../validation", "../rules/materialization"} {
 		files, err := filepath.Glob(filepath.Join(dir, "*.go"))
 		if err != nil {
 			t.Fatal(err)
@@ -36,6 +36,12 @@ func TestFormulaAndValidationHaveNoAdapterDependencies(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestRuleMaterializationDoesNotDependOnSimulationOrAdapters(t *testing.T) {
+	assertImports(t, "../rules/materialization", func(importPath string) bool {
+		return strings.Contains(importPath, "/storage/") || strings.Contains(importPath, "/httpapi") || strings.Contains(importPath, "/simulation/") || strings.Contains(importPath, "/graph") || strings.Contains(importPath, "/ai")
+	}, "typed rule materialization must remain a transport-neutral immutable boundary")
 }
 
 func TestRuntimeUsesOnlyPortsForModulesAndHTTP(t *testing.T) {

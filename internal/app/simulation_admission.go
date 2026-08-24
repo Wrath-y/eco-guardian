@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/zouyi/eco-guardian/internal/domain"
+	"github.com/zouyi/eco-guardian/internal/rules/materialization"
 	"github.com/zouyi/eco-guardian/internal/simulation/contract"
 	"github.com/zouyi/eco-guardian/internal/simulation/orchestration"
 	"github.com/zouyi/eco-guardian/internal/simulation/scenario"
@@ -48,6 +49,9 @@ type SimulationAdmissionResult struct {
 type simulationFingerprintResolver interface {
 	ResolveSimulationFingerprint(context.Context, contract.SimulationInputV1) (string, error)
 }
+type simulationRuleMaterializer interface {
+	MaterializeRules(context.Context, domain.ID) (materialization.RuleSetV1, error)
+}
 
 // SimulationAdmissionApplication owns only the sequencing of existing
 // immutable ports. It does not read working state or create a second Job model.
@@ -56,13 +60,14 @@ type SimulationAdmissionApplication struct {
 	Releases      contract.ReleaseSource
 	Gate          contract.ValidationGate
 	Scenarios     contract.ScenarioSource
+	Rules         simulationRuleMaterializer
 	Fingerprints  simulationFingerprintResolver
 	Verifications contract.VerificationSourceReader
 	Jobs          SimulationService
 }
 
 func (s SimulationAdmissionApplication) AdmitSimulation(ctx context.Context, request SimulationAdmission) (SimulationAdmissionResult, error) {
-	if !request.ProjectID.Valid() || request.IdempotencyKey == "" || s.Revisions == nil || s.Gate == nil || s.Scenarios == nil || s.Fingerprints == nil || s.Jobs == nil || (request.VerifyRunID.Valid() && s.Verifications == nil) {
+	if !request.ProjectID.Valid() || request.IdempotencyKey == "" || s.Revisions == nil || s.Gate == nil || s.Scenarios == nil || s.Rules == nil || s.Fingerprints == nil || s.Jobs == nil || (request.VerifyRunID.Valid() && s.Verifications == nil) {
 		return SimulationAdmissionResult{}, ErrSimulationAdmissionUnavailable
 	}
 	if !request.RevisionID.Valid() == !request.ReleaseID.Valid() {
@@ -88,6 +93,10 @@ func (s SimulationAdmissionApplication) AdmitSimulation(ctx context.Context, req
 	if !validSimulationBudget(request.Budget, scene.Template.Definition.Budgets) {
 		return SimulationAdmissionResult{}, ErrSimulationBudgetInvalid
 	}
+	rules, err := s.Rules.MaterializeRules(ctx, domain.ID(revision.ID))
+	if err != nil || !rules.Valid() || rules.ProjectID != request.ProjectID || rules.RevisionID != domain.ID(revision.ID) || rules.ConfigHash != string(revision.ConfigHash) {
+		return SimulationAdmissionResult{}, ErrSimulationImplementationUnavailable
+	}
 	template := scene.Template
 	if len(request.Parameters) > 0 {
 		template, err = scenario.Clone(scene.Template, scene.Template.Definition.ID, scene.Template.Definition.Version, request.Parameters, nil)
@@ -95,7 +104,7 @@ func (s SimulationAdmissionApplication) AdmitSimulation(ctx context.Context, req
 			return SimulationAdmissionResult{}, ErrSimulationParameterInvalid
 		}
 	}
-	input, err := contract.NormalizeInput(contract.InputRequest{Revision: revision, Scene: template, SampleCount: request.SampleCount, Seed: request.Seed, Budget: request.Budget, Metrics: request.Metrics})
+	input, err := contract.NormalizeInput(contract.InputRequest{Revision: revision, RuleMaterializationHash: rules.MaterializationHash, Scene: template, SampleCount: request.SampleCount, Seed: request.Seed, Budget: request.Budget, Metrics: request.Metrics})
 	if err != nil {
 		return SimulationAdmissionResult{}, err
 	}
