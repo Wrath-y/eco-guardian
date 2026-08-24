@@ -109,6 +109,26 @@ func TestTypedRuleAdapterUsesDecimalModifiersAndTypedStackInputs(t *testing.T) {
 	}
 }
 
+func TestTypedRuleModifierPreservesUnitsAndUsesScalarRatioForMultiply(t *testing.T) {
+	registry, err := formula.V1Registry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	damage, _ := registry.Unit("damage_point")
+	three := engineDecimal(t, "3")
+	two := engineDecimal(t, "2")
+	current := formula.Result{Type: formula.Type{ValueType: formula.DecimalType, Unit: damage}, Decimal: &three}
+	scalar, _ := registry.Unit("scalar")
+	multiplier := formula.Result{Type: formula.Type{ValueType: formula.DecimalType, Unit: scalar}, Decimal: &two}
+	next, err := applyModifier("Multiply", current, multiplier, registry)
+	if err != nil || next.Decimal == nil || next.Decimal.String() != "6" || next.Type.Unit != damage {
+		t.Fatalf("next=%+v err=%v", next, err)
+	}
+	if _, err = applyModifier("Add", current, multiplier, registry); err == nil {
+		t.Fatal("expected incompatible scalar addition to be rejected")
+	}
+}
+
 func typedRuleFixture(t *testing.T) (materialization.RuleSetV1, *formula.Registry, domain.ID, domain.ID) {
 	t.Helper()
 	registry, err := formula.V1Registry()
