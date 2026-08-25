@@ -294,7 +294,7 @@ func TestMigrationStepsRollbackAndReplayWithoutDuplicates(t *testing.T) {
 	if _, err = db.Exec(`INSERT INTO project_meta(id,db_schema_version,created_at) VALUES(?,?,?)`, mustID(t), 1, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 		t.Fatal(err)
 	}
-	for _, failedStep := range []string{"validation-v2", "versioning-v3", "graph-sync-v5", "ai-design-persistence-v17", "ai-generation-immutability-v18"} {
+	for _, failedStep := range []string{"validation-v2", "versioning-v3", "graph-sync-v5", "ai-design-persistence-v17", "ai-generation-immutability-v18", "ai-patch-decisions-v19"} {
 		tx, txErr := db.BeginTx(context.Background(), nil)
 		if txErr != nil {
 			t.Fatal(txErr)
@@ -328,7 +328,7 @@ func TestMigrationStepsRollbackAndReplayWithoutDuplicates(t *testing.T) {
 		t.Fatal(err)
 	}
 	var count int
-	if err = db.QueryRow(`SELECT count(*) FROM schema_migration_steps`).Scan(&count); err != nil || count != 17 {
+	if err = db.QueryRow(`SELECT count(*) FROM schema_migration_steps`).Scan(&count); err != nil || count != 18 {
 		t.Fatalf("migration steps=%d err=%v", count, err)
 	}
 }
@@ -399,7 +399,7 @@ func TestV7ProjectUpgradesToChecksummedV8OnReopen(t *testing.T) {
 	if err = store.db.QueryRow(`SELECT db_schema_version FROM project_meta`).Scan(&version); err != nil || version != currentSchemaVersion {
 		t.Fatalf("version=%d err=%v", version, err)
 	}
-	if err = store.db.QueryRow(`SELECT count(*) FROM schema_migration_steps WHERE checksum IS NOT NULL`).Scan(&checksummed); err != nil || checksummed != 17 {
+	if err = store.db.QueryRow(`SELECT count(*) FROM schema_migration_steps WHERE checksum IS NOT NULL`).Scan(&checksummed); err != nil || checksummed != 18 {
 		t.Fatalf("checksummed=%d err=%v", checksummed, err)
 	}
 }

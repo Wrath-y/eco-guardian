@@ -25,7 +25,7 @@ import (
 )
 
 const databaseName = "project.db"
-const currentSchemaVersion = 18
+const currentSchemaVersion = 19
 
 func DBSchemaVersion() int { return currentSchemaVersion }
 
@@ -419,6 +419,17 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 		}
 		version = 18
 	}
+	if version == 18 {
+		if err := applyMigrationV19(ctx, tx); err != nil {
+			return err
+		}
+		if hook != nil {
+			if err := hook("ai-patch-decisions-v19"); err != nil {
+				return err
+			}
+		}
+		version = 19
+	}
 	if version != currentSchemaVersion {
 		return fmt.Errorf("unsupported schema version %d", version)
 	}
@@ -599,6 +610,17 @@ func applyMigrationV18(ctx context.Context, tx *sql.Tx) error {
 	return recordMigrationChecksums(ctx, tx)
 }
 
+func applyMigrationV19(ctx context.Context, tx *sql.Tx) error {
+	body, err := root.Assets.ReadFile("migrations/0019_ai_patch_decisions.sql")
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, string(body)); err != nil {
+		return err
+	}
+	return recordMigrationChecksums(ctx, tx)
+}
+
 func seedRiskStarterThreshold(ctx context.Context, tx *sql.Tx) error {
 	starter := riskthreshold.StarterFixtureV1()
 	body, err := starter.Body.CanonicalJSON()
@@ -651,6 +673,7 @@ func migrationStepChecksums() (map[string]string, error) {
 		"balance-risk-assessment-v16":         "migrations/0016_balance_risk_assessment.sql",
 		"ai-design-persistence-v17":           "migrations/0017_ai_design_persistence.sql",
 		"ai-generation-immutability-v18":      "migrations/0018_ai_generation_immutability.sql",
+		"ai-patch-decisions-v19":              "migrations/0019_ai_patch_decisions.sql",
 	}
 	checksums := make(map[string]string, len(files))
 	for stepID, path := range files {
