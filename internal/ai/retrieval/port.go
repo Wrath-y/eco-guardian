@@ -3,8 +3,10 @@ package retrieval
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sort"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	aicontract "github.com/zouyi/eco-guardian/internal/ai/contract"
@@ -13,6 +15,11 @@ import (
 const (
 	MaxQueryBytes  = 8_192
 	MaxFilterItems = 100
+)
+
+var (
+	ErrPreProviderInvalid     = errors.New("pre-provider retrieval is invalid")
+	ErrPreProviderAlreadyUsed = errors.New("pre-provider retrieval was already used")
 )
 
 type Filters struct {
@@ -127,6 +134,55 @@ type Response struct {
 
 type Port interface {
 	Retrieve(context.Context, Request) (Response, error)
+}
+
+// PreProviderRetrieval is an attempt-scoped, single-use boundary. It derives
+// retrieval entirely from the frozen input and permits provider work only
+// after the response has been validated and sealed. A fresh instance is
+// required for every attempt; durable attempt recovery is responsible for
+// restoring an already sealed evidence manifest instead of calling Run again.
+type PreProviderRetrieval struct {
+	mu   sync.Mutex
+	used bool
+}
+
+// Run performs exactly one external retrieval before invoking the provider
+// continuation. Neither the continuation nor model output can supply a query,
+// filter, snapshot, or retrieval budget.
+func (r *PreProviderRetrieval) Run(
+	ctx context.Context,
+	input aicontract.AIDesignInputV1,
+	port Port,
+	store EvidenceStore,
+	invokeProvider func(PinnedEvidence) error,
+) error {
+	if r == nil || ctx == nil || port == nil || store == nil || invokeProvider == nil || !input.Valid() {
+		return ErrPreProviderInvalid
+	}
+	r.mu.Lock()
+	if r.used {
+		r.mu.Unlock()
+		return ErrPreProviderAlreadyUsed
+	}
+	r.used = true
+	r.mu.Unlock()
+
+	request, err := BuildV1Request(input)
+	if err != nil {
+		return errors.Join(ErrPreProviderInvalid, err)
+	}
+	response, err := port.Retrieve(ctx, request)
+	if err != nil {
+		return err
+	}
+	// The transport cannot replace the frozen request identity with one of its
+	// own: validation and canonical sealing always use the locally derived copy.
+	response.Request = request
+	pinned, _, err := PinEvidence(ctx, store, response)
+	if err != nil {
+		return err
+	}
+	return invokeProvider(clonePinnedEvidence(pinned))
 }
 
 // BuildV1Request derives the provider query and node filter only from the
