@@ -175,7 +175,8 @@ func TestAIProposalPreviewHasNoMutationOrFormalResultDependencies(t *testing.T) 
 	assertImports(t, "../ai/preview", func(importPath string) bool {
 		for _, forbidden := range []string{
 			"gin-gonic", "modernc.org/sqlite", "/httpapi", "/storage", "/job",
-			"/versioning/release", "/versioning/gate", "/risk/gate", "/risk/orchestration",
+			"/versioning/release", "/versioning/gate", "/versioning/revision", "/risk/gate", "/risk/orchestration",
+			"/simulation/gate", "/simulation/orchestration",
 		} {
 			if strings.Contains(importPath, forbidden) {
 				return true

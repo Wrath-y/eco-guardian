@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -114,7 +115,7 @@ func acceptabilityFixture(t *testing.T, blocked bool) (aicontract.AIDesignInputV
 		Metrics:        []aicontract.MetricGoal{{MetricID: "metric-dps", Version: "v1", Direction: aicontract.MetricMinimize, Unit: "points"}},
 		AllowedTargets: []aicontract.AllowedTarget{{EntityID: tagID, Kind: "tag", ExpectedEntityVersion: 1, Paths: []aicontract.AllowedPath{{Path: "/payload/category", Operations: []aicontract.PatchOperationKind{aicontract.OperationReplace}}}}},
 		Scenes:         []string{"scene"}, Budget: aicontract.Budget{Policy: fixture.Budget.Identity, BudgetLimits: fixture.Budget.Limits},
-		RequiredVersions: []aicontract.VersionIdentity{{ID: "validation", Version: "v1", Hash: hash}},
+		RequiredVersions: []aicontract.VersionIdentity{{ID: "validation", Version: "v1", Hash: hash}, {ID: "simulation", Version: "v1", Hash: hash}, {ID: "risk", Version: "v1", Hash: hash}, {ID: "numeric-policy", Version: "v1", Hash: hash}},
 	}
 	now := time.Unix(1_700_000_000, 0).UTC()
 	entities := []domain.Entity{{ID: domain.ID(tagID), Kind: domain.KindTag, Key: "tag", Name: "Tag", Status: domain.StatusActive, SchemaVersion: 1, Payload: map[string]json.RawMessage{"category": json.RawMessage(`"test"`), "parent_tag_ids": json.RawMessage(`[]`)}, Extensions: map[string]json.RawMessage{}, TagIDs: []domain.ID{}, EntityVersion: 1, CreatedAt: now, UpdatedAt: now}}
@@ -143,9 +144,16 @@ func validationFixture(t *testing.T, proposal aipreview.ProposalMaterializationV
 	return result
 }
 
-type acceptabilitySimulationEvaluator struct{ status metric.Status }
+type acceptabilitySimulationEvaluator struct {
+	status  metric.Status
+	workers int // scheduling is deliberately outside semantic preview identity
+}
 
 func (fake acceptabilitySimulationEvaluator) Evaluate(_ context.Context, request simulationpreview.Request) (simulationpreview.ResultV1, error) {
+	revisionImplementations := append([]simulationcontract.RevisionImplementation(nil), request.RevisionImplementations...)
+	sort.Slice(revisionImplementations, func(i, j int) bool {
+		return revisionImplementations[i].CapabilityID < revisionImplementations[j].CapabilityID
+	})
 	input := simulationcontract.SimulationInputV1{SchemaVersion: "v1", ProjectID: request.Materialization.BaseRevision.ProjectID, RevisionID: request.Materialization.BaseRevision.ID, ConfigHash: request.Materialization.BaseRevision.ConfigHash, ManifestHash: request.Materialization.BaseRevision.ManifestHash, RuleMaterializationHash: request.Materialization.Hash, SceneID: request.SceneID, SceneVersion: request.SceneVersion, SceneBodyHash: strings.Repeat("b", 64), DurationMS: 1, Budgets: scenario.Budgets{MaxSamples: 1, MaxEvents: 1, MaxSteps: 1, MaxRuntimeMS: 1}, SampleCount: 1, Metrics: append([]simulationcontract.MetricIdentity(nil), request.Metrics...)}
 	inputHash, _ := input.Hash()
 	fingerprintHash := strings.Repeat("c", 64)
@@ -157,12 +165,22 @@ func (fake acceptabilitySimulationEvaluator) Evaluate(_ context.Context, request
 	}
 	canonical := metric.CanonicalResultV1{SchemaVersion: "v1", InputHash: inputHash, FingerprintHash: fingerprintHash, Metrics: []metric.CanonicalMetric{value}, Warnings: []string{}}
 	resultHash, _ := canonical.Hash()
-	return simulationpreview.ResultV1{SchemaVersion: "v1", Advisory: true, MaterializationHash: request.Materialization.Hash, Input: input, InputHash: inputHash, Fingerprint: simulationcontract.ImplementationFingerprint{RevisionManifestHash: input.ManifestHash, SceneBodyHash: input.SceneBodyHash, Revision: append([]simulationcontract.RevisionImplementation(nil), request.RevisionImplementations...), Simulation: []simulationcontract.Descriptor{simulationcontract.StableDescriptor("simulation-evaluator-adapter", "v1")}}, FingerprintHash: fingerprintHash, Result: canonical, ResultHash: resultHash}, nil
+	return simulationpreview.ResultV1{SchemaVersion: "v1", Advisory: true, MaterializationHash: request.Materialization.Hash, Input: input, InputHash: inputHash, Fingerprint: simulationcontract.ImplementationFingerprint{RevisionManifestHash: input.ManifestHash, SceneBodyHash: input.SceneBodyHash, Revision: revisionImplementations, Simulation: simulationcontract.V1Descriptors()}, FingerprintHash: fingerprintHash, Result: canonical, ResultHash: resultHash}, nil
 }
 
 func simulationFixture(t *testing.T, proposal aipreview.ProposalMaterializationV1, status metric.Status) aisimulation.ResultV1 {
+	return simulationFixtureWithOrder(t, proposal, status, 1, false)
+}
+
+func simulationFixtureWithOrder(t *testing.T, proposal aipreview.ProposalMaterializationV1, status metric.Status, workers int, reverse bool) aisimulation.ResultV1 {
 	t.Helper()
-	result, err := (aisimulation.Service{Evaluator: acceptabilitySimulationEvaluator{status: status}}).Evaluate(context.Background(), aisimulation.Request{Proposal: proposal, Scenes: []aisimulation.SceneRequest{{SceneID: "scene", SceneVersion: "v1", SampleCount: 1, Metrics: []simulationcontract.MetricIdentity{{ID: "metric-dps", Version: "v1"}}}}, RevisionImplementations: []simulationcontract.RevisionImplementation{{CapabilityID: "schema", ContractVersion: "v1", ImplementationVersion: "schema-v1", State: "registered"}}})
+	implementations := []simulationcontract.RevisionImplementation{{CapabilityID: "schema", ContractVersion: "v1", ImplementationVersion: "schema-v1", State: "registered"}, {CapabilityID: "dsl", ContractVersion: "v1", ImplementationVersion: formula.DSLVersion, State: "registered"}, {CapabilityID: "validator-registry", ContractVersion: "v1", ImplementationVersion: "registry-v1", State: "registered"}, {CapabilityID: "numeric-policy", ContractVersion: "v1", ImplementationVersion: formula.NumericPolicyV1.Version, State: "registered"}}
+	if reverse {
+		for left, right := 0, len(implementations)-1; left < right; left, right = left+1, right-1 {
+			implementations[left], implementations[right] = implementations[right], implementations[left]
+		}
+	}
+	result, err := (aisimulation.Service{Evaluator: acceptabilitySimulationEvaluator{status: status, workers: workers}}).Evaluate(context.Background(), aisimulation.Request{Proposal: proposal, Scenes: []aisimulation.SceneRequest{{SceneID: "scene", SceneVersion: "v1", SampleCount: 1, Metrics: []simulationcontract.MetricIdentity{{ID: "metric-dps", Version: "v1"}}}}, RevisionImplementations: implementations})
 	if err != nil {
 		t.Fatal(err)
 	}
