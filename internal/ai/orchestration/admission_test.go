@@ -6,9 +6,35 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	aicontract "github.com/zouyi/eco-guardian/internal/ai/contract"
+	"github.com/zouyi/eco-guardian/internal/domain"
+	sharedjob "github.com/zouyi/eco-guardian/internal/job"
 )
+
+var errAIJobConflict = errors.New("AI job idempotency conflict")
+
+type aiJobStoreFake struct {
+	request *sharedjob.Request
+	record  sharedjob.Record
+	creates int
+}
+
+func (s *aiJobStoreFake) CreateOrGet(_ context.Context, request sharedjob.Request) (sharedjob.Record, bool, error) {
+	if s.request != nil {
+		if !s.request.Equivalent(request) {
+			return sharedjob.Record{}, false, errAIJobConflict
+		}
+		return s.record, true, nil
+	}
+	id, _ := domain.NewID()
+	now := time.Date(2026, 8, 25, 8, 0, 0, 0, time.UTC)
+	s.request = &request
+	s.record = sharedjob.Record{ID: id, ProjectID: request.ProjectID, Kind: request.Kind, RevisionID: request.RevisionID, InputHash: request.InputHash, IdempotencyKey: request.IdempotencyKey, RequestHash: request.RequestHash, Status: sharedjob.Queued, CreatedAt: now, UpdatedAt: now}
+	s.creates++
+	return s.record, false, nil
+}
 
 type admissionSourceFake struct {
 	snapshot   AdmissionSnapshot
@@ -153,6 +179,76 @@ func TestAdmissionRejectsStaleTargetsAndBudgetAboveRegisteredPolicy(t *testing.T
 	}
 }
 
+func TestAdmissionJobIdempotencyCoversEveryCanonicalInputDimension(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*AdmissionRequest, *AdmissionSnapshot, Admission)
+	}{
+		{"base", func(request *AdmissionRequest, snapshot *AdmissionSnapshot, _ Admission) {
+			request.BaseRevisionID = "018f9e40-0000-7000-8000-000000000124"
+			snapshot.Base.ConfigRevisionID = request.BaseRevisionID
+			snapshot.Base.GraphSnapshot = string(request.BaseRevisionID)
+			snapshot.Base.ConfigHash = admissionHash("5")
+		}},
+		{"target", func(request *AdmissionRequest, snapshot *AdmissionSnapshot, _ Admission) {
+			request.AllowedTargets[0].EntityID = "018f9e40-0000-7000-8000-000000000125"
+			snapshot.Targets[0].EntityID = request.AllowedTargets[0].EntityID
+		}},
+		{"entity version", func(request *AdmissionRequest, snapshot *AdmissionSnapshot, _ Admission) {
+			request.AllowedTargets[0].ExpectedEntityVersion++
+			snapshot.Targets[0].EntityVersion++
+		}},
+		{"version manifest", func(_ *AdmissionRequest, snapshot *AdmissionSnapshot, _ Admission) {
+			snapshot.RequiredVersions[0].Hash = admissionHash("6")
+		}},
+		{"goal", func(request *AdmissionRequest, _ *AdmissionSnapshot, _ Admission) {
+			request.Goals[0].Description = "Tune skill with a new objective."
+		}},
+		{"constraint", func(request *AdmissionRequest, _ *AdmissionSnapshot, _ Admission) {
+			request.Constraints = []aicontract.Constraint{{ID: "cost", Path: "/payload/cost", Operator: aicontract.ConstraintLessOrEqual, Value: json.RawMessage(`10`)}}
+		}},
+		{"scope", func(request *AdmissionRequest, snapshot *AdmissionSnapshot, _ Admission) {
+			request.AllowedTargets[0].Paths[0].Path = "/payload/cooldown"
+			snapshot.Targets[0].Paths[0].Path = "/payload/cooldown"
+		}},
+		{"budget", func(request *AdmissionRequest, _ *AdmissionSnapshot, admission Admission) {
+			budget, _ := admission.Registries.ResolvedLimits()
+			budget.MaxToolCalls--
+			request.RequestedBudget = &budget
+		}},
+		{"scene", func(request *AdmissionRequest, _ *AdmissionSnapshot, _ Admission) {
+			request.Scenes[0] = "single-target-180s"
+		}},
+		{"metric", func(request *AdmissionRequest, _ *AdmissionSnapshot, _ Admission) {
+			request.Metrics[0].Direction = aicontract.MetricMaximize
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			admission, source, request := validAdmissionTestFixture(t)
+			jobs := &aiJobStoreFake{}
+			first, err := admission.Submit(context.Background(), jobs, request, "same-key")
+			if err != nil || first.Replayed || jobs.creates != 1 {
+				t.Fatalf("first=%#v creates=%d err=%v", first, jobs.creates, err)
+			}
+			replayed, err := admission.Submit(context.Background(), jobs, cloneAdmissionRequest(request), "same-key")
+			if err != nil || !replayed.Replayed || replayed.Job.ID != first.Job.ID || jobs.creates != 1 {
+				t.Fatalf("replay=%#v creates=%d err=%v", replayed, jobs.creates, err)
+			}
+			changedRequest := cloneAdmissionRequest(request)
+			changedSnapshot := cloneAdmissionSnapshot(source.snapshot)
+			test.mutate(&changedRequest, &changedSnapshot, admission)
+			source.snapshot = changedSnapshot
+			if _, err = admission.Submit(context.Background(), jobs, changedRequest, "same-key"); !errors.Is(err, errAIJobConflict) {
+				t.Fatalf("changed input err=%v", err)
+			}
+			if jobs.creates != 1 {
+				t.Fatalf("conflict created side effect: %d", jobs.creates)
+			}
+		})
+	}
+}
+
 func validAdmissionTestFixture(t *testing.T) (Admission, *admissionSourceFake, AdmissionRequest) {
 	t.Helper()
 	projectID := aicontract.ProjectID("018f9e40-0000-7000-8000-000000000121")
@@ -185,6 +281,15 @@ func cloneAdmissionRequest(value AdmissionRequest) AdmissionRequest {
 		value.AllowedTargets[index].Paths = cloneAllowedPaths(value.AllowedTargets[index].Paths)
 	}
 	value.Scenes = append([]string(nil), value.Scenes...)
+	return value
+}
+
+func cloneAdmissionSnapshot(value AdmissionSnapshot) AdmissionSnapshot {
+	value.Targets = append([]ResolvedTarget(nil), value.Targets...)
+	for index := range value.Targets {
+		value.Targets[index].Paths = cloneAllowedPaths(value.Targets[index].Paths)
+	}
+	value.RequiredVersions = append([]aicontract.VersionIdentity(nil), value.RequiredVersions...)
 	return value
 }
 

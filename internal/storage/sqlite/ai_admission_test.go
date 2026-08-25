@@ -73,6 +73,33 @@ func TestResolveAIAdmissionSnapshotPinsMaterializedRevisionGraphTargetsAndNoBase
 	if len(snapshot.RequiredVersions) != 7 || !snapshot.Base.MaterializationHash.Valid() {
 		t.Fatalf("versions=%#v materialization=%q", snapshot.RequiredVersions, snapshot.Base.MaterializationHash)
 	}
+	admission, err := aiorchestration.NewV1Admission(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := aiorchestration.AdmissionRequest{
+		ProjectID: aicontract.ProjectID(store.ProjectID()), BaseRevisionID: aicontract.RevisionID(revision.ID),
+		Goals:          []aicontract.Goal{{ID: "goal", Description: "Tune category."}},
+		Metrics:        []aicontract.MetricGoal{{MetricID: "metric-dps", Version: "v1", Direction: aicontract.MetricMinimize, Unit: "points_per_second"}},
+		AllowedTargets: []aicontract.AllowedTarget{{EntityID: aicontract.EntityID(entity.ID), Kind: string(entity.Kind), ExpectedEntityVersion: entity.EntityVersion, Paths: []aicontract.AllowedPath{{Path: "/payload/category", Operations: []aicontract.PatchOperationKind{aicontract.OperationReplace}}}}},
+		Scenes:         []string{"single-target-30s"},
+	}
+	firstJob, err := admission.Submit(context.Background(), store, request, "ai-admission-key")
+	if err != nil || firstJob.Replayed {
+		t.Fatalf("first job=%#v err=%v", firstJob, err)
+	}
+	replayedJob, err := admission.Submit(context.Background(), store, request, "ai-admission-key")
+	if err != nil || !replayedJob.Replayed || replayedJob.Job.ID != firstJob.Job.ID {
+		t.Fatalf("replayed job=%#v err=%v", replayedJob, err)
+	}
+	request.Goals[0].Description = "A changed canonical goal."
+	if _, err = admission.Submit(context.Background(), store, request, "ai-admission-key"); !errors.Is(err, ErrJobIdempotencyConflict) {
+		t.Fatalf("changed input err=%v", err)
+	}
+	var jobCount int
+	if err = store.db.QueryRow(`SELECT count(*) FROM jobs WHERE project_uuid=? AND idempotency_key=?`, store.ProjectID(), "ai-admission-key").Scan(&jobCount); err != nil || jobCount != 1 {
+		t.Fatalf("job count=%d err=%v", jobCount, err)
+	}
 	for _, invalidPath := range []aicontract.FieldPath{"/name", "/payload/missing"} {
 		_, err = store.ResolveAIAdmissionSnapshot(context.Background(), aiorchestration.AdmissionSelection{
 			ProjectID: aicontract.ProjectID(store.ProjectID()), BaseRevisionID: aicontract.RevisionID(revision.ID),

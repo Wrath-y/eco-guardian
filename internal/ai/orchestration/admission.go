@@ -8,9 +8,13 @@ import (
 
 	"github.com/google/uuid"
 	aicontract "github.com/zouyi/eco-guardian/internal/ai/contract"
+	"github.com/zouyi/eco-guardian/internal/domain"
+	sharedjob "github.com/zouyi/eco-guardian/internal/job"
 	"github.com/zouyi/eco-guardian/internal/simulation/metric"
 	"github.com/zouyi/eco-guardian/internal/simulation/scenario"
 )
+
+const AIDesignJobKind sharedjob.Kind = "ai_design"
 
 var (
 	ErrAdmissionUnavailable     = errors.New("AI design admission is unavailable")
@@ -114,6 +118,16 @@ type AdmittedInput struct {
 	InputHash aicontract.Hash
 }
 
+type AIJobStore interface {
+	CreateOrGet(context.Context, sharedjob.Request) (sharedjob.Record, bool, error)
+}
+
+type AdmissionResult struct {
+	Job      sharedjob.Record
+	Input    AdmittedInput
+	Replayed bool
+}
+
 // Admission resolves storage facts exactly once, expands the registered v1
 // budget and returns the only canonical input that may be attached to a Job.
 type Admission struct {
@@ -182,6 +196,27 @@ func (a Admission) Admit(ctx context.Context, request AdmissionRequest) (Admitte
 		return AdmittedInput{}, errors.Join(ErrAdmissionInputInvalid, err)
 	}
 	return AdmittedInput{Input: input, Canonical: canonical, InputHash: hash}, nil
+}
+
+// Submit creates runnable work only after the complete canonical input has
+// been admitted. The existing shared Job store owns the atomic project/key
+// decision; a replay must match every field represented by InputHash.
+func (a Admission) Submit(ctx context.Context, jobs AIJobStore, request AdmissionRequest, idempotencyKey string) (AdmissionResult, error) {
+	if jobs == nil {
+		return AdmissionResult{}, ErrAdmissionUnavailable
+	}
+	input, err := a.Admit(ctx, request)
+	if err != nil {
+		return AdmissionResult{}, err
+	}
+	job, replayed, err := jobs.CreateOrGet(ctx, sharedjob.Request{
+		ProjectID: domain.ID(request.ProjectID), Kind: AIDesignJobKind, RevisionID: domain.ID(request.BaseRevisionID),
+		InputHash: string(input.InputHash), IdempotencyKey: idempotencyKey, RequestHash: string(input.InputHash),
+	})
+	if err != nil {
+		return AdmissionResult{}, err
+	}
+	return AdmissionResult{Job: job, Input: input, Replayed: replayed}, nil
 }
 
 func resolveAllowedTargets(requested []aicontract.AllowedTarget, resolved []ResolvedTarget) []aicontract.AllowedTarget {
