@@ -25,7 +25,7 @@ import (
 )
 
 const databaseName = "project.db"
-const currentSchemaVersion = 16
+const currentSchemaVersion = 17
 
 func DBSchemaVersion() int { return currentSchemaVersion }
 
@@ -397,6 +397,12 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 		}
 		version = 16
 	}
+	if version == 16 {
+		if err := applyMigrationV17(ctx, tx); err != nil {
+			return err
+		}
+		version = 17
+	}
 	if version != currentSchemaVersion {
 		return fmt.Errorf("unsupported schema version %d", version)
 	}
@@ -555,6 +561,17 @@ func applyMigrationV16(ctx context.Context, tx *sql.Tx) error {
 	return recordMigrationChecksums(ctx, tx)
 }
 
+func applyMigrationV17(ctx context.Context, tx *sql.Tx) error {
+	body, err := root.Assets.ReadFile("migrations/0017_ai_design_persistence.sql")
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, string(body)); err != nil {
+		return err
+	}
+	return recordMigrationChecksums(ctx, tx)
+}
+
 func seedRiskStarterThreshold(ctx context.Context, tx *sql.Tx) error {
 	starter := riskthreshold.StarterFixtureV1()
 	body, err := starter.Body.CanonicalJSON()
@@ -605,6 +622,7 @@ func migrationStepChecksums() (map[string]string, error) {
 		"simulation-run-implementations-v14":  "migrations/0014_simulation_run_implementations.sql",
 		"simulation-verification-intents-v15": "migrations/0015_simulation_verification_intents.sql",
 		"balance-risk-assessment-v16":         "migrations/0016_balance_risk_assessment.sql",
+		"ai-design-persistence-v17":           "migrations/0017_ai_design_persistence.sql",
 	}
 	checksums := make(map[string]string, len(files))
 	for stepID, path := range files {

@@ -128,6 +128,24 @@ type PinnedEvidence struct {
 	ProviderView []ProviderCitation
 }
 
+func (pinned PinnedEvidence) Valid() bool {
+	if pinned.Manifest.Version != EvidenceManifestVersionV1 || !pinned.Manifest.Base.Valid() || !pinned.Manifest.RequestHash.Valid() || !pinned.Manifest.ResponseHash.Valid() || !pinned.ManifestHash.Valid() || len(pinned.Canonical) == 0 || len(pinned.Canonical) > 262_144 || len(pinned.Manifest.Evidence) > 100 || len(pinned.ProviderView) != len(pinned.Manifest.Evidence) {
+		return false
+	}
+	canonical, err := json.Marshal(pinned.Manifest)
+	if err != nil || !bytes.Equal(canonical, pinned.Canonical) || domainHash("eco-guardian.ai-retrieval-evidence-manifest/v1", canonical) != string(pinned.ManifestHash) {
+		return false
+	}
+	for index, record := range pinned.Manifest.Evidence {
+		body, err := json.Marshal(recordPayload(record))
+		hash := domainHash("eco-guardian.ai-retrieval-evidence-ref/v1", body)
+		if err != nil || record.ID != aicontract.EvidenceID(hash) || record.RecordHash != aicontract.Hash(hash) || record.Rank < 1 || pinned.ProviderView[index].EvidenceID != record.ID || pinned.ProviderView[index].Citation != record.Citation {
+			return false
+		}
+	}
+	return true
+}
+
 type EvidenceStore interface {
 	InsertRetrievalEvidence(context.Context, PinnedEvidence) (bool, error)
 }

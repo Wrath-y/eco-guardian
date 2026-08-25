@@ -1,7 +1,9 @@
 package orchestration
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"unicode/utf8"
@@ -94,8 +96,25 @@ func (state AIJobState) Valid() bool {
 }
 
 type AIJobAdmission struct {
-	Request sharedjob.Request
-	Phase   JobPhase
+	Request        sharedjob.Request
+	Phase          JobPhase
+	CanonicalInput []byte
+}
+
+func (admission AIJobAdmission) Valid() bool {
+	if !admission.Request.Valid() || admission.Request.Kind != AIJobKind || admission.Phase != PhaseInputPinned || len(admission.CanonicalInput) == 0 || len(admission.CanonicalInput) > 262144 || !json.Valid(admission.CanonicalInput) {
+		return false
+	}
+	var input aicontract.AIDesignInputV1
+	if err := json.Unmarshal(admission.CanonicalInput, &input); err != nil || !input.Valid() {
+		return false
+	}
+	canonical, err := aicontract.CanonicalAIDesignInputV1(input)
+	if err != nil || !bytes.Equal(canonical, admission.CanonicalInput) {
+		return false
+	}
+	hash, err := aicontract.HashAIDesignInputV1(input)
+	return err == nil && string(hash) == admission.Request.InputHash && domain.ID(input.Base.ProjectID) == admission.Request.ProjectID && domain.ID(input.Base.ConfigRevisionID) == admission.Request.RevisionID
 }
 
 type AIJobTransition struct {
@@ -141,7 +160,11 @@ func (controller AIJobController) Admit(ctx context.Context, input aicontract.AI
 	if !request.Valid() {
 		return AIJobState{}, false, ErrAIJobInvalid
 	}
-	state, replay, err := controller.Jobs.AdmitAIJob(ctx, AIJobAdmission{Request: request, Phase: PhaseInputPinned})
+	canonical, err := aicontract.CanonicalAIDesignInputV1(input)
+	if err != nil {
+		return AIJobState{}, false, ErrAIJobInvalid
+	}
+	state, replay, err := controller.Jobs.AdmitAIJob(ctx, AIJobAdmission{Request: request, Phase: PhaseInputPinned, CanonicalInput: canonical})
 	if err != nil {
 		return AIJobState{}, false, err
 	}
