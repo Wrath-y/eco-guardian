@@ -130,6 +130,47 @@ func TestRiskPurePackagesDoNotDependOnAdaptersOrOptionalImplementations(t *testi
 	}
 }
 
+func TestRiskPreviewHasNoJobReportPersistenceOrTransportDependencies(t *testing.T) {
+	assertImports(t, "../risk/preview", func(importPath string) bool {
+		for _, forbidden := range []string{"gin-gonic", "modernc.org/sqlite", "/httpapi", "/storage", "/job", "/app", "/ai", "/risk/gate", "/risk/orchestration", "/versioning/release"} {
+			if strings.Contains(importPath, forbidden) {
+				return true
+			}
+		}
+		return false
+	}, "risk preview must remain a pure advisory evaluator boundary")
+}
+
+func TestAIPureBoundariesDoNotDependOnAdaptersOrMutationWorkers(t *testing.T) {
+	for _, dir := range []string{"../ai/contract", "../ai/tools"} {
+		assertImports(t, dir, func(importPath string) bool {
+			for _, forbidden := range []string{
+				"gin-gonic", "modernc.org/sqlite", "vue", "/httpapi", "/storage/sqlite",
+				"/ai/provider/openai", "/ai/retrieval/localrag", "/project",
+				"/versioning/release", "/graph", "/platform/windows",
+			} {
+				if strings.Contains(importPath, forbidden) {
+					return true
+				}
+			}
+			return false
+		}, "AI contract and tool policy code must remain transport-neutral and mutation-free")
+	}
+}
+
+func TestAIAdapterPackagesRemainOutsidePureBoundaries(t *testing.T) {
+	pureDirs := []string{"../ai/contract", "../ai/tools", "../ai/audit"}
+	for _, dir := range pureDirs {
+		assertImports(t, dir, func(importPath string) bool {
+			return strings.Contains(importPath, "/ai/provider/openai") ||
+				strings.Contains(importPath, "/ai/retrieval/localrag") ||
+				strings.Contains(importPath, "/ai/preview/validation") ||
+				strings.Contains(importPath, "/ai/preview/simulation") ||
+				strings.Contains(importPath, "/ai/preview/risk")
+		}, "pure AI boundaries must depend on ports and contracts, not concrete adapters")
+	}
+}
+
 func assertImports(t *testing.T, dir string, forbidden func(string) bool, message string) {
 	t.Helper()
 	err := filepath.WalkDir(dir, func(name string, entry fs.DirEntry, walkErr error) error {

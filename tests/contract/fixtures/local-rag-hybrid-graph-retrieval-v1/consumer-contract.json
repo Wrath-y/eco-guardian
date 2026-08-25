@@ -1,0 +1,23 @@
+{
+  "source_commit": "cfbf6106a38bc46730217b987ca54c6b1b302f20",
+  "openapi_sha256": "fd39c71846e49f0f6a7b4b1dc69a089634006af002d36af58c61444611df9369",
+  "endpoint": "POST /v1/graphs/{namespace}/retrieve",
+  "namespace": "project",
+  "snapshot": {"request_field":"snapshot_version","response_field":"resolved_snapshot_version","content_hash_field":"content_hash"},
+  "defaults": {"relationship_kinds":["explicit"],"seed_limit":20,"result_limit":20,"graph_depth":1},
+  "maxima": {"seed_limit":100,"result_limit":100,"graph_depth":3},
+  "inferred_relationships_require_opt_in": true,
+  "rrf_k": 60,
+  "graph_score_formula": "seed_rrf_score / (1 + hop_count) * path_confidence",
+  "modes": ["hybrid","bm25_only","vector_only"],
+  "warning_stage_order": ["bm25","vector","rerank"],
+  "generation_identity_fields": ["component","generation","algorithm","provider","model","dimensions","tokenizer","content_digest"],
+  "score_fields": ["bm25_rank","bm25_score","vector_rank","vector_score","rrf_score","graph_score","rerank_score"],
+  "evidence_fields": ["seed","path","explicit_edges","inferred_edges"],
+  "retention": {"active_snapshot":true,"recent_accepted_versions":20,"derived_generations_only":true},
+  "errors": {
+    "evicted": {"http_status":409,"code":"SNAPSHOT_INDEX_NOT_READY","retryable":false,"rebuild_required":true,"implicit_rebuild":false},
+    "both_base_unavailable_transient": {"http_status":503,"code":"RETRIEVAL_UNAVAILABLE","retryable":true},
+    "both_base_unavailable_permanent": {"http_status":503,"code":"RETRIEVAL_UNAVAILABLE","retryable":false}
+  }
+}
