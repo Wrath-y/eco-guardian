@@ -159,4 +159,11 @@ func TestCredentialHandlerRejectsUnknownFieldsProvidersAndSecretEcho(t *testing.
 			t.Fatalf("invalid credential response=%d body=%s", response.Code, response.Body.String())
 		}
 	}
+	foreign := httptest.NewRequest(http.MethodDelete, "/api/v1/settings/credentials/openai-compatible", nil)
+	foreign.Header.Set("Origin", "https://evil.example")
+	foreignResponse := httptest.NewRecorder()
+	engine.ServeHTTP(foreignResponse, foreign)
+	if foreignResponse.Code != http.StatusForbidden {
+		t.Fatalf("foreign credential origin response=%d body=%s", foreignResponse.Code, foreignResponse.Body.String())
+	}
 }

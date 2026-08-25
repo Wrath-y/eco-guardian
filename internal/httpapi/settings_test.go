@@ -50,6 +50,14 @@ func TestSettingsHandlerStrictlyUpdatesBoundedAIReference(t *testing.T) {
 	if badResponse.Code != http.StatusBadRequest || strings.Contains(badResponse.Body.String(), "secret") {
 		t.Fatalf("credential field response=%d body=%s", badResponse.Code, badResponse.Body.String())
 	}
+	foreign := httptest.NewRequest(http.MethodPatch, "/api/v1/settings", strings.NewReader(body))
+	foreign.Header.Set("Content-Type", "application/json")
+	foreign.Header.Set("Origin", "https://evil.example")
+	foreignResponse := httptest.NewRecorder()
+	engine.ServeHTTP(foreignResponse, foreign)
+	if foreignResponse.Code != http.StatusForbidden {
+		t.Fatalf("foreign origin response=%d body=%s", foreignResponse.Code, foreignResponse.Body.String())
+	}
 }
 
 func TestSettingsHandlerRequiresCloudDisclosureAndReportsClassification(t *testing.T) {

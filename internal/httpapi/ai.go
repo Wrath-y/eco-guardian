@@ -149,12 +149,16 @@ func aiIdempotencyKey(c *gin.Context) (string, bool) {
 }
 
 func decodeStrictAIJSON(c *gin.Context, target any) bool {
+	return decodeStrictAIJSONLimit(c, target, maxAIDecisionBodyBytes)
+}
+
+func decodeStrictAIJSONLimit(c *gin.Context, target any, limit int64) bool {
 	if !strings.HasPrefix(strings.ToLower(c.GetHeader("Content-Type")), "application/json") {
 		problem(c, http.StatusUnsupportedMediaType, "AI_INPUT_INVALID", "Content-Type must be application/json")
 		return false
 	}
-	raw, err := io.ReadAll(io.LimitReader(c.Request.Body, maxAIDecisionBodyBytes+1))
-	if err != nil || len(raw) == 0 || len(raw) > maxAIDecisionBodyBytes || strictJSON(raw, target) != nil {
+	raw, err := io.ReadAll(io.LimitReader(c.Request.Body, limit+1))
+	if err != nil || len(raw) == 0 || int64(len(raw)) > limit || strictJSON(raw, target) != nil {
 		problem(c, http.StatusBadRequest, "AI_INPUT_INVALID", "Invalid AI command")
 		return false
 	}

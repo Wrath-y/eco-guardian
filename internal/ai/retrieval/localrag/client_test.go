@@ -71,8 +71,22 @@ func TestClientPreservesStableIndexNotReadyWithoutRebuild(t *testing.T) {
 	client, _ := New(server.URL, server.Client())
 	_, err = client.Retrieve(context.Background(), localRAGRequest())
 	var dependency *DependencyError
-	if !errors.As(err, &dependency) || dependency.Code != "SNAPSHOT_INDEX_NOT_READY" || dependency.Retryable || !dependency.RebuildRequired || calls != 1 {
+	if !errors.As(err, &dependency) || dependency.Code != "SNAPSHOT_INDEX_NOT_READY" || dependency.Retryable || !dependency.RebuildRequired || dependency.RequestID != "fixture_request" || calls != 1 {
 		t.Fatalf("error=%#v calls=%d", err, calls)
+	}
+}
+
+func TestClientDropsUnsafeDependencyRequestID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = writer.Write([]byte(`{"code":"RETRIEVAL_UNAVAILABLE","message":"unavailable","retryable":true,"request_id":"Bearer secret\r\nX-Leak: yes"}`))
+	}))
+	defer server.Close()
+	client, _ := New(server.URL, server.Client())
+	_, err := client.Retrieve(context.Background(), localRAGRequest())
+	var dependency *DependencyError
+	if !errors.As(err, &dependency) || dependency.RequestID != "" {
+		t.Fatalf("error=%#v", err)
 	}
 }
 

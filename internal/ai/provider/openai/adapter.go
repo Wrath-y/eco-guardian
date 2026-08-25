@@ -83,7 +83,7 @@ func (a *Adapter) Invoke(request aiprovider.AttemptRequest, sink aiprovider.Even
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		code, class, retryable, message := classifyStatus(response.StatusCode)
-		return emitFailure(sink, &sequence, code, class, retryable, message)
+		return emitFailureWithRequestID(sink, &sequence, code, class, retryable, message, aiprovider.SafeRequestID(response.Header.Get("X-Request-ID")))
 	}
 	if !strings.HasPrefix(response.Header.Get("Content-Type"), "text/event-stream") {
 		return emitFailure(sink, &sequence, "AI_PROVIDER_STREAM_UNSUPPORTED", aiprovider.ErrorPermanent, false, "Provider did not return an event stream")
@@ -371,8 +371,12 @@ func classifyStatus(status int) (string, aiprovider.ErrorClass, bool, string) {
 }
 
 func emitFailure(sink aiprovider.EventSink, sequence *int64, code string, class aiprovider.ErrorClass, retryable bool, message string) error {
+	return emitFailureWithRequestID(sink, sequence, code, class, retryable, message, "")
+}
+
+func emitFailureWithRequestID(sink aiprovider.EventSink, sequence *int64, code string, class aiprovider.ErrorClass, retryable bool, message, requestID string) error {
 	event := aiprovider.Event{Sequence: *sequence, Type: aiprovider.EventError, Error: &aiprovider.TerminalError{
-		Code: code, Class: class, Retryable: retryable, Message: message,
+		Code: code, Class: class, Retryable: retryable, Message: message, RequestID: requestID,
 	}}
 	if err := sink.Emit(event); err != nil {
 		return err

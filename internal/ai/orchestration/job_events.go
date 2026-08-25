@@ -38,23 +38,29 @@ func (kind AIJobEventKind) Valid() bool {
 }
 
 type AIJobEventDraft struct {
-	JobID         domain.ID                   `json:"job_id"`
-	EventKey      string                      `json:"event_key"`
-	Kind          AIJobEventKind              `json:"kind"`
-	Phase         JobPhase                    `json:"phase"`
-	Progress      int                         `json:"progress"`
-	AttemptID     aicontract.AttemptID        `json:"attempt_id,omitempty"`
-	WarningCode   string                      `json:"warning_code,omitempty"`
-	WarningRef    string                      `json:"warning_ref,omitempty"`
-	Tool          *aicontract.VersionIdentity `json:"tool,omitempty"`
-	RepairCount   int                         `json:"repair_count,omitempty"`
-	Outcome       aicontract.AttemptOutcome   `json:"outcome,omitempty"`
-	SafeErrorCode string                      `json:"error_code,omitempty"`
-	Result        *sharedjob.Result           `json:"result,omitempty"`
+	JobID           domain.ID                   `json:"job_id"`
+	EventKey        string                      `json:"event_key"`
+	Kind            AIJobEventKind              `json:"kind"`
+	Phase           JobPhase                    `json:"phase"`
+	Progress        int                         `json:"progress"`
+	AttemptID       aicontract.AttemptID        `json:"attempt_id,omitempty"`
+	WarningCode     string                      `json:"warning_code,omitempty"`
+	WarningRef      string                      `json:"warning_ref,omitempty"`
+	Tool            *aicontract.VersionIdentity `json:"tool,omitempty"`
+	RepairCount     int                         `json:"repair_count,omitempty"`
+	Outcome         aicontract.AttemptOutcome   `json:"outcome,omitempty"`
+	SafeErrorCode   string                      `json:"error_code,omitempty"`
+	Retryable       bool                        `json:"retryable,omitempty"`
+	RequestID       string                      `json:"request_id,omitempty"`
+	RebuildRequired bool                        `json:"rebuild_required,omitempty"`
+	Result          *sharedjob.Result           `json:"result,omitempty"`
 }
 
 func (draft AIJobEventDraft) Valid() bool {
-	if !draft.JobID.Valid() || !stableEventText(draft.EventKey, 128) || !draft.Kind.Valid() || !draft.Phase.Valid() || draft.Progress < 0 || draft.Progress > 100 || (draft.AttemptID != "" && !draft.AttemptID.Valid()) || !optionalEventText(draft.WarningCode, 128) || !optionalEventText(draft.WarningRef, 256) || !optionalEventText(draft.SafeErrorCode, 128) || (draft.Tool != nil && !draft.Tool.Valid()) || (draft.Result != nil && !draft.Result.Valid()) {
+	if !draft.JobID.Valid() || !stableEventText(draft.EventKey, 128) || !draft.Kind.Valid() || !draft.Phase.Valid() || draft.Progress < 0 || draft.Progress > 100 || (draft.AttemptID != "" && !draft.AttemptID.Valid()) || !optionalEventText(draft.WarningCode, 128) || !optionalEventText(draft.WarningRef, 256) || !optionalEventText(draft.SafeErrorCode, 128) || !optionalRequestID(draft.RequestID) || (draft.Tool != nil && !draft.Tool.Valid()) || (draft.Result != nil && !draft.Result.Valid()) {
+		return false
+	}
+	if draft.Kind != EventTerminal && (draft.Retryable || draft.RequestID != "" || draft.RebuildRequired) {
 		return false
 	}
 	switch draft.Kind {
@@ -75,16 +81,16 @@ func (draft AIJobEventDraft) Valid() bool {
 			return false
 		}
 		if draft.Outcome == aicontract.OutcomeSucceeded {
-			return draft.Phase == PhasePatchSealed && draft.Progress == 100 && draft.SafeErrorCode == "" && validPatchResult(draft.Result)
+			return draft.Phase == PhasePatchSealed && draft.Progress == 100 && draft.SafeErrorCode == "" && !draft.Retryable && draft.RequestID == "" && !draft.RebuildRequired && validPatchResult(draft.Result)
 		}
-		return draft.Result == nil && draft.SafeErrorCode != ""
+		return draft.Result == nil && draft.SafeErrorCode != "" && (!draft.RebuildRequired || !draft.Retryable)
 	default:
 		return false
 	}
 }
 
 func emptyEventDetail(draft AIJobEventDraft) bool {
-	return draft.WarningCode == "" && draft.WarningRef == "" && draft.Tool == nil && draft.RepairCount == 0 && draft.Outcome == "" && draft.SafeErrorCode == "" && draft.Result == nil
+	return draft.WarningCode == "" && draft.WarningRef == "" && draft.Tool == nil && draft.RepairCount == 0 && draft.Outcome == "" && draft.SafeErrorCode == "" && !draft.Retryable && draft.RequestID == "" && !draft.RebuildRequired && draft.Result == nil
 }
 
 type AIJobEvent struct {
@@ -209,6 +215,22 @@ func stableEventText(value string, maximum int) bool {
 
 func optionalEventText(value string, maximum int) bool {
 	return value == "" || stableEventText(value, maximum)
+}
+
+func optionalRequestID(value string) bool {
+	if value == "" {
+		return true
+	}
+	if len(value) > 128 {
+		return false
+	}
+	for _, character := range value {
+		if character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' || strings.ContainsRune("._:/-", character) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func cloneEventDraft(value AIJobEventDraft) AIJobEventDraft {

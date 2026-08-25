@@ -1,9 +1,7 @@
 package httpapi
 
 import (
-	"io"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	aiprovider "github.com/zouyi/eco-guardian/internal/ai/provider"
@@ -47,18 +45,12 @@ func (h *SettingsHandler) get(c *gin.Context) {
 }
 
 func (h *SettingsHandler) patch(c *gin.Context) {
-	if !strings.HasPrefix(c.GetHeader("Content-Type"), "application/json") {
-		problem(c, http.StatusUnsupportedMediaType, "AI_INPUT_INVALID", "Content-Type must be application/json")
-		return
-	}
-	raw, err := io.ReadAll(io.LimitReader(c.Request.Body, maxSettingsRequestBytes+1))
-	if err != nil || len(raw) == 0 || len(raw) > maxSettingsRequestBytes {
-		problem(c, http.StatusBadRequest, "AI_INPUT_INVALID", "Settings request is invalid")
+	if !safeLoopbackOrigin(c.Request) {
+		problem(c, http.StatusForbidden, "AI_INPUT_INVALID", "Request origin is not allowed")
 		return
 	}
 	var request riskdto.PatchSettingsRequest
-	if err := strictJSON(raw, &request); err != nil {
-		problem(c, http.StatusBadRequest, "AI_INPUT_INVALID", "Settings request is invalid")
+	if !decodeStrictAIJSONLimit(c, &request, maxSettingsRequestBytes) {
 		return
 	}
 	settings, _, err := h.store.Load()

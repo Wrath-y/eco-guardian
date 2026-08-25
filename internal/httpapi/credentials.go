@@ -27,7 +27,11 @@ func (h *CredentialHandler) Register(router *gin.Engine) {
 }
 
 func (h *CredentialHandler) put(c *gin.Context) {
-	if !strings.HasPrefix(c.GetHeader("Content-Type"), "application/json") {
+	if !safeLoopbackOrigin(c.Request) {
+		problem(c, http.StatusForbidden, "AI_CREDENTIAL_INVALID", "Request origin is not allowed")
+		return
+	}
+	if !strings.HasPrefix(strings.ToLower(c.GetHeader("Content-Type")), "application/json") {
 		problem(c, http.StatusUnsupportedMediaType, "AI_CREDENTIAL_INVALID", "Content-Type must be application/json")
 		return
 	}
@@ -51,6 +55,10 @@ func (h *CredentialHandler) put(c *gin.Context) {
 }
 
 func (h *CredentialHandler) delete(c *gin.Context) {
+	if !safeLoopbackOrigin(c.Request) {
+		problem(c, http.StatusForbidden, "AI_CREDENTIAL_INVALID", "Request origin is not allowed")
+		return
+	}
 	if err := h.resolver.Delete(c.Request.Context(), c.Param("provider")); err != nil {
 		h.writeError(c, err)
 		return

@@ -27,11 +27,19 @@ type DependencyError struct {
 	Code            string
 	Retryable       bool
 	RebuildRequired bool
+	RequestID       string
 }
 
 func (e *DependencyError) Error() string {
 	return fmt.Sprintf("local-rag retrieval failed: %s", e.Code)
 }
+
+func (e *DependencyError) RetrievalFailureCode() string { return e.Code }
+func (e *DependencyError) RetrievalRetryable() bool     { return e.Retryable }
+func (e *DependencyError) RetrievalRebuildRequired() bool {
+	return e.RebuildRequired
+}
+func (e *DependencyError) RetrievalRequestID() string { return e.RequestID }
 
 type Client struct {
 	base *url.URL
@@ -129,7 +137,20 @@ func decodeDependencyError(status int, body []byte) error {
 	if decoder.Decode(&value) != nil || requireEOF(decoder) != nil || value.Code == "" {
 		return ErrResponse
 	}
-	return &DependencyError{StatusCode: status, Code: value.Code, Retryable: value.Retryable, RebuildRequired: value.Details.RebuildRequired}
+	return &DependencyError{StatusCode: status, Code: value.Code, Retryable: value.Retryable, RebuildRequired: value.Details.RebuildRequired, RequestID: safeRequestID(value.RequestID)}
+}
+
+func safeRequestID(value string) string {
+	if value == "" || len(value) > 128 {
+		return ""
+	}
+	for _, character := range value {
+		if character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' || strings.ContainsRune("._:/-", character) {
+			continue
+		}
+		return ""
+	}
+	return value
 }
 
 func requireEOF(decoder *json.Decoder) error {

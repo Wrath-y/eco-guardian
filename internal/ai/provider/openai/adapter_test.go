@@ -124,6 +124,7 @@ func TestAdapterClassifiesPermanentAndTransientProviderFailuresSafely(t *testing
 		{http.StatusGatewayTimeout, aiprovider.ErrorTimeout, true},
 	} {
 		server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+			response.Header().Set("X-Request-ID", "provider-request_123")
 			response.WriteHeader(test.status)
 			_, _ = response.Write([]byte(`{"error":"adapter-canary provider-secret"}`))
 		}))
@@ -131,9 +132,22 @@ func TestAdapterClassifiesPermanentAndTransientProviderFailuresSafely(t *testing
 		sink, events := captureAttemptEvents(t, request)
 		err := adapterForServer(t, server).Invoke(request, sink)
 		server.Close()
-		if err != nil || len(*events) != 1 || (*events)[0].Error.Class != test.class || (*events)[0].Error.Retryable != test.retryable || strings.Contains((*events)[0].Error.Message, "canary") || strings.Contains((*events)[0].Error.Message, "provider-secret") {
+		if err != nil || len(*events) != 1 || (*events)[0].Error.Class != test.class || (*events)[0].Error.Retryable != test.retryable || (*events)[0].Error.RequestID != "provider-request_123" || strings.Contains((*events)[0].Error.Message, "canary") || strings.Contains((*events)[0].Error.Message, "provider-secret") {
 			t.Fatalf("status=%d events=%#v err=%v", test.status, *events, err)
 		}
+	}
+}
+
+func TestAdapterDropsUnsafeProviderRequestID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.Header().Set("X-Request-ID", "Bearer provider-secret")
+		response.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	request := adapterRequest(t)
+	sink, events := captureAttemptEvents(t, request)
+	if err := adapterForServer(t, server).Invoke(request, sink); err != nil || len(*events) != 1 || (*events)[0].Error.RequestID != "" {
+		t.Fatalf("events=%#v err=%v", *events, err)
 	}
 }
 

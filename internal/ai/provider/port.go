@@ -257,14 +257,41 @@ type TerminalError struct {
 	Class     ErrorClass `json:"class"`
 	Retryable bool       `json:"retryable"`
 	Message   string     `json:"message"`
+	RequestID string     `json:"request_id,omitempty"`
 }
 
 func (v TerminalError) Valid() bool {
 	validClass := v.Class == ErrorPermanent || v.Class == ErrorTransient || v.Class == ErrorTimeout || v.Class == ErrorCanceled || v.Class == ErrorInterrupted
-	if !validClass || !stableToken(v.Code) || !boundedText(v.Message, 1024) {
+	if !validClass || !stableToken(v.Code) || !boundedText(v.Message, 1024) || !validRequestID(v.RequestID) {
 		return false
 	}
 	return v.Retryable == (v.Class == ErrorTransient || v.Class == ErrorTimeout || v.Class == ErrorInterrupted)
+}
+
+// SafeRequestID accepts only a small opaque-token alphabet. Provider headers
+// are untrusted and must never become a channel for response bodies, secrets,
+// control characters, or other arbitrary text in public Job projections.
+func SafeRequestID(value string) string {
+	if !validRequestID(value) {
+		return ""
+	}
+	return value
+}
+
+func validRequestID(value string) bool {
+	if value == "" {
+		return true
+	}
+	if len(value) > 128 {
+		return false
+	}
+	for _, character := range value {
+		if character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' || strings.ContainsRune("._:/-", character) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 type Event struct {
