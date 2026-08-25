@@ -171,6 +171,20 @@ func TestAIAdapterPackagesRemainOutsidePureBoundaries(t *testing.T) {
 	}
 }
 
+func TestAIProposalPreviewHasNoMutationOrFormalResultDependencies(t *testing.T) {
+	assertImports(t, "../ai/preview", func(importPath string) bool {
+		for _, forbidden := range []string{
+			"gin-gonic", "modernc.org/sqlite", "/httpapi", "/storage", "/job",
+			"/versioning/release", "/versioning/gate", "/risk/gate", "/risk/orchestration",
+		} {
+			if strings.Contains(importPath, forbidden) {
+				return true
+			}
+		}
+		return false
+	}, "AI proposal materialization and preview must remain isolated from mutation, formal report, Job, and Gate implementations")
+}
+
 func assertImports(t *testing.T, dir string, forbidden func(string) bool, message string) {
 	t.Helper()
 	err := filepath.WalkDir(dir, func(name string, entry fs.DirEntry, walkErr error) error {
