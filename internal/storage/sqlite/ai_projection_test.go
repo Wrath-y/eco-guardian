@@ -55,10 +55,14 @@ func TestSQLiteDraftPatchReadProjectionComputesFreshnessAndFormalLinksWithoutHis
 	candidate := sqliteCandidate(t, input, entity, pinned)
 	record := aipersistence.DraftPatchRecord{
 		JobID: state.Job.ID, AttemptID: attemptID, InputHash: inputHash, Candidate: candidate,
-		ValidationHash: aicontract.Hash(strings.Repeat("c", 64)), PreviewHash: aicontract.Hash(strings.Repeat("d", 64)), Acceptability: aipersistence.PatchAcceptable,
+		ValidationHash: aicontract.Hash(strings.Repeat("c", 64)), Preview: sqlitePreview(inputHash, true), PreviewIssues: []string{}, Acceptability: aipersistence.PatchAcceptable,
 	}
 	if _, err = store.InsertDraftPatch(context.Background(), record); err != nil {
 		t.Fatal(err)
+	}
+	review, err := store.ReadDraftPatchReview(context.Background(), candidate.Patch.ID)
+	if err != nil || review.Patch.Hash != candidate.Patch.Hash || review.Preview == nil || !review.Preview.Acceptable || len(review.Attempts) != 1 || review.Attempts[0].Stage != aicontract.StageProviderToolLoop || len(review.RetrievalEvidence) != 1 || review.RetrievalEvidence[0].ID != pinned.Manifest.Evidence[0].ID || review.Decision != nil {
+		t.Fatalf("review=%#v err=%v", review, err)
 	}
 	var historical, historicalAudit []byte
 	if err = store.db.QueryRow(`SELECT canonical_patch FROM ai_draft_patches WHERE id=?`, candidate.Patch.ID).Scan(&historical); err != nil {

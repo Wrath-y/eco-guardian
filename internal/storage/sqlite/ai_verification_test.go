@@ -90,7 +90,7 @@ func TestAIPersistenceCrashAtomicityAndCredentialFreeBackup(t *testing.T) {
 	candidate := sqliteCandidate(t, input, entity, pinned)
 	patchRecord := aipersistence.DraftPatchRecord{
 		JobID: state.Job.ID, AttemptID: attemptID, InputHash: inputHash, Candidate: candidate,
-		ValidationHash: aicontract.Hash(strings.Repeat("c", 64)), PreviewHash: aicontract.Hash(strings.Repeat("d", 64)), Acceptability: aipersistence.PatchAcceptable,
+		ValidationHash: aicontract.Hash(strings.Repeat("c", 64)), Preview: sqlitePreview(inputHash, true), PreviewIssues: []string{}, Acceptability: aipersistence.PatchAcceptable,
 	}
 	if _, err = store.db.Exec(`CREATE TRIGGER ai_test_patch_fault BEFORE INSERT ON ai_draft_patches BEGIN SELECT RAISE(ABORT,'injected patch crash'); END`); err != nil {
 		t.Fatal(err)

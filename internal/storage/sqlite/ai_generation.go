@@ -6,8 +6,10 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 
+	aicontract "github.com/zouyi/eco-guardian/internal/ai/contract"
 	aipersistence "github.com/zouyi/eco-guardian/internal/ai/persistence"
 	"github.com/zouyi/eco-guardian/internal/domain"
 )
@@ -76,7 +78,15 @@ func (s *Store) InsertDraftPatch(ctx context.Context, record aipersistence.Draft
 	rawBlobHash := string(record.Candidate.RawAudit.StoredBodyHash)
 	diffDigest := sha256.Sum256(record.Candidate.DiffCanonical)
 	diffBlobHash := hex.EncodeToString(diffDigest[:])
-	if replay, found, findErr := replayAIDraftPatch(ctx, tx, record, rawBlobHash, diffBlobHash, s.projectID); findErr != nil {
+	canonicalPreview, previewHash, err := record.PreviewFacts()
+	if err != nil {
+		return false, aipersistence.ErrInvalid
+	}
+	previewIssues, err := json.Marshal(record.PreviewIssues)
+	if err != nil {
+		return false, aipersistence.ErrInvalid
+	}
+	if replay, found, findErr := replayAIDraftPatch(ctx, tx, record, rawBlobHash, diffBlobHash, canonicalPreview, previewIssues, previewHash, s.projectID); findErr != nil {
 		return false, findErr
 	} else if found {
 		if !replay {
@@ -92,7 +102,7 @@ func (s *Store) InsertDraftPatch(ctx context.Context, record aipersistence.Draft
 	if err = tx.QueryRowContext(ctx, `SELECT input_hash,base_revision_id FROM ai_design_runs WHERE job_id=? AND project_uuid=?`, record.JobID, s.projectID).Scan(&inputHash, &baseRevision); err != nil || inputHash != string(record.InputHash) || baseRevision != domain.ID(record.Candidate.Patch.Base.ConfigRevisionID) {
 		return false, aipersistence.ErrConflict
 	}
-	if err = ensureAIRunCapacity(ctx, tx, record.JobID, s.projectID, len(record.Candidate.PatchCanonical)+len(record.Candidate.RawAudit.StoredBody)+len(record.Candidate.DiffCanonical)); err != nil {
+	if err = ensureAIRunCapacity(ctx, tx, record.JobID, s.projectID, len(record.Candidate.PatchCanonical)+len(record.Candidate.RawAudit.StoredBody)+len(record.Candidate.DiffCanonical)+len(canonicalPreview)+len(previewIssues)); err != nil {
 		return false, err
 	}
 	now := formatAIJobTime(s.now().UTC())
@@ -102,7 +112,7 @@ func (s *Store) InsertDraftPatch(ctx context.Context, record aipersistence.Draft
 	if err = insertAIBlob(ctx, tx, diffBlobHash, "application/vnd.ecoguardian.ai-draft-diff+json", record.Candidate.DiffCanonical, now); err != nil {
 		return false, err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO ai_draft_patches(id,job_id,attempt_id,base_revision_id,input_hash,patch_hash,canonical_patch,raw_redacted_blob_hash,diff_hash,diff_blob_hash,validation_hash,preview_hash,acceptability,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, record.Candidate.Patch.ID, record.JobID, record.AttemptID, record.Candidate.Patch.Base.ConfigRevisionID, record.InputHash, record.Candidate.Patch.Hash, record.Candidate.PatchCanonical, rawBlobHash, record.Candidate.DiffHash, diffBlobHash, record.ValidationHash, record.PreviewHash, record.Acceptability, now)
+	_, err = tx.ExecContext(ctx, `INSERT INTO ai_draft_patches(id,job_id,attempt_id,base_revision_id,input_hash,patch_hash,canonical_patch,raw_redacted_blob_hash,diff_hash,diff_blob_hash,validation_hash,preview_hash,acceptability,created_at,canonical_preview,preview_issues) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, record.Candidate.Patch.ID, record.JobID, record.AttemptID, record.Candidate.Patch.Base.ConfigRevisionID, record.InputHash, record.Candidate.Patch.Hash, record.Candidate.PatchCanonical, rawBlobHash, record.Candidate.DiffHash, diffBlobHash, record.ValidationHash, previewHash, record.Acceptability, now, canonicalPreview, previewIssues)
 	if err != nil {
 		return false, err
 	}
@@ -147,18 +157,18 @@ func replayAIEvidenceBatch(ctx context.Context, tx *sql.Tx, batch aipersistence.
 	return index == len(evidence.Manifest.Evidence) && rows.Err() == nil, true, rows.Err()
 }
 
-func replayAIDraftPatch(ctx context.Context, tx *sql.Tx, record aipersistence.DraftPatchRecord, rawBlobHash, diffBlobHash string, projectID domain.ID) (bool, bool, error) {
+func replayAIDraftPatch(ctx context.Context, tx *sql.Tx, record aipersistence.DraftPatchRecord, rawBlobHash, diffBlobHash string, canonicalPreview, previewIssues []byte, expectedPreviewHash aicontract.Hash, projectID domain.ID) (bool, bool, error) {
 	var jobID domain.ID
-	var attemptID, baseRevision, inputHash, patchHash, rawHash, diffHash, storedDiffBlob, validationHash, previewHash, acceptability string
-	var canonical []byte
-	err := tx.QueryRowContext(ctx, `SELECT p.job_id,p.attempt_id,p.base_revision_id,p.input_hash,p.patch_hash,p.canonical_patch,p.raw_redacted_blob_hash,p.diff_hash,p.diff_blob_hash,p.validation_hash,p.preview_hash,p.acceptability FROM ai_draft_patches p JOIN ai_design_runs r ON r.job_id=p.job_id WHERE p.id=? AND r.project_uuid=?`, record.Candidate.Patch.ID, projectID).Scan(&jobID, &attemptID, &baseRevision, &inputHash, &patchHash, &canonical, &rawHash, &diffHash, &storedDiffBlob, &validationHash, &previewHash, &acceptability)
+	var attemptID, baseRevision, inputHash, patchHash, rawHash, diffHash, storedDiffBlob, validationHash, storedPreviewHash, acceptability string
+	var canonical, storedPreview, storedIssues []byte
+	err := tx.QueryRowContext(ctx, `SELECT p.job_id,p.attempt_id,p.base_revision_id,p.input_hash,p.patch_hash,p.canonical_patch,p.raw_redacted_blob_hash,p.diff_hash,p.diff_blob_hash,p.validation_hash,p.preview_hash,p.acceptability,p.canonical_preview,p.preview_issues FROM ai_draft_patches p JOIN ai_design_runs r ON r.job_id=p.job_id WHERE p.id=? AND r.project_uuid=?`, record.Candidate.Patch.ID, projectID).Scan(&jobID, &attemptID, &baseRevision, &inputHash, &patchHash, &canonical, &rawHash, &diffHash, &storedDiffBlob, &validationHash, &storedPreviewHash, &acceptability, &storedPreview, &storedIssues)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, false, nil
 	}
 	if err != nil {
 		return false, false, err
 	}
-	match := jobID == record.JobID && attemptID == string(record.AttemptID) && baseRevision == string(record.Candidate.Patch.Base.ConfigRevisionID) && inputHash == string(record.InputHash) && patchHash == string(record.Candidate.Patch.Hash) && bytes.Equal(canonical, record.Candidate.PatchCanonical) && rawHash == rawBlobHash && diffHash == string(record.Candidate.DiffHash) && storedDiffBlob == diffBlobHash && validationHash == string(record.ValidationHash) && previewHash == string(record.PreviewHash) && acceptability == string(record.Acceptability)
+	match := jobID == record.JobID && attemptID == string(record.AttemptID) && baseRevision == string(record.Candidate.Patch.Base.ConfigRevisionID) && inputHash == string(record.InputHash) && patchHash == string(record.Candidate.Patch.Hash) && bytes.Equal(canonical, record.Candidate.PatchCanonical) && rawHash == rawBlobHash && diffHash == string(record.Candidate.DiffHash) && storedDiffBlob == diffBlobHash && validationHash == string(record.ValidationHash) && storedPreviewHash == string(expectedPreviewHash) && acceptability == string(record.Acceptability) && bytes.Equal(storedPreview, canonicalPreview) && bytes.Equal(storedIssues, previewIssues)
 	return match, true, nil
 }
 

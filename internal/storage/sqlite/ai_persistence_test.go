@@ -94,6 +94,22 @@ func sqliteCandidate(t *testing.T, input aicontract.AIDesignInputV1, entity doma
 	return candidate
 }
 
+func sqlitePreview(inputHash aicontract.Hash, acceptable bool) aicontract.Preview {
+	return aicontract.Preview{
+		Advisory: true, InputHash: inputHash, ResultHash: aicontract.Hash(strings.Repeat("9", 64)), Acceptable: acceptable,
+		Evaluators: []aicontract.VersionIdentity{{ID: "preview-evaluator", Version: "v1", Hash: aicontract.Hash(strings.Repeat("8", 64))}}, Evidence: []aicontract.EvidenceRef{},
+	}
+}
+
+func mustSQLitePreviewHash(t *testing.T, preview aicontract.Preview) aicontract.Hash {
+	t.Helper()
+	hash, err := aicontract.HashPreview(preview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return hash
+}
+
 func mustDomainRegistry(t *testing.T) *domain.Registry {
 	t.Helper()
 	registry, err := domain.NewRegistry()
@@ -198,7 +214,7 @@ func TestSQLiteAIPersistenceSealsEvidenceAttemptsEventsAndDraftPatch(t *testing.
 
 	patchRecord := aipersistence.DraftPatchRecord{
 		JobID: state.Job.ID, AttemptID: attemptID, InputHash: inputHash, Candidate: candidate,
-		ValidationHash: aicontract.Hash(strings.Repeat("c", 64)), PreviewHash: aicontract.Hash(strings.Repeat("d", 64)), Acceptability: aipersistence.PatchAcceptable,
+		ValidationHash: aicontract.Hash(strings.Repeat("c", 64)), Preview: sqlitePreview(inputHash, true), PreviewIssues: []string{}, Acceptability: aipersistence.PatchAcceptable,
 	}
 	if replay, err := store.InsertDraftPatch(context.Background(), patchRecord); err != nil || replay {
 		t.Fatalf("patch replay=%v err=%v", replay, err)
@@ -238,7 +254,7 @@ func TestSQLiteAIPersistenceSealsEvidenceAttemptsEventsAndDraftPatch(t *testing.
 		{aiaudit.EventToolResult, map[string]any{"tool": tool, "result_hash": strings.Repeat("e", 64), "duration_millis": 4}},
 		{aiaudit.EventPatch, candidate.Patch},
 		{aiaudit.EventDiff, candidate.Diff},
-		{aiaudit.EventPreview, map[string]any{"validation_hash": patchRecord.ValidationHash, "preview_hash": patchRecord.PreviewHash, "acceptable": true}},
+		{aiaudit.EventPreview, map[string]any{"validation_hash": patchRecord.ValidationHash, "preview_hash": mustSQLitePreviewHash(t, patchRecord.Preview), "acceptable": true}},
 		{aiaudit.EventExplanation, map[string]any{"rationale": candidate.Patch.Rationale, "assumptions": candidate.Patch.Assumptions}},
 		{aiaudit.EventAttemptOutcome, outcome},
 		{aiaudit.EventCancellation, map[string]any{"cancel_generation": 0, "observed": false}},

@@ -24,6 +24,7 @@ func ensureAIRunCapacity(ctx context.Context, tx *sql.Tx, jobID, projectID domai
 		COALESCE((SELECT sum(length(m.canonical_manifest)) FROM ai_evidence_manifests m WHERE m.job_id=r.job_id),0) +
 		COALESCE((SELECT sum(length(e.canonical_evidence)) FROM ai_evidence_refs e WHERE e.job_id=r.job_id),0) +
 		COALESCE((SELECT sum(length(p.canonical_patch)) FROM ai_draft_patches p WHERE p.job_id=r.job_id),0) +
+		COALESCE((SELECT sum(length(p.canonical_preview)+length(p.preview_issues)) FROM ai_draft_patches p WHERE p.job_id=r.job_id),0) +
 		COALESCE((SELECT sum(length(e.canonical_event)) FROM ai_audit_events e JOIN ai_attempts a ON a.attempt_id=e.attempt_id WHERE a.job_id=r.job_id),0) +
 		COALESCE((SELECT sum(length(d.canonical_event)) FROM ai_job_event_details d WHERE d.job_id=r.job_id),0) +
 		COALESCE((SELECT sum(b.byte_size) FROM ai_blobs b WHERE b.content_hash IN (

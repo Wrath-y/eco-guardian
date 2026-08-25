@@ -90,7 +90,7 @@ func sealAIDecisionFixture(t *testing.T, store *Store, key string, input aicontr
 		t.Fatal(err)
 	}
 	candidate := build(pinned)
-	record := aipersistence.DraftPatchRecord{JobID: state.Job.ID, AttemptID: attemptID, InputHash: inputHash, Candidate: candidate, ValidationHash: aiDecisionHash('c'), PreviewHash: aiDecisionHash('d'), Acceptability: acceptability}
+	record := aipersistence.DraftPatchRecord{JobID: state.Job.ID, AttemptID: attemptID, InputHash: inputHash, Candidate: candidate, ValidationHash: aiDecisionHash('c'), Preview: sqlitePreview(inputHash, acceptability == aipersistence.PatchAcceptable), PreviewIssues: []string{}, Acceptability: acceptability}
 	if _, err = store.InsertDraftPatch(ctx, record); err != nil {
 		t.Fatal(err)
 	}
