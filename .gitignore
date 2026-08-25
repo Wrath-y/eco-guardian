@@ -1,5 +1,6 @@
 .traces
 .codex
+.agents
 .DS_Store
 openspec
 docs
