@@ -128,12 +128,7 @@ func currentValidationVersionManifest() (validation.VersionManifest, error) {
 	if err != nil {
 		return validation.VersionManifest{}, err
 	}
-	return validation.VersionManifest{
-		Schema:        "schema-v1",
-		DSL:           formula.DSLVersion,
-		Registry:      registry.ManifestHash(),
-		NumericPolicy: formula.NumericPolicyV1.Version,
-	}, nil
+	return validation.V1VersionManifest(registry)
 }
 
 // persistLocalValidation records only direct references and the changed

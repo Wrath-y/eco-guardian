@@ -76,6 +76,26 @@ func SortIssues(issues []Issue) []Issue {
 	sort.SliceStable(out, func(i, j int) bool { return issueSortKey(out[i]) < issueSortKey(out[j]) })
 	return out
 }
+
+// CloneIssues prevents callers of pure analyzers from mutating diagnostic
+// evidence, presentation parameters, spans or ordinals held by another layer.
+func CloneIssues(issues []Issue) []Issue {
+	out := make([]Issue, len(issues))
+	for index, issue := range issues {
+		out[index] = issue
+		out[index].MessageParams = cloneMap(issue.MessageParams)
+		out[index].Evidence = cloneMap(issue.Evidence)
+		if issue.Span != nil {
+			span := *issue.Span
+			out[index].Span = &span
+		}
+		if issue.Ordinal != nil {
+			ordinal := *issue.Ordinal
+			out[index].Ordinal = &ordinal
+		}
+	}
+	return SortIssues(out)
+}
 func issueSortKey(issue Issue) string {
 	span := "-"
 	if issue.Span != nil {
