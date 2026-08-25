@@ -26,6 +26,30 @@ func (repository *aiJobRepositoryFake) AdmitAIJob(_ context.Context, admission A
 	return repository.state, false, nil
 }
 
+func (repository *aiJobRepositoryFake) GetAIJob(_ context.Context, jobID domain.ID) (AIJobState, error) {
+	if repository.state.Job.ID != jobID {
+		return AIJobState{}, ErrAIJobTransition
+	}
+	return repository.state, nil
+}
+
+func (repository *aiJobRepositoryFake) RequestAIJobCancellation(_ context.Context, jobID domain.ID) (AIJobState, bool, error) {
+	if repository.state.Job.ID != jobID {
+		return AIJobState{}, false, ErrAIJobTransition
+	}
+	if repository.state.Job.CancelGeneration > 0 {
+		return repository.state, true, nil
+	}
+	now := repository.state.Job.UpdatedAt.Add(time.Second)
+	repository.state.Job.CancelGeneration++
+	repository.state.Job.CancelRequestedAt = &now
+	repository.state.Job.UpdatedAt = now
+	if repository.state.Job.Status == sharedjob.Queued {
+		repository.state.Job.Status = sharedjob.Canceled
+	}
+	return repository.state, false, nil
+}
+
 func (repository *aiJobRepositoryFake) TransitionAIJob(_ context.Context, transition AIJobTransition) (AIJobState, bool, error) {
 	current := repository.state
 	if transition.JobID != current.Job.ID || transition.ExpectedStatus != current.Job.Status || transition.ExpectedPhase != current.Phase || transition.ExpectedOwner != current.Owner || transition.ObservedCancelGeneration != current.Job.CancelGeneration {

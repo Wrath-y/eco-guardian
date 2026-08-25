@@ -24,16 +24,17 @@ var (
 type AIJobEventKind string
 
 const (
-	EventStage    AIJobEventKind = "stage"
-	EventProgress AIJobEventKind = "progress"
-	EventWarning  AIJobEventKind = "warning"
-	EventTool     AIJobEventKind = "tool"
-	EventRepair   AIJobEventKind = "repair"
-	EventTerminal AIJobEventKind = "terminal"
+	EventStage             AIJobEventKind = "stage"
+	EventProgress          AIJobEventKind = "progress"
+	EventWarning           AIJobEventKind = "warning"
+	EventTool              AIJobEventKind = "tool"
+	EventRepair            AIJobEventKind = "repair"
+	EventIgnoredLateResult AIJobEventKind = "ignored_late_result"
+	EventTerminal          AIJobEventKind = "terminal"
 )
 
 func (kind AIJobEventKind) Valid() bool {
-	return kind == EventStage || kind == EventProgress || kind == EventWarning || kind == EventTool || kind == EventRepair || kind == EventTerminal
+	return kind == EventStage || kind == EventProgress || kind == EventWarning || kind == EventTool || kind == EventRepair || kind == EventIgnoredLateResult || kind == EventTerminal
 }
 
 type AIJobEventDraft struct {
@@ -67,6 +68,8 @@ func (draft AIJobEventDraft) Valid() bool {
 		return draft.Phase == PhaseProviderToolLoop && draft.Tool != nil && draft.WarningCode == "" && draft.WarningRef == "" && draft.RepairCount == 0 && draft.Outcome == "" && draft.SafeErrorCode == "" && draft.Result == nil
 	case EventRepair:
 		return draft.Phase == PhaseProviderToolLoop && draft.AttemptID.Valid() && draft.RepairCount >= 1 && draft.RepairCount <= aicontract.V1MaxFormatRepairs && draft.WarningCode == "" && draft.WarningRef == "" && draft.Tool == nil && draft.Outcome == "" && draft.SafeErrorCode == "" && draft.Result == nil
+	case EventIgnoredLateResult:
+		return draft.AttemptID.Valid() && draft.WarningCode == "" && draft.WarningRef == "" && draft.Tool == nil && draft.RepairCount == 0 && draft.Outcome == aicontract.OutcomeIgnoredLateResult && draft.SafeErrorCode == "" && draft.Result == nil
 	case EventTerminal:
 		if draft.Tool != nil || draft.WarningCode != "" || draft.WarningRef != "" || draft.RepairCount != 0 || !terminalAttemptOutcome(draft.Outcome) {
 			return false

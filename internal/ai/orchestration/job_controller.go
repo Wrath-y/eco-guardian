@@ -119,6 +119,8 @@ func (transition AIJobTransition) Valid() bool {
 // changing state, so duplicate workers cannot advance or seal stale work.
 type AIJobRepository interface {
 	AdmitAIJob(context.Context, AIJobAdmission) (AIJobState, bool, error)
+	GetAIJob(context.Context, domain.ID) (AIJobState, error)
+	RequestAIJobCancellation(context.Context, domain.ID) (AIJobState, bool, error)
 	TransitionAIJob(context.Context, AIJobTransition) (AIJobState, bool, error)
 }
 
@@ -172,6 +174,40 @@ func (controller AIJobController) SealPatch(ctx context.Context, current AIJobSt
 		return AIJobState{}, false, ErrAIJobTransition
 	}
 	return controller.transition(ctx, current, sharedjob.Succeeded, current.Phase, "", result)
+}
+
+func (controller AIJobController) RequestCancellation(ctx context.Context, jobID domain.ID) (AIJobState, bool, error) {
+	if ctx == nil || controller.Jobs == nil || !jobID.Valid() {
+		return AIJobState{}, false, ErrAIJobTransition
+	}
+	state, replay, err := controller.Jobs.RequestAIJobCancellation(ctx, jobID)
+	if err != nil {
+		return AIJobState{}, false, err
+	}
+	if !state.Valid() || state.Job.ID != jobID || state.Job.CancelGeneration < 1 || state.Job.CancelRequestedAt == nil {
+		return AIJobState{}, false, ErrAIJobTransition
+	}
+	if state.Job.Status != sharedjob.Running && state.Job.Status != sharedjob.Canceled && state.Job.Status != sharedjob.Interrupted {
+		return AIJobState{}, false, ErrAIJobTransition
+	}
+	return state, replay, nil
+}
+
+func (controller AIJobController) SettleCancellation(ctx context.Context, current AIJobState, remoteStopped bool) (AIJobState, bool, error) {
+	if !current.Valid() || current.Job.CancelGeneration < 1 || current.Job.CancelRequestedAt == nil {
+		return AIJobState{}, false, ErrAIJobTransition
+	}
+	next := sharedjob.Interrupted
+	if remoteStopped {
+		next = sharedjob.Canceled
+	}
+	if current.Job.Status == next && current.Owner == "" && current.Job.Result == nil {
+		return current, true, nil
+	}
+	if current.Job.Status != sharedjob.Running {
+		return AIJobState{}, false, ErrAIJobTransition
+	}
+	return controller.transition(ctx, current, next, current.Phase, "", nil)
 }
 
 func (controller AIJobController) transition(ctx context.Context, current AIJobState, nextStatus sharedjob.Status, nextPhase JobPhase, nextOwner string, result *sharedjob.Result) (AIJobState, bool, error) {
