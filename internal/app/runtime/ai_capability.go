@@ -9,6 +9,8 @@ import (
 	runtimeconfig "github.com/zouyi/eco-guardian/internal/app/runtime/config"
 )
 
+var ErrAIProviderConfiguration = errors.New("AI Provider configuration is unavailable")
+
 type AISettingsLoader interface {
 	Load() (runtimeconfig.Settings, bool, error)
 }
@@ -20,6 +22,31 @@ type AICapabilityService struct {
 	Settings    AISettingsLoader
 	Credentials aiprovider.CredentialResolver
 	Prober      aiprovider.CapabilityProber
+}
+
+// Resolve snapshots the non-sensitive settings and secret handle exactly once
+// for an attempt. It satisfies the AI orchestration configuration port without
+// importing orchestration or a concrete Provider adapter.
+func (s AICapabilityService) Resolve(ctx context.Context) (aiprovider.Configuration, aiprovider.Secret, error) {
+	if s.Settings == nil {
+		return aiprovider.Configuration{}, aiprovider.Secret{}, ErrAIProviderConfiguration
+	}
+	settings, _, err := s.Settings.Load()
+	if err != nil || !settings.AI.Enabled {
+		return aiprovider.Configuration{}, aiprovider.Secret{}, ErrAIProviderConfiguration
+	}
+	configuration := aiprovider.Configuration{
+		Enabled: true, Endpoint: settings.AI.Endpoint, Model: settings.AI.Model,
+		Timeout: time.Duration(settings.AI.RequestTimeoutSeconds) * time.Second, AllowCloud: settings.AI.AllowCloud,
+	}
+	if _, err := aiprovider.ValidateEndpoint(configuration.Endpoint, configuration.AllowCloud); err != nil {
+		return aiprovider.Configuration{}, aiprovider.Secret{}, ErrAIProviderConfiguration
+	}
+	secret, err := s.Credentials.Resolve(ctx, aiprovider.OpenAICompatibleProvider)
+	if err != nil {
+		return aiprovider.Configuration{}, aiprovider.Secret{}, ErrAIProviderConfiguration
+	}
+	return configuration, secret, nil
 }
 
 func (s AICapabilityService) Observe(ctx context.Context) aiprovider.Capability {

@@ -50,6 +50,10 @@ func TestAICapabilityServiceResolvesSettingsCredentialAndProbe(t *testing.T) {
 	if capability.State != aiprovider.CapabilityAvailable || capability.EndpointClassification == nil || *capability.EndpointClassification != aiprovider.EndpointLoopback || probe.calls != 1 {
 		t.Fatalf("capability=%#v calls=%d", capability, probe.calls)
 	}
+	configuration, credential, err := service.Resolve(context.Background())
+	if err != nil || configuration.Model != "fixture" || !credential.Present() {
+		t.Fatalf("resolved configuration=%#v credential=%v err=%v", configuration, credential, err)
+	}
 }
 
 func TestAICapabilityServiceMissingCredentialDoesNotProbe(t *testing.T) {

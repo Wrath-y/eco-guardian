@@ -90,12 +90,13 @@ func (v ToolDefinition) Valid() bool {
 type ToolResult struct {
 	CallID     aicontract.ToolCallID      `json:"call_id"`
 	Tool       aicontract.VersionIdentity `json:"tool"`
+	Arguments  json.RawMessage            `json:"arguments"`
 	Result     json.RawMessage            `json:"result"`
 	ResultHash aicontract.Hash            `json:"result_hash"`
 }
 
 func (v ToolResult) Valid() bool {
-	return v.CallID.Valid() && v.Tool.Valid() && validJSON(v.Result) && v.ResultHash.Valid()
+	return v.CallID.Valid() && v.Tool.Valid() && validJSONObject(v.Arguments) && validJSON(v.Result) && v.ResultHash.Valid()
 }
 
 // CancellationToken combines context cancellation with the durable Job cancel
@@ -126,21 +127,22 @@ func (v ContextCancellation) Err() error {
 func (v ContextCancellation) Generation() uint64 { return v.CancelGeneration }
 
 type AttemptRequest struct {
-	Manifest        AttemptManifest   `json:"manifest"`
-	Prompt          PromptMessages    `json:"prompt"`
-	UserInput       json.RawMessage   `json:"user_input"`
-	EvidenceSummary json.RawMessage   `json:"evidence_summary"`
-	ResponseSchema  json.RawMessage   `json:"response_schema"`
-	Tools           []ToolDefinition  `json:"tools"`
-	ToolResults     []ToolResult      `json:"tool_results"`
-	Parameters      ModelParameters   `json:"parameters"`
-	Timeout         time.Duration     `json:"-"`
-	Cancellation    CancellationToken `json:"-"`
+	Manifest        AttemptManifest         `json:"manifest"`
+	Prompt          PromptMessages          `json:"prompt"`
+	UserInput       json.RawMessage         `json:"user_input"`
+	EvidenceSummary json.RawMessage         `json:"evidence_summary"`
+	ResponseSchema  json.RawMessage         `json:"response_schema"`
+	Tools           []ToolDefinition        `json:"tools"`
+	ToolResults     []ToolResult            `json:"tool_results"`
+	Parameters      ModelParameters         `json:"parameters"`
+	Limits          aicontract.BudgetLimits `json:"limits"`
+	Timeout         time.Duration           `json:"-"`
+	Cancellation    CancellationToken       `json:"-"`
 }
 
 func (v AttemptRequest) Valid() bool {
 	if !v.Manifest.Valid() || !v.Prompt.Valid() || !validJSONObject(v.UserInput) || !validJSONObject(v.EvidenceSummary) ||
-		!validJSONObject(v.ResponseSchema) || !v.Parameters.Valid() || v.Timeout <= 0 || v.Timeout > 10*time.Minute ||
+		!validJSONObject(v.ResponseSchema) || !v.Parameters.Valid() || !boundedLimits(v.Limits) || v.Timeout <= 0 || v.Timeout > 10*time.Minute ||
 		v.Cancellation == nil || v.Cancellation.Done() == nil || v.Cancellation.Generation() != v.Manifest.CancelGeneration ||
 		len(v.Tools) != len(v.Manifest.Tools) {
 		return false
@@ -168,6 +170,14 @@ func (v AttemptRequest) Valid() bool {
 	return true
 }
 
+func boundedLimits(value aicontract.BudgetLimits) bool {
+	return value.Valid() && value.MaxFormatRepairs <= aicontract.V1MaxFormatRepairs &&
+		value.MaxProviderTurns <= aicontract.V1MaxProviderTurns && value.MaxToolCalls <= aicontract.V1MaxToolCalls &&
+		value.MaxSearchCandidates <= aicontract.V1MaxSearchCandidates && value.MaxDurationMillis <= aicontract.V1MaxDurationMillis &&
+		value.MaxContextBytes <= aicontract.V1MaxContextBytes && value.MaxOutputBytes <= aicontract.V1MaxOutputBytes &&
+		value.MaxToolResultBytes <= aicontract.V1MaxToolResultBytes
+}
+
 func (v AttemptRequest) Clone() AttemptRequest {
 	v.Manifest.Tools = append([]aicontract.VersionIdentity(nil), v.Manifest.Tools...)
 	v.UserInput = append(json.RawMessage(nil), v.UserInput...)
@@ -179,6 +189,7 @@ func (v AttemptRequest) Clone() AttemptRequest {
 	}
 	v.ToolResults = append([]ToolResult(nil), v.ToolResults...)
 	for index := range v.ToolResults {
+		v.ToolResults[index].Arguments = append(json.RawMessage(nil), v.ToolResults[index].Arguments...)
 		v.ToolResults[index].Result = append(json.RawMessage(nil), v.ToolResults[index].Result...)
 	}
 	return v
@@ -253,7 +264,7 @@ func (v TerminalError) Valid() bool {
 	if !validClass || !stableToken(v.Code) || !boundedText(v.Message, 1024) {
 		return false
 	}
-	return v.Retryable == (v.Class == ErrorTransient || v.Class == ErrorTimeout)
+	return v.Retryable == (v.Class == ErrorTransient || v.Class == ErrorTimeout || v.Class == ErrorInterrupted)
 }
 
 type Event struct {

@@ -1,0 +1,77 @@
+[
+  {
+    "name": "valid_structured_patch",
+    "chunks": [
+      {"model":"fixture-model","choices":[{"delta":{"content":"{\"targets\":[]}"},"finish_reason":"stop"}]}
+    ],
+    "done": true,
+    "expected_events": ["structured_response"]
+  },
+  {
+    "name": "multiple_tool_calls",
+    "chunks": [
+      {"model":"fixture-model","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"read_revision_context","arguments":"{\"base_identity_hash\":\"a\",\"payload\":{}}"}},{"index":1,"id":"call-2","function":{"name":"read_revision_context","arguments":"{\"base_identity_hash\":\"b\",\"payload\":{}}"}}]},"finish_reason":"tool_calls"}]}
+    ],
+    "done": true,
+    "expected_events": ["tool_call", "tool_call"]
+  },
+  {
+    "name": "malformed_json",
+    "raw_chunks": ["{"],
+    "done": true,
+    "expected_events": ["error"],
+    "expected_error": "AI_PROVIDER_STREAM_INVALID"
+  },
+  {
+    "name": "oversized_json",
+    "oversized_content_bytes": 128,
+    "max_output_bytes": 32,
+    "done": true,
+    "expected_events": ["error"],
+    "expected_error": "AI_BUDGET_EXCEEDED"
+  },
+  {
+    "name": "timeout",
+    "delay_ms": 80,
+    "timeout_ms": 10,
+    "expected_events": ["error"],
+    "expected_error": "AI_PROVIDER_TIMEOUT"
+  },
+  {
+    "name": "disconnect_without_done",
+    "chunks": [
+      {"model":"fixture-model","choices":[{"delta":{"content":"{\"targets\":"},"finish_reason":null}]}
+    ],
+    "expected_events": ["error"],
+    "expected_error": "AI_PROVIDER_INTERRUPTED"
+  },
+  {
+    "name": "cancellation",
+    "delay_ms": 80,
+    "cancel_after_ms": 10,
+    "expected_events": ["error"],
+    "expected_error": "AI_CANCELED"
+  },
+  {
+    "name": "late_terminal_after_cancel",
+    "delay_ms": 40,
+    "cancel_after_ms": 5,
+    "ignore_cancel": true,
+    "chunks": [
+      {"model":"fixture-model","choices":[{"delta":{"content":"{\"targets\":[]}"},"finish_reason":"stop"}]}
+    ],
+    "done": true,
+    "expected_events": ["error"],
+    "expected_error": "AI_CANCELED"
+  },
+  {
+    "name": "usage_accounting",
+    "chunks": [
+      {"model":"fixture-model","choices":[{"delta":{"content":"{\"targets\":[]}"},"finish_reason":"stop"}]},
+      {"model":"fixture-model","choices":[],"usage":{"input_tokens":21,"output_tokens":4,"total_tokens":25}}
+    ],
+    "done": true,
+    "expected_events": ["usage", "structured_response"],
+    "expected_total_tokens": 25
+  }
+]

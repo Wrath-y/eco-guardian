@@ -30,6 +30,7 @@ func validAttemptRequest(t *testing.T) AttemptRequest {
 		Prompt: PromptMessages{System: "system", Developer: "developer"}, UserInput: json.RawMessage(`{"goal":"safe"}`),
 		EvidenceSummary: json.RawMessage(`{"evidence_ids":["e-1"]}`), ResponseSchema: json.RawMessage(`{"type":"object"}`),
 		Tools: []ToolDefinition{tool}, Parameters: ModelParameters{Temperature: "0", TopP: "1"}, Timeout: time.Second,
+		Limits:       aicontract.V1Fixture().Budget.Limits,
 		Cancellation: ContextCancellation{Context: ctx, CancelGeneration: 3},
 	}
 }

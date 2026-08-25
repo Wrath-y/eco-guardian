@@ -1,0 +1,9 @@
+[
+  {"name":"available","model_present":true,"structured_status":200,"tool_status":200,"streaming_status":200,"expected_state":"available","expected_reasons":[]},
+  {"name":"model_unavailable","model_present":false,"structured_status":200,"tool_status":200,"streaming_status":200,"expected_state":"unavailable","expected_reasons":["AI_MODEL_UNAVAILABLE"]},
+  {"name":"structured_output_unsupported","model_present":true,"structured_status":400,"tool_status":200,"streaming_status":200,"expected_state":"unavailable","expected_reasons":["AI_STRUCTURED_OUTPUT_UNSUPPORTED"]},
+  {"name":"tool_calls_unsupported","model_present":true,"structured_status":200,"tool_status":400,"streaming_status":200,"expected_state":"unavailable","expected_reasons":["AI_TOOL_CALLS_UNSUPPORTED"]},
+  {"name":"streaming_degraded","model_present":true,"structured_status":200,"tool_status":200,"streaming_status":400,"expected_state":"degraded","expected_reasons":["AI_STREAMING_UNAVAILABLE"]},
+  {"name":"provider_unavailable","models_status":503,"model_present":true,"structured_status":200,"tool_status":200,"streaming_status":200,"expected_state":"unavailable","expected_reasons":["AI_MODEL_UNAVAILABLE"]},
+  {"name":"probe_timeout","models_delay_ms":40,"model_present":true,"structured_status":200,"tool_status":200,"streaming_status":200,"timeout_ms":5,"expected_state":"unavailable","expected_reasons":["AI_PROVIDER_UNAVAILABLE"]}
+]
