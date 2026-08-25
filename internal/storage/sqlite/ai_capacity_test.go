@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 // realistic large canonical events. The rejected append must remain atomic.
 func TestAIDesignRunCapacityFixture(t *testing.T) {
 	store := newStore(t)
+	beforeFootprint := aiDatabaseFootprint(t, store.path)
 	entity, revision, err := store.Create(context.Background(), domain.KindTag, tagDraft("aicapacity"))
 	if err != nil {
 		t.Fatal(err)
@@ -64,5 +66,31 @@ func TestAIDesignRunCapacityFixture(t *testing.T) {
 	if rows != committed || bytes >= MaxAIRunStoredBytesV1 {
 		t.Fatalf("rows=%d committed=%d bytes=%d limit=%d", rows, committed, bytes, MaxAIRunStoredBytesV1)
 	}
-	t.Logf("ai-capacity events=%d canonical_event_bytes=%d elapsed=%s retention=project_history", committed, bytes, time.Since(started))
+	afterFootprint := aiDatabaseFootprint(t, store.path)
+	if growth := afterFootprint - beforeFootprint; growth > MaxAIProjectGrowthBytesV1 {
+		t.Fatalf("AI project database growth=%d bytes, want <=%d", growth, MaxAIProjectGrowthBytesV1)
+	}
+	cancelStarted := time.Now()
+	canceled, _, err := controller.RequestCancellation(context.Background(), state.Job.ID)
+	cancelLatency := time.Since(cancelStarted)
+	if err != nil || canceled.Job.CancelGeneration != 1 || cancelLatency > 250*time.Millisecond {
+		t.Fatalf("cancel generation=%d latency=%s err=%v", canceled.Job.CancelGeneration, cancelLatency, err)
+	}
+	t.Logf("ai-capacity events=%d canonical_event_bytes=%d db_growth_bytes=%d cancel_latency=%s elapsed=%s retention=project_history", committed, bytes, afterFootprint-beforeFootprint, cancelLatency, time.Since(started))
+}
+
+func aiDatabaseFootprint(t *testing.T, path string) int64 {
+	t.Helper()
+	var total int64
+	for _, name := range []string{path, path + "-wal", path + "-shm"} {
+		info, err := os.Stat(name)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		total += info.Size()
+	}
+	return total
 }

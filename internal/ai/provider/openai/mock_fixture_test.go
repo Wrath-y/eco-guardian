@@ -51,6 +51,10 @@ func TestProviderStreamMockFixtures(t *testing.T) {
 	if err := json.Unmarshal(raw, &fixtures); err != nil {
 		t.Fatal(err)
 	}
+	assertFixtureMatrix(t, fixtures, func(value streamFixture) string { return value.Name }, []string{
+		"valid_structured_patch", "multiple_tool_calls", "malformed_json", "oversized_json",
+		"timeout", "disconnect_without_done", "cancellation", "late_terminal_after_cancel", "usage_accounting",
+	})
 	for _, fixture := range fixtures {
 		t.Run(fixture.Name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -132,6 +136,10 @@ func TestCapabilityProbeMockFixtures(t *testing.T) {
 	if err := json.Unmarshal(raw, &fixtures); err != nil {
 		t.Fatal(err)
 	}
+	assertFixtureMatrix(t, fixtures, func(value capabilityFixture) string { return value.Name }, []string{
+		"available", "model_unavailable", "structured_output_unsupported", "tool_calls_unsupported",
+		"streaming_degraded", "provider_unavailable", "probe_timeout",
+	})
 	for _, fixture := range fixtures {
 		t.Run(fixture.Name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -200,5 +208,22 @@ func TestCapabilityProbeMockFixtures(t *testing.T) {
 				t.Fatalf("capability=%#v want state=%s reasons=%v", capability, fixture.ExpectedState, fixture.ExpectedReasons)
 			}
 		})
+	}
+}
+
+func assertFixtureMatrix[T any](t *testing.T, fixtures []T, name func(T) string, required []string) {
+	t.Helper()
+	seen := make(map[string]bool, len(fixtures))
+	for _, fixture := range fixtures {
+		if id := name(fixture); id == "" || seen[id] {
+			t.Fatalf("empty or duplicate Provider fixture %q", id)
+		} else {
+			seen[id] = true
+		}
+	}
+	for _, id := range required {
+		if !seen[id] {
+			t.Errorf("Provider fixture matrix is missing %q", id)
+		}
 	}
 }

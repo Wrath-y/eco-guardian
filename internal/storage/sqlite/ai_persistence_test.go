@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -300,6 +301,48 @@ func TestSQLiteAIPersistenceSealsEvidenceAttemptsEventsAndDraftPatch(t *testing.
 	} {
 		if _, err := store.db.Exec(statement); err == nil {
 			t.Fatalf("sealed generation fact accepted %s", name)
+		}
+	}
+
+	// Force SQLite to reverse every unordered scan, then reopen the project.
+	// Repository ORDER BY clauses and canonical hashes must make both views
+	// byte/identity equivalent regardless of page layout or process lifetime.
+	orderedEvents, err := store.ListAuditEvents(context.Background(), attemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.db.Exec(`PRAGMA reverse_unordered_selects=ON`); err != nil {
+		t.Fatal(err)
+	}
+	reversedEvents, err := store.ListAuditEvents(context.Background(), attemptID)
+	if err != nil || len(reversedEvents) != len(orderedEvents) {
+		t.Fatalf("reverse scan events=%d/%d err=%v", len(reversedEvents), len(orderedEvents), err)
+	}
+	for index := range orderedEvents {
+		if reversedEvents[index].Record.Ordinal != orderedEvents[index].Record.Ordinal || reversedEvents[index].ChainHash != orderedEvents[index].ChainHash || !bytes.Equal(reversedEvents[index].Payload, orderedEvents[index].Payload) {
+			t.Fatalf("reverse scan changed audit event %d", index)
+		}
+	}
+	projectDir, registry := filepath.Dir(store.path), store.registry
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, _, err := Open(projectDir, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	reopenedReview, err := reopened.ReadDraftPatchReview(context.Background(), candidate.Patch.ID)
+	if err != nil || reopenedReview.Patch.Hash != candidate.Patch.Hash || reopenedReview.Preview == nil || mustSQLitePreviewHash(t, *reopenedReview.Preview) != mustSQLitePreviewHash(t, patchRecord.Preview) {
+		t.Fatalf("reopened review=%#v err=%v", reopenedReview, err)
+	}
+	reopenedEvents, err := reopened.ListAuditEvents(context.Background(), attemptID)
+	if err != nil || len(reopenedEvents) != len(orderedEvents) {
+		t.Fatalf("reopened events=%d/%d err=%v", len(reopenedEvents), len(orderedEvents), err)
+	}
+	for index := range orderedEvents {
+		if reopenedEvents[index].ChainHash != orderedEvents[index].ChainHash || !bytes.Equal(reopenedEvents[index].Payload, orderedEvents[index].Payload) {
+			t.Fatalf("restart changed audit event %d", index)
 		}
 	}
 }

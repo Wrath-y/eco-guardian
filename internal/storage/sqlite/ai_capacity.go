@@ -8,7 +8,12 @@ import (
 	"github.com/zouyi/eco-guardian/internal/domain"
 )
 
-const MaxAIRunStoredBytesV1 = 8 << 20
+const (
+	MaxAIRunStoredBytesV1 = 8 << 20
+	// MaxAIProjectGrowthBytesV1 includes the canonical run payload plus SQLite
+	// pages, indexes and the bounded WAL footprint for one maximal AI run.
+	MaxAIProjectGrowthBytesV1 = 24 << 20
+)
 
 var ErrAIRunCapacity = errors.New("AI design run exceeds its durable payload capacity")
 

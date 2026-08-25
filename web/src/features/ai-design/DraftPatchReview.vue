@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { useQueryClient } from '@tanstack/vue-query'
+import { versionKeys } from '@/api/versions'
 import { AIApiError, acceptDraftPatch, discardDraftPatch, type DraftPatch, useDraftPatch } from './api'
 
 const props = defineProps<{ projectID: string; patchID: string }>()
+const client = useQueryClient()
 const query = useDraftPatch(() => props.projectID, () => props.patchID)
 const originals = ref<Record<string, Record<string, unknown>>>({})
 const decisionBusy = ref<'accept' | 'discard' | ''>('')
@@ -41,7 +44,11 @@ async function accept() {
   try {
     const result = await acceptDraftPatch(patch.value, key('accept'))
     decisionMessage.value = `已创建 revision ${result.revision_id}；published=false，仍需单独人工发布。`
-    await query.refetch(); await focusSummary()
+    await Promise.all([
+      query.refetch(),
+      client.invalidateQueries({ queryKey: versionKeys.history(props.projectID) }),
+    ])
+    await focusSummary()
   } catch (cause) {
     const error = cause as AIApiError
     conflict.value = error.code === 'REVISION_CONFLICT' || error.code === 'AI_PATCH_STALE'

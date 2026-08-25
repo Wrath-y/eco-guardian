@@ -1,10 +1,12 @@
 package architecture_test
 
 import (
+	"bytes"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -184,6 +186,70 @@ func TestAIProposalPreviewHasNoMutationOrFormalResultDependencies(t *testing.T) 
 		}
 		return false
 	}, "AI proposal materialization and preview must remain isolated from mutation, formal report, Job, and Gate implementations")
+}
+
+func TestAIExecutionAndHTTPPathsCannotReachReleaseGraphActivationOrImmutableRevisionWriters(t *testing.T) {
+	// Provider, retrieval, tool, orchestration, recovery, preview and audit code
+	// must be incapable of reaching any configuration/release mutation adapter.
+	assertImports(t, "../ai", func(importPath string) bool {
+		for _, forbidden := range []string{
+			"/storage", "/project", "/versioning/release", "/versioning/revision",
+			"/graph/activation", "/graph/orchestration", "/httpapi",
+		} {
+			if strings.Contains(importPath, forbidden) {
+				return true
+			}
+		}
+		return false
+	}, "AI execution must terminate at immutable DraftPatch/application ports")
+
+	for _, pattern := range []string{"../httpapi/ai*.go", "../httpapi/*ai*.go"} {
+		files, err := filepath.Glob(pattern)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range files {
+			if strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			f, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.ImportsOnly)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, imp := range f.Imports {
+				importPath := strings.Trim(imp.Path.Value, "\"")
+				for _, forbidden := range []string{"/versioning/release", "/graph/activation", "/graph/orchestration"} {
+					if strings.Contains(importPath, forbidden) {
+						t.Errorf("%s imports forbidden mutation adapter %s", name, importPath)
+					}
+				}
+			}
+		}
+	}
+
+	// The dedicated UI may submit AI admission/decision/settings requests only;
+	// publishing and Graph activation remain separate human workflows.
+	err := filepath.WalkDir("../../web/src/features/ai-design", func(name string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || (!strings.HasSuffix(name, ".ts") && !strings.HasSuffix(name, ".vue")) {
+			return nil
+		}
+		body, readErr := os.ReadFile(name)
+		if readErr != nil {
+			return readErr
+		}
+		for _, forbidden := range [][]byte{[]byte("/api/v1/releases"), []byte("/snapshots/"), []byte("/activate")} {
+			if bytes.Contains(body, forbidden) {
+				t.Errorf("%s contains forbidden direct mutation route %q", name, forbidden)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func assertImports(t *testing.T, dir string, forbidden func(string) bool, message string) {

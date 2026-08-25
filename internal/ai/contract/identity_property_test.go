@@ -126,13 +126,27 @@ func TestEveryRecordedVersionDimensionChangesCanonicalIdentity(t *testing.T) {
 func TestV1ManifestIdentityGoldens(t *testing.T) {
 	fixture := V1Fixture()
 	want := map[string]Hash{
-		V1PromptID:           "1dbd1f20d5ff02ff0c3397154219aa468a0d39fa8a90fba94e83bbafa854d010",
-		V1DraftPatchSchemaID: "c70965d5a5380509607678cd7efcb92041b2215bc926f7c609d62ada47b15bc7",
-		V1BudgetPolicyID:     "d3f3b033bdfa8a3baabd771ed291de08dad4ae5a3ce37b469f97a21e9d332db6",
-		V1OrchestratorID:     "de577e79e3482ac738e3a9fd789c6d7d95b81495814d52708027dca0f88cee79",
+		V1PromptID:              "1dbd1f20d5ff02ff0c3397154219aa468a0d39fa8a90fba94e83bbafa854d010",
+		V1DraftPatchSchemaID:    "c70965d5a5380509607678cd7efcb92041b2215bc926f7c609d62ada47b15bc7",
+		V1BudgetPolicyID:        "d3f3b033bdfa8a3baabd771ed291de08dad4ae5a3ce37b469f97a21e9d332db6",
+		V1OrchestratorID:        "de577e79e3482ac738e3a9fd789c6d7d95b81495814d52708027dca0f88cee79",
+		"read_revision_context": "a0e4446427a793611ad1e2f48c8b538149d7a04362272a75c4520226d6b2274e",
+		"retrieve_evidence":     "9912623bbef0370fc7b206eeae3f8edf1044cc4b5438238d9bc4a09bf9daad89",
+		"validate_proposal":     "94abbf27aa33a28625c7f308331d77e97cfd26d1621fd8713704b4019d8e8e8d",
+		"preview_simulation":    "83f10c7ef08f913c28c47ade964150afc1dffb6b1843d91c6b7ed39176e669a7",
+		"preview_risk":          "19c01412c5102788ced2aa526ec2bca0bb89638f875f4679e4096cbbc02708fe",
+		"search_parameters":     "2f288dd2ceddb67d8d4298b71398e1940812a449f2a2f943e1878f8070b8ba38",
 	}
 	if fixture.Prompt.Identity.Hash != want[V1PromptID] || fixture.PatchSchema.Identity.Hash != want[V1DraftPatchSchemaID] || fixture.Budget.Identity.Hash != want[V1BudgetPolicyID] || fixture.Orchestrator.Identity.Hash != want[V1OrchestratorID] {
 		t.Fatalf("v1 registry golden identity drift: %#v", fixture)
+	}
+	if len(fixture.Tools) != len(V1ToolNames) {
+		t.Fatalf("v1 tool identity matrix=%d want=%d", len(fixture.Tools), len(V1ToolNames))
+	}
+	for _, tool := range fixture.Tools {
+		if tool.Identity.Version != V1Version || tool.Identity.Hash != want[tool.Identity.ID] {
+			t.Errorf("v1 tool identity drift: %#v", tool.Identity)
+		}
 	}
 }
 
