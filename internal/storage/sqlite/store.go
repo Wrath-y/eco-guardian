@@ -401,11 +401,21 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 		if err := applyMigrationV17(ctx, tx); err != nil {
 			return err
 		}
+		if hook != nil {
+			if err := hook("ai-design-persistence-v17"); err != nil {
+				return err
+			}
+		}
 		version = 17
 	}
 	if version == 17 {
 		if err := applyMigrationV18(ctx, tx); err != nil {
 			return err
+		}
+		if hook != nil {
+			if err := hook("ai-generation-immutability-v18"); err != nil {
+				return err
+			}
 		}
 		version = 18
 	}

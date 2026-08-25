@@ -65,3 +65,9 @@ func TestAuditEventConstructorRedactsSecretsAndDropsHiddenReasoning(t *testing.T
 		t.Fatalf("unsafe payload=%s", payload)
 	}
 }
+
+func TestAuditEventConstructorRejectsPayloadAboveDurableLimit(t *testing.T) {
+	if _, err := NewEventDraft(NewRedactor(), 1, "attempt-1", EventToolResult, map[string]any{"payload": strings.Repeat("x", MaxCanonicalPayloadBytes)}, nil); !errors.Is(err, ErrAuditEventInvalid) {
+		t.Fatalf("oversized audit payload err=%v", err)
+	}
+}

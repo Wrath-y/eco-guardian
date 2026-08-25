@@ -294,7 +294,7 @@ func TestMigrationStepsRollbackAndReplayWithoutDuplicates(t *testing.T) {
 	if _, err = db.Exec(`INSERT INTO project_meta(id,db_schema_version,created_at) VALUES(?,?,?)`, mustID(t), 1, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 		t.Fatal(err)
 	}
-	for _, failedStep := range []string{"validation-v2", "versioning-v3", "graph-sync-v5"} {
+	for _, failedStep := range []string{"validation-v2", "versioning-v3", "graph-sync-v5", "ai-design-persistence-v17", "ai-generation-immutability-v18"} {
 		tx, txErr := db.BeginTx(context.Background(), nil)
 		if txErr != nil {
 			t.Fatal(txErr)
