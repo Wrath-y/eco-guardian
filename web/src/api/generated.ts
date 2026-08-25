@@ -424,6 +424,127 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ai-design-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Admits a bounded AI proposal Job over one explicit immutable base revision. The Job can produce only a reviewable DraftPatch and never writes a revision or release. */
+        post: operations["createAIDesignJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/draft-patches/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Reads an immutable generated Patch, evidence, attempt lineage and advisory preview plus read-time freshness and decision projections. */
+        get: operations["getDraftPatch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/draft-patches/{id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Records an explicit human acceptance and atomically creates one revision after server-side freshness and policy revalidation. It never publishes a release. */
+        post: operations["acceptDraftPatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/draft-patches/{id}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Records an append-only human discard decision without changing the working draft. */
+        post: operations["discardDraftPatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Reads non-sensitive machine-local settings and Provider readiness metadata. Credential material is never returned. */
+        get: operations["getSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Replaces the bounded non-sensitive AI Provider selection. Credential material is rejected and uses the separate write-only endpoint. */
+        patch: operations["patchSettings"];
+        trace?: never;
+    };
+    "/settings/credentials/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Writes a Provider credential to the platform credential manager. The credential is write-only and is never returned or persisted in settings. */
+        put: operations["putProviderCredential"];
+        post?: never;
+        /** @description Deletes the persistent Provider credential. A process environment credential may remain available as a non-persistent, lower-precedence fallback. */
+        delete: operations["deleteProviderCredential"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runtime/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Reads safe process-wide capability, registered contract and bounded-limit status without secrets. */
+        get: operations["getRuntimeStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runtime/capabilities": {
         parameters: {
             query?: never;
@@ -1361,10 +1482,69 @@ export interface components {
             enabled: boolean;
             disabled_reasons: components["schemas"]["ReleaseDisabledReason"][];
         };
-        /** @description Safe runtime availability projection. It deliberately omits backup credentials, service endpoints, and client-computed Gate pass state. */
+        /** @enum {string} */
+        AIEndpointClassification: "loopback" | "cloud";
+        AIProviderSettings: {
+            enabled: boolean;
+            /** @description Non-sensitive OpenAI-compatible base URL. */
+            endpoint: string;
+            model: string;
+            request_timeout_seconds: number;
+            /** @description Explicit user selection permitting a non-loopback HTTPS endpoint. */
+            allow_cloud: boolean;
+            endpoint_classification: components["schemas"]["AIEndpointClassification"] | null;
+            /** @description Presence only; credential material is never returned. */
+            credential_present: boolean;
+        };
+        PatchAIProviderSettings: {
+            enabled: boolean;
+            endpoint: string;
+            model: string;
+            request_timeout_seconds: number;
+            allow_cloud: boolean;
+        };
+        SettingsResource: {
+            schema_version: number;
+            ai: components["schemas"]["AIProviderSettings"];
+        };
+        PatchSettingsRequest: {
+            ai: components["schemas"]["PatchAIProviderSettings"];
+        };
+        PutProviderCredentialRequest: {
+            /** @description Write-only Provider credential stored by the platform credential manager. */
+            credential: string;
+        };
+        ProviderCredentialStatus: {
+            /** @enum {string} */
+            provider: "openai-compatible";
+            credential_present: boolean;
+            /** @description Persistent credential manager wins over the non-persistent environment fallback. */
+            source: components["schemas"]["CredentialSource"] | null;
+        };
+        /** @enum {string} */
+        CredentialSource: "credential_manager" | "environment";
+        AIProviderCapability: {
+            /** @enum {string} */
+            state: "unconfigured" | "available" | "degraded" | "unavailable";
+            enabled: boolean;
+            endpoint_classification: components["schemas"]["AIEndpointClassification"] | null;
+            credential_present: boolean;
+            structured_output: boolean;
+            tool_calls: boolean;
+            streaming: boolean;
+            reasons: string[];
+            prompt: components["schemas"]["AIVersionIdentity"];
+            draft_patch_schema: components["schemas"]["AIVersionIdentity"];
+            tools: components["schemas"]["AIVersionIdentity"][];
+            orchestrator: components["schemas"]["AIVersionIdentity"];
+            budget: components["schemas"]["AIVersionIdentity"];
+            limits: components["schemas"]["AIBudgetLimits"];
+        };
+        /** @description Safe runtime availability projection. It deliberately omits credential material and client-computed Gate pass state. */
         RuntimeCapabilities: {
             release: components["schemas"]["ReleaseCapability"];
             graph: components["schemas"]["GraphRuntimeCapability"];
+            ai: components["schemas"]["AIProviderCapability"];
         };
         /** @description Server-authoritative Graph provider health and compatibility. Graph release readiness remains a Gate result for an exact candidate revision. */
         GraphRuntimeCapability: {
@@ -1477,6 +1657,206 @@ export interface components {
             items: components["schemas"]["Entity"][];
             next_cursor?: string | null;
         };
+        AIVersionIdentity: {
+            id: string;
+            version: string;
+            hash: components["schemas"]["Hash"];
+        };
+        AIBudgetLimits: {
+            policy: components["schemas"]["AIVersionIdentity"];
+            /** @constant */
+            max_format_repairs: 3;
+            max_provider_turns: number;
+            max_tool_calls: number;
+            max_search_candidates: number;
+            max_duration_millis: number;
+            max_context_bytes: number;
+            max_output_bytes: number;
+            max_tool_result_bytes: number;
+            retrieval_seed_limit: number;
+            retrieval_result_limit: number;
+            retrieval_graph_depth: number;
+        };
+        AIGoal: {
+            id: string;
+            description: string;
+        };
+        AIMetricGoal: {
+            metric_id: string;
+            version: string;
+            /** @enum {string} */
+            direction: "minimize" | "maximize" | "target";
+            target?: components["schemas"]["DecimalString"];
+            unit: string;
+        };
+        AIConstraint: {
+            id: string;
+            path: string;
+            /** @enum {string} */
+            operator: "equal" | "not_equal" | "less" | "less_or_equal" | "greater" | "greater_or_equal" | "in" | "range";
+            /** @description Typed JSON constraint value interpreted by the registered entity Schema. */
+            value: unknown;
+        };
+        AIAllowedPath: {
+            path: string;
+            operations: ("replace" | "add" | "remove")[];
+        };
+        AIAllowedTarget: {
+            entity_id: components["schemas"]["UUIDv7"];
+            kind: components["schemas"]["EntityKind"];
+            expected_entity_version: number;
+            paths: components["schemas"]["AIAllowedPath"][];
+        };
+        CreateAIDesignJobRequest: {
+            base_revision_id: components["schemas"]["UUIDv7"];
+            goals: components["schemas"]["AIGoal"][];
+            metrics: components["schemas"]["AIMetricGoal"][];
+            constraints: components["schemas"]["AIConstraint"][];
+            allowed_targets: components["schemas"]["AIAllowedTarget"][];
+            scenes: string[];
+            /** @description Optional bounded request; the server rejects values above the registered policy and persists the fully resolved limits. */
+            requested_budget?: components["schemas"]["AIBudgetLimits"];
+        };
+        AIDesignJobAccepted: {
+            job: components["schemas"]["Job"];
+            /** Format: uri-reference */
+            location: string;
+            /**
+             * Format: uri-reference
+             * @description Null until a terminal Patch has been sealed.
+             */
+            draft_patch_url: string | null;
+        };
+        AIEvidenceRef: {
+            id: string;
+            /** @enum {string} */
+            kind: "retrieval" | "validation" | "simulation" | "risk" | "search";
+            manifest_hash: components["schemas"]["Hash"];
+            citation: string | null;
+            /** @enum {string|null} */
+            mode: "hybrid" | "bm25_only" | "vector_only" | null;
+            degraded: boolean;
+            generations: components["schemas"]["AIVersionIdentity"][];
+            scores: {
+                [key: string]: components["schemas"]["DecimalString"];
+            };
+            warnings: string[];
+        };
+        AIDraftOperation: {
+            ordinal: number;
+            /** @enum {string} */
+            kind: "replace" | "add" | "remove";
+            path: string;
+            /** @description Canonical typed JSON value. */
+            value: unknown;
+            evidence: string[];
+        };
+        AIDraftTarget: {
+            entity_id: components["schemas"]["UUIDv7"];
+            kind: components["schemas"]["EntityKind"];
+            expected_entity_version: number;
+            operations: components["schemas"]["AIDraftOperation"][];
+        };
+        AIAttemptProjection: {
+            id: components["schemas"]["UUIDv7"];
+            ordinal: number;
+            parent_attempt_id?: components["schemas"]["UUIDv7"] | null;
+            /** @enum {string} */
+            stage: "input_pinned" | "evidence_pinned" | "provider_tool_loop" | "deterministic_preview" | "patch_sealed";
+            /** @enum {string} */
+            outcome: "running" | "succeeded" | "failed" | "canceled" | "interrupted" | "ignored_late_result";
+            manifest: components["schemas"]["AIVersionIdentity"];
+            repair_round: number;
+        };
+        AIPreviewProjection: {
+            /** @constant */
+            advisory: true;
+            input_hash: components["schemas"]["Hash"];
+            result_hash: components["schemas"]["Hash"];
+            evaluators: components["schemas"]["AIVersionIdentity"][];
+            evidence: components["schemas"]["AIEvidenceRef"][];
+            acceptable: boolean;
+            issues: string[];
+        };
+        AIFreshnessProjection: {
+            /** @enum {string} */
+            state: "fresh" | "stale";
+            conflicting_targets: components["schemas"]["UUIDv7"][];
+        };
+        AIHumanDecisionProjection: {
+            id: components["schemas"]["UUIDv7"];
+            /** @enum {string} */
+            kind: "accepted" | "discarded";
+            actor: string;
+            request_hash: components["schemas"]["Hash"];
+            result_hash: components["schemas"]["Hash"];
+            accepted_revision_id?: components["schemas"]["UUIDv7"] | null;
+            /** Format: date-time */
+            decided_at: string;
+        };
+        DraftPatchResource: {
+            id: components["schemas"]["UUIDv7"];
+            patch_hash: components["schemas"]["Hash"];
+            schema: components["schemas"]["AIVersionIdentity"];
+            base_revision_id: components["schemas"]["UUIDv7"];
+            input_hash: components["schemas"]["Hash"];
+            evidence_manifest: components["schemas"]["AIVersionIdentity"];
+            targets: components["schemas"]["AIDraftTarget"][];
+            rationale: string;
+            assumptions: string[];
+            attempts: components["schemas"]["AIAttemptProjection"][];
+            preview: components["schemas"]["AIPreviewProjection"] | null;
+            freshness: components["schemas"]["AIFreshnessProjection"];
+            decision: components["schemas"]["AIHumanDecisionProjection"] | null;
+            links: {
+                /** Format: uri-reference */
+                self: string;
+                /** Format: uri-reference */
+                job: string;
+                /** Format: uri-reference */
+                accept: string;
+                /** Format: uri-reference */
+                discard: string;
+                /** Format: uri-reference */
+                formal_validation: string | null;
+                /** Format: uri-reference */
+                formal_graph: string | null;
+                /** Format: uri-reference */
+                formal_simulation: string | null;
+                /** Format: uri-reference */
+                formal_risk: string | null;
+            };
+            /** Format: date-time */
+            created_at: string;
+        };
+        AITargetPrecondition: {
+            entity_id: components["schemas"]["UUIDv7"];
+            expected_entity_version: number;
+        };
+        AcceptDraftPatchRequest: {
+            patch_hash: components["schemas"]["Hash"];
+            base_revision_id: components["schemas"]["UUIDv7"];
+            targets: components["schemas"]["AITargetPrecondition"][];
+        };
+        AcceptDraftPatchResult: {
+            patch_id: components["schemas"]["UUIDv7"];
+            patch_hash: components["schemas"]["Hash"];
+            decision: components["schemas"]["AIHumanDecisionProjection"];
+            revision_id: components["schemas"]["UUIDv7"];
+            /** Format: uri-reference */
+            revision_url: string;
+            /** @constant */
+            published: false;
+        };
+        DiscardDraftPatchRequest: {
+            patch_hash: components["schemas"]["Hash"];
+            reason?: string;
+        };
+        DiscardDraftPatchResult: {
+            patch_id: components["schemas"]["UUIDv7"];
+            patch_hash: components["schemas"]["Hash"];
+            decision: components["schemas"]["AIHumanDecisionProjection"];
+        };
         Problem: {
             /** Format: uri-reference */
             type: string;
@@ -1485,7 +1865,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "INVALID_SELECTION" | "PROJECT_LOCKED" | "ACTIVE_PROJECT_CONFLICT" | "CLOSE_BLOCKED" | "UNSUPPORTED_KIND" | "UNSUPPORTED_SCHEMA" | "DUPLICATE_KEY" | "PRECONDITION_REQUIRED" | "REVISION_CONFLICT" | "ENTITY_REFERENCED" | "VALIDATION_FAILED" | "PROJECT_NOT_OPEN" | "INVALID_VALIDATION_REQUEST" | "INVALID_VALIDATION_SOURCE" | "INVALID_VALIDATION_SCOPE" | "INVALID_VALIDATION_TARGET" | "VALIDATION_SOURCE_NOT_FOUND" | "VALIDATION_RUN_NOT_FOUND" | "VALIDATION_STORAGE_FAILURE" | "REVISION_NOT_FOUND" | "REVISION_IMMUTABLE" | "DIFF_BASE_INVALID" | "RELEASE_POLICY_INVALID" | "RELEASE_CAPABILITY_DISABLED" | "RELEASE_PREFLIGHT_FAILED" | "RELEASE_BASE_CONFLICT" | "IDEMPOTENCY_CONFLICT" | "MANDATORY_BACKUP_FAILED" | "MIGRATION_BACKUP_REQUIRED" | "INVALID_CONFIRMATION" | "HISTORY_NOT_FOUND" | "STORAGE_FAILURE" | "EXTERNAL_SERVICE_FAILURE" | "GRAPH_VALIDATION_REQUIRED" | "GRAPH_VALIDATION_BLOCKED" | "PROJECTOR_VERSION_UNAVAILABLE" | "GRAPH_CAPABILITY_UNAVAILABLE" | "BASE_SNAPSHOT_NOT_FOUND" | "BASE_SNAPSHOT_NOT_READY" | "CONTENT_HASH_MISMATCH" | "CONTENT_HASH_CONFLICT" | "PROVIDER_TASK_FAILED" | "GRAPH_RETRY_EXHAUSTED" | "GRAPH_RETRY_NOT_SAFE" | "GRAPH_STATUS_UNAVAILABLE" | "SIMULATION_CAPABILITY_UNAVAILABLE" | "SIMULATION_IDEMPOTENCY_REQUIRED" | "SIMULATION_INPUT_INVALID" | "SIMULATION_SEED_INVALID" | "SIMULATION_VALIDATION_REQUIRED" | "SIMULATION_SOURCE_INVALID" | "SIMULATION_SCENE_INVALID" | "SIMULATION_PARAMETER_INVALID" | "SIMULATION_METRIC_INVALID" | "SIMULATION_SAMPLE_INVALID" | "SIMULATION_BUDGET_INVALID" | "SIMULATION_IMPLEMENTATION_UNAVAILABLE" | "SIMULATION_VERIFICATION_TARGET_INVALID" | "SIMULATION_RUN_NOT_FOUND" | "SIMULATION_RUN_UNAVAILABLE" | "BUDGET_EXCEEDED" | "TIMEOUT" | "RECOVERY_MISMATCH" | "RECOVERY_UNAVAILABLE" | "RISK_IDEMPOTENCY_REQUIRED" | "RISK_COMMAND_INVALID" | "RISK_REVISION_INVALID" | "RISK_BASELINE_INVALID" | "RISK_POLICY_INVALID" | "THRESHOLD_NOT_CONFIGURED" | "THRESHOLD_INVALID" | "RISK_VALIDATION_INVALID" | "RISK_SIMULATION_INVALID" | "RISK_COHORT_INVALID" | "RISK_REQUIRED_METRIC_UNAVAILABLE" | "RISK_STALE_IDENTITY" | "RISK_REGISTRY_INCOMPATIBLE" | "RISK_RULE_CONTRACT_INVALID" | "RISK_DECISION_INVALID" | "RISK_REVIEW_NOT_FOUND" | "RISK_CANCELED" | "RISK_INTERRUPTED";
+            code: "INVALID_SELECTION" | "PROJECT_LOCKED" | "ACTIVE_PROJECT_CONFLICT" | "CLOSE_BLOCKED" | "UNSUPPORTED_KIND" | "UNSUPPORTED_SCHEMA" | "DUPLICATE_KEY" | "PRECONDITION_REQUIRED" | "REVISION_CONFLICT" | "ENTITY_REFERENCED" | "VALIDATION_FAILED" | "PROJECT_NOT_OPEN" | "INVALID_VALIDATION_REQUEST" | "INVALID_VALIDATION_SOURCE" | "INVALID_VALIDATION_SCOPE" | "INVALID_VALIDATION_TARGET" | "VALIDATION_SOURCE_NOT_FOUND" | "VALIDATION_RUN_NOT_FOUND" | "VALIDATION_STORAGE_FAILURE" | "REVISION_NOT_FOUND" | "REVISION_IMMUTABLE" | "DIFF_BASE_INVALID" | "RELEASE_POLICY_INVALID" | "RELEASE_CAPABILITY_DISABLED" | "RELEASE_PREFLIGHT_FAILED" | "RELEASE_BASE_CONFLICT" | "IDEMPOTENCY_CONFLICT" | "MANDATORY_BACKUP_FAILED" | "MIGRATION_BACKUP_REQUIRED" | "INVALID_CONFIRMATION" | "HISTORY_NOT_FOUND" | "STORAGE_FAILURE" | "EXTERNAL_SERVICE_FAILURE" | "GRAPH_VALIDATION_REQUIRED" | "GRAPH_VALIDATION_BLOCKED" | "PROJECTOR_VERSION_UNAVAILABLE" | "GRAPH_CAPABILITY_UNAVAILABLE" | "BASE_SNAPSHOT_NOT_FOUND" | "BASE_SNAPSHOT_NOT_READY" | "CONTENT_HASH_MISMATCH" | "CONTENT_HASH_CONFLICT" | "PROVIDER_TASK_FAILED" | "GRAPH_RETRY_EXHAUSTED" | "GRAPH_RETRY_NOT_SAFE" | "GRAPH_STATUS_UNAVAILABLE" | "SIMULATION_CAPABILITY_UNAVAILABLE" | "SIMULATION_IDEMPOTENCY_REQUIRED" | "SIMULATION_INPUT_INVALID" | "SIMULATION_SEED_INVALID" | "SIMULATION_VALIDATION_REQUIRED" | "SIMULATION_SOURCE_INVALID" | "SIMULATION_SCENE_INVALID" | "SIMULATION_PARAMETER_INVALID" | "SIMULATION_METRIC_INVALID" | "SIMULATION_SAMPLE_INVALID" | "SIMULATION_BUDGET_INVALID" | "SIMULATION_IMPLEMENTATION_UNAVAILABLE" | "SIMULATION_VERIFICATION_TARGET_INVALID" | "SIMULATION_RUN_NOT_FOUND" | "SIMULATION_RUN_UNAVAILABLE" | "BUDGET_EXCEEDED" | "TIMEOUT" | "RECOVERY_MISMATCH" | "RECOVERY_UNAVAILABLE" | "RISK_IDEMPOTENCY_REQUIRED" | "RISK_COMMAND_INVALID" | "RISK_REVISION_INVALID" | "RISK_BASELINE_INVALID" | "RISK_POLICY_INVALID" | "THRESHOLD_NOT_CONFIGURED" | "THRESHOLD_INVALID" | "RISK_VALIDATION_INVALID" | "RISK_SIMULATION_INVALID" | "RISK_COHORT_INVALID" | "RISK_REQUIRED_METRIC_UNAVAILABLE" | "RISK_STALE_IDENTITY" | "RISK_REGISTRY_INCOMPATIBLE" | "RISK_RULE_CONTRACT_INVALID" | "RISK_DECISION_INVALID" | "RISK_REVIEW_NOT_FOUND" | "RISK_CANCELED" | "RISK_INTERRUPTED" | "AI_IDEMPOTENCY_REQUIRED" | "AI_PROVIDER_UNCONFIGURED" | "AI_CAPABILITY_UNAVAILABLE" | "AI_INPUT_INVALID" | "AI_EVIDENCE_UNAVAILABLE" | "AI_SNAPSHOT_IDENTITY_MISMATCH" | "AI_SNAPSHOT_INDEX_NOT_READY" | "AI_RETRIEVAL_UNAVAILABLE" | "AI_PROVIDER_FAILED" | "AI_PROVIDER_TIMEOUT" | "AI_OUTPUT_INVALID" | "AI_REPAIR_EXHAUSTED" | "AI_TOOL_POLICY_VIOLATION" | "AI_BUDGET_EXCEEDED" | "AI_PREVIEW_BLOCKED" | "AI_PATCH_NOT_FOUND" | "AI_PATCH_NOT_ACCEPTABLE" | "AI_PATCH_STALE" | "AI_DECISION_CONFLICT" | "AI_CANCELED" | "AI_INTERRUPTED" | "AI_CREDENTIAL_INVALID" | "AI_CREDENTIAL_STORE_FAILED";
             retryable: boolean;
             request_id: string;
             entity_id?: components["schemas"]["UUIDv7"];
@@ -1516,6 +1896,8 @@ export interface components {
         JobID: components["schemas"]["UUIDv7"];
         SimulationRunID: components["schemas"]["UUIDv7"];
         RiskReviewID: components["schemas"]["UUIDv7"];
+        DraftPatchID: components["schemas"]["UUIDv7"];
+        AIProviderName: "openai-compatible";
         /** @description Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. */
         IdempotencyKey: string;
         /** @description Required when graph-sync intent is retry; reuse returns the original retry Job and changed retry input conflicts. It is ignored for ensure. */
@@ -2334,6 +2716,235 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RiskReview"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createAIDesignJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAIDesignJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Existing or newly admitted durable AI design Job. */
+            202: {
+                headers: {
+                    Location: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIDesignJobAccepted"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getDraftPatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["DraftPatchID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description DraftPatch review resource. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftPatchResource"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    acceptDraftPatch: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["DraftPatchID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptDraftPatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Existing or newly committed acceptance result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceptDraftPatchResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    discardDraftPatch: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["DraftPatchID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscardDraftPatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Existing or newly recorded discard result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscardDraftPatchResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Non-sensitive runtime settings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResource"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    patchSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated non-sensitive runtime settings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResource"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    putProviderCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: components["parameters"]["AIProviderName"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutProviderCredentialRequest"];
+            };
+        };
+        responses: {
+            /** @description Safe credential presence and source metadata. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderCredentialStatus"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteProviderCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: components["parameters"]["AIProviderName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Safe credential presence and source metadata after deletion. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderCredentialStatus"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getRuntimeStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Safe runtime status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeCapabilities"];
                 };
             };
             default: components["responses"]["Problem"];

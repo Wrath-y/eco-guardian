@@ -11,6 +11,9 @@ func TestDefaultContainsOnlyMachineRuntimePreferences(t *testing.T) {
 	if settings.SchemaVersion != SchemaVersion || settings.Package.Mode != PackageDevelopment || settings.Graph.Mode != GraphDisabled || !settings.Browser.AutoOpen {
 		t.Fatalf("default settings = %#v", settings)
 	}
+	if settings.AI.Enabled || settings.AI.RequestTimeoutSeconds != 120 || settings.AI.Endpoint != "" || settings.AI.Model != "" {
+		t.Fatalf("unsafe default AI settings = %#v", settings.AI)
+	}
 	encoded, err := json.Marshal(settings)
 	if err != nil {
 		t.Fatal(err)

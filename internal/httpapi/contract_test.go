@@ -18,9 +18,112 @@ func TestOpenAPIContainsAllHandlerOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	contract := string(raw)
-	for _, id := range []string{"selectProjectDirectory", "openProject", "listRecentProjects", "openRecentProject", "getCurrentProject", "closeProject", "getEntitySchema", "listEntities", "createEntity", "getEntity", "patchEntity", "deleteEntity", "createValidationRun", "getValidationRun", "listRevisions", "createRevision", "getRevision", "getRevisionDiff", "ensureGraphSync", "getGraphStatus", "listReleasePolicies", "createReleasePolicy", "listReleases", "createRelease", "getRelease", "getJob", "streamJobEvents", "cancelJob", "createSimulationJob", "getSimulationRun", "createRiskReview", "getRiskReview", "getRuntimeCapabilities"} {
+	for _, id := range []string{"selectProjectDirectory", "openProject", "listRecentProjects", "openRecentProject", "getCurrentProject", "closeProject", "getEntitySchema", "listEntities", "createEntity", "getEntity", "patchEntity", "deleteEntity", "createValidationRun", "getValidationRun", "listRevisions", "createRevision", "getRevision", "getRevisionDiff", "ensureGraphSync", "getGraphStatus", "listReleasePolicies", "createReleasePolicy", "listReleases", "createRelease", "getRelease", "getJob", "streamJobEvents", "cancelJob", "createSimulationJob", "getSimulationRun", "createRiskReview", "getRiskReview", "createAIDesignJob", "getDraftPatch", "acceptDraftPatch", "discardDraftPatch", "getSettings", "patchSettings", "putProviderCredential", "deleteProviderCredential", "getRuntimeStatus", "getRuntimeCapabilities"} {
 		if !strings.Contains(contract, "operationId: "+id) {
 			t.Errorf("OpenAPI missing handler operation %s", id)
+		}
+	}
+}
+
+func TestOpenAPIContainsStrictAIDesignContracts(t *testing.T) {
+	raw, err := os.ReadFile("../../api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract := string(raw)
+	for _, schema := range []string{"CreateAIDesignJobRequest", "AIDesignJobAccepted", "DraftPatchResource", "AcceptDraftPatchRequest", "AcceptDraftPatchResult", "DiscardDraftPatchRequest", "DiscardDraftPatchResult", "AIAttemptProjection", "AIPreviewProjection", "AIFreshnessProjection", "AIEvidenceRef", "PutProviderCredentialRequest", "ProviderCredentialStatus", "CredentialSource"} {
+		if !strings.Contains(contract, "    "+schema+":") {
+			t.Errorf("OpenAPI missing AI schema %s", schema)
+		}
+	}
+	for _, code := range []string{"AI_IDEMPOTENCY_REQUIRED", "AI_PROVIDER_UNCONFIGURED", "AI_INPUT_INVALID", "AI_SNAPSHOT_IDENTITY_MISMATCH", "AI_SNAPSHOT_INDEX_NOT_READY", "AI_PROVIDER_TIMEOUT", "AI_OUTPUT_INVALID", "AI_TOOL_POLICY_VIOLATION", "AI_BUDGET_EXCEEDED", "AI_PATCH_STALE", "AI_DECISION_CONFLICT", "AI_INTERRUPTED", "AI_CREDENTIAL_INVALID", "AI_CREDENTIAL_STORE_FAILED"} {
+		if !strings.Contains(contract, code) {
+			t.Errorf("OpenAPI missing AI problem code %s", code)
+		}
+	}
+	for _, strictSchema := range []string{"CreateAIDesignJobRequest:", "AcceptDraftPatchRequest:", "DiscardDraftPatchRequest:", "DraftPatchResource:"} {
+		start := strings.Index(contract, "    "+strictSchema)
+		if start < 0 || !strings.Contains(contract[start:start+min(600, len(contract)-start)], "additionalProperties: false") {
+			t.Errorf("AI schema %s is not strict", strictSchema)
+		}
+	}
+}
+
+func TestCredentialGeneratedDTOFixtureIsWriteOnly(t *testing.T) {
+	raw, err := os.ReadFile("../../api/fixtures/ai-credential-put-request.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var request riskdto.PutProviderCredentialRequest
+	if err := json.Unmarshal(raw, &request); err != nil {
+		t.Fatal(err)
+	}
+	if request.Credential == nil || *request.Credential != "fixture-only-not-a-real-secret" {
+		t.Fatalf("generated credential request lost write-only value: %#v", request)
+	}
+	encoded, err := json.Marshal(riskdto.ProviderCredentialStatus{
+		Provider:          riskdto.ProviderCredentialStatusProviderOpenaiCompatible,
+		CredentialPresent: true,
+	})
+	if err != nil || strings.Contains(string(encoded), *request.Credential) {
+		t.Fatalf("credential status leaked request value: %s err=%v", encoded, err)
+	}
+}
+
+func TestAIDesignGeneratedDTOFixtures(t *testing.T) {
+	request, err := os.ReadFile("../../api/fixtures/ai-design-job-request.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var input riskdto.CreateAIDesignJobRequest
+	if err := json.Unmarshal(request, &input); err != nil {
+		t.Fatal(err)
+	}
+	if len(input.Goals) != 1 || len(input.AllowedTargets) != 1 || input.RequestedBudget == nil || input.RequestedBudget.MaxFormatRepairs != 3 {
+		t.Fatalf("generated AI request DTO lost required fields: %#v", input)
+	}
+	accepted, err := os.ReadFile("../../api/fixtures/ai-design-job-accepted.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result riskdto.AIDesignJobAccepted
+	if err := json.Unmarshal(accepted, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Location == "" || result.Job.Kind != "ai_design" || result.DraftPatchUrl != nil {
+		t.Fatalf("generated AI accepted DTO lost Job links: %#v", result)
+	}
+}
+
+func TestAIDesignProblemFixturesHaveStableStatusMappings(t *testing.T) {
+	raw, err := os.ReadFile("../../api/fixtures/problems.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixtures []struct {
+		Code   string `json:"code"`
+		Status int    `json:"status"`
+	}
+	if err := json.Unmarshal(raw, &fixtures); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int{
+		"AI_IDEMPOTENCY_REQUIRED": 400, "AI_PROVIDER_UNCONFIGURED": 409, "AI_CAPABILITY_UNAVAILABLE": 503,
+		"AI_INPUT_INVALID": 400, "AI_EVIDENCE_UNAVAILABLE": 422, "AI_SNAPSHOT_IDENTITY_MISMATCH": 422,
+		"AI_SNAPSHOT_INDEX_NOT_READY": 409, "AI_RETRIEVAL_UNAVAILABLE": 503, "AI_PROVIDER_FAILED": 502,
+		"AI_PROVIDER_TIMEOUT": 504, "AI_OUTPUT_INVALID": 422, "AI_REPAIR_EXHAUSTED": 422,
+		"AI_TOOL_POLICY_VIOLATION": 422, "AI_BUDGET_EXCEEDED": 422, "AI_PREVIEW_BLOCKED": 422,
+		"AI_PATCH_NOT_FOUND": 404, "AI_PATCH_NOT_ACCEPTABLE": 409, "AI_PATCH_STALE": 409,
+		"AI_DECISION_CONFLICT": 409, "AI_CANCELED": 409, "AI_INTERRUPTED": 409,
+		"AI_CREDENTIAL_INVALID": 400, "AI_CREDENTIAL_STORE_FAILED": 503,
+	}
+	got := map[string]int{}
+	for _, fixture := range fixtures {
+		got[fixture.Code] = fixture.Status
+	}
+	for code, status := range want {
+		if got[code] != status {
+			t.Errorf("%s status=%d want %d", code, got[code], status)
 		}
 	}
 }

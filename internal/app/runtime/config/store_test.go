@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -149,5 +150,31 @@ func TestValidateRequiresLoopbackGraphEndpointsAndSafeBounds(t *testing.T) {
 	settings.Logs.MaxFiles = 21
 	if err := Validate(settings); err == nil {
 		t.Fatal("unbounded log setting was accepted")
+	}
+}
+
+func TestValidateBoundsNonSecretAIProviderSettings(t *testing.T) {
+	settings := Default()
+	settings.AI.Enabled = true
+	if err := Validate(settings); err == nil {
+		t.Fatal("enabled AI provider without endpoint/model was accepted")
+	}
+	settings.AI.Endpoint = "http://127.0.0.1:11434/v1"
+	settings.AI.Model = "fixture"
+	if err := Validate(settings); err != nil {
+		t.Fatalf("bounded non-secret AI settings rejected: %v", err)
+	}
+	settings.AI.RequestTimeoutSeconds = 601
+	if err := Validate(settings); err == nil {
+		t.Fatal("unbounded AI timeout was accepted")
+	}
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"api_key", "credential_value", "password", "secret"} {
+		if strings.Contains(strings.ToLower(string(encoded)), forbidden) {
+			t.Fatalf("AI settings persisted forbidden field %q: %s", forbidden, encoded)
+		}
 	}
 }

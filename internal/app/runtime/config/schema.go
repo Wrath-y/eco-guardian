@@ -67,8 +67,11 @@ type Graph struct {
 // AIReference intentionally holds only non-secret provider selection. The
 // credential boundary belongs to the applied AI-provider integration.
 type AIReference struct {
-	Endpoint string `json:"endpoint"`
-	Model    string `json:"model"`
+	Enabled               bool   `json:"enabled"`
+	Endpoint              string `json:"endpoint"`
+	Model                 string `json:"model"`
+	RequestTimeoutSeconds int    `json:"request_timeout_seconds"`
+	AllowCloud            bool   `json:"allow_cloud"`
 }
 
 type LogPolicy struct {
@@ -91,6 +94,7 @@ func Default() Settings {
 			StartupTimeoutSeconds: 20,
 			RestartLimit:          3,
 		},
+		AI:     AIReference{RequestTimeoutSeconds: 120},
 		Logs:   LogPolicy{MaxBytes: 5 << 20, MaxFiles: 5},
 		Backup: BackupDefaults{RetentionDays: 30},
 	}

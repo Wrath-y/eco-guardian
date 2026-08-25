@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	aicontract "github.com/zouyi/eco-guardian/internal/ai/contract"
 	"github.com/zouyi/eco-guardian/internal/app"
 	"github.com/zouyi/eco-guardian/internal/domain"
 	graphsync "github.com/zouyi/eco-guardian/internal/graph/sync"
@@ -167,6 +168,7 @@ func (h *VersionHandler) Register(r *gin.Engine) {
 	r.GET("/api/v1/jobs/:id/events", h.events)
 	r.POST("/api/v1/jobs/:id/cancel", h.cancel)
 	r.GET("/api/v1/runtime/capabilities", h.capability)
+	r.GET("/api/v1/runtime/status", h.capability)
 }
 func (h *VersionHandler) current(c *gin.Context) app.VersioningService {
 	s := h.service()
@@ -627,5 +629,30 @@ func (h *VersionHandler) capability(c *gin.Context) {
 		reasons = append(reasons, gin.H{"capability_id": reason.CapabilityID, "gate_id": reason.GateID, "code": code, "detail": nullable(reason.Reason)})
 	}
 	graph := s.GraphRuntimeCapability(c.Request.Context())
-	c.JSON(http.StatusOK, gin.H{"release": gin.H{"enabled": capability.Enabled, "disabled_reasons": reasons}, "graph": gin.H{"available": graph.Available, "compatible": graph.Compatible, "required_capabilities": graph.RequiredCapabilities, "degradations": graph.Degradations, "disabled_reasons": graph.Reasons, "release_disabled_reasons": graph.Reasons, "observed_at": graph.ObservedAt}})
+	c.JSON(http.StatusOK, gin.H{"release": gin.H{"enabled": capability.Enabled, "disabled_reasons": reasons}, "graph": gin.H{"available": graph.Available, "compatible": graph.Compatible, "required_capabilities": graph.RequiredCapabilities, "degradations": graph.Degradations, "disabled_reasons": graph.Reasons, "release_disabled_reasons": graph.Reasons, "observed_at": graph.ObservedAt}, "ai": defaultAICapabilityJSON()})
+}
+
+func defaultAICapabilityJSON() gin.H {
+	fixture := aicontract.V1Fixture()
+	toolIdentities := make([]aicontract.VersionIdentity, 0, len(fixture.Tools))
+	for _, tool := range fixture.Tools {
+		toolIdentities = append(toolIdentities, tool.Identity)
+	}
+	limits := aicontract.Budget{Policy: fixture.Budget.Identity, BudgetLimits: fixture.Budget.Limits}
+	return gin.H{
+		"state":                   "unconfigured",
+		"enabled":                 false,
+		"endpoint_classification": nil,
+		"credential_present":      false,
+		"structured_output":       false,
+		"tool_calls":              false,
+		"streaming":               false,
+		"reasons":                 []string{"AI_PROVIDER_UNCONFIGURED"},
+		"prompt":                  fixture.Prompt.Identity,
+		"draft_patch_schema":      fixture.PatchSchema.Identity,
+		"tools":                   toolIdentities,
+		"orchestrator":            fixture.Orchestrator.Identity,
+		"budget":                  fixture.Budget.Identity,
+		"limits":                  limits,
+	}
 }

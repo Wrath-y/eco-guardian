@@ -91,7 +91,7 @@ func TestVersionHandlerDelegatesPolicyCapabilityAndReleaseCommands(t *testing.T)
 	}
 	capabilityResponse := httptest.NewRecorder()
 	engine.ServeHTTP(capabilityResponse, httptest.NewRequest(http.MethodGet, "/api/v1/runtime/capabilities", nil))
-	if capabilityResponse.Code != http.StatusOK || !strings.Contains(capabilityResponse.Body.String(), "MISSING") || !strings.Contains(capabilityResponse.Body.String(), "GRAPH_PROVIDER_NOT_CONFIGURED") {
+	if capabilityResponse.Code != http.StatusOK || !strings.Contains(capabilityResponse.Body.String(), "MISSING") || !strings.Contains(capabilityResponse.Body.String(), "GRAPH_PROVIDER_NOT_CONFIGURED") || !strings.Contains(capabilityResponse.Body.String(), "AI_PROVIDER_UNCONFIGURED") || !strings.Contains(capabilityResponse.Body.String(), "max_format_repairs") {
 		t.Fatalf("capability response=%d body=%s", capabilityResponse.Code, capabilityResponse.Body.String())
 	}
 

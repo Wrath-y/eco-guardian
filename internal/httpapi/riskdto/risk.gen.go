@@ -12,6 +12,336 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AIAllowedPathOperations.
+const (
+	AIAllowedPathOperationsAdd     AIAllowedPathOperations = "add"
+	AIAllowedPathOperationsRemove  AIAllowedPathOperations = "remove"
+	AIAllowedPathOperationsReplace AIAllowedPathOperations = "replace"
+)
+
+// Valid indicates whether the value is a known member of the AIAllowedPathOperations enum.
+func (e AIAllowedPathOperations) Valid() bool {
+	switch e {
+	case AIAllowedPathOperationsAdd:
+		return true
+	case AIAllowedPathOperationsRemove:
+		return true
+	case AIAllowedPathOperationsReplace:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AIAttemptProjectionOutcome.
+const (
+	AIAttemptProjectionOutcomeCanceled          AIAttemptProjectionOutcome = "canceled"
+	AIAttemptProjectionOutcomeFailed            AIAttemptProjectionOutcome = "failed"
+	AIAttemptProjectionOutcomeIgnoredLateResult AIAttemptProjectionOutcome = "ignored_late_result"
+	AIAttemptProjectionOutcomeInterrupted       AIAttemptProjectionOutcome = "interrupted"
+	AIAttemptProjectionOutcomeRunning           AIAttemptProjectionOutcome = "running"
+	AIAttemptProjectionOutcomeSucceeded         AIAttemptProjectionOutcome = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the AIAttemptProjectionOutcome enum.
+func (e AIAttemptProjectionOutcome) Valid() bool {
+	switch e {
+	case AIAttemptProjectionOutcomeCanceled:
+		return true
+	case AIAttemptProjectionOutcomeFailed:
+		return true
+	case AIAttemptProjectionOutcomeIgnoredLateResult:
+		return true
+	case AIAttemptProjectionOutcomeInterrupted:
+		return true
+	case AIAttemptProjectionOutcomeRunning:
+		return true
+	case AIAttemptProjectionOutcomeSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AIAttemptProjectionStage.
+const (
+	DeterministicPreview AIAttemptProjectionStage = "deterministic_preview"
+	EvidencePinned       AIAttemptProjectionStage = "evidence_pinned"
+	InputPinned          AIAttemptProjectionStage = "input_pinned"
+	PatchSealed          AIAttemptProjectionStage = "patch_sealed"
+	ProviderToolLoop     AIAttemptProjectionStage = "provider_tool_loop"
+)
+
+// Valid indicates whether the value is a known member of the AIAttemptProjectionStage enum.
+func (e AIAttemptProjectionStage) Valid() bool {
+	switch e {
+	case DeterministicPreview:
+		return true
+	case EvidencePinned:
+		return true
+	case InputPinned:
+		return true
+	case PatchSealed:
+		return true
+	case ProviderToolLoop:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AIBudgetLimitsMaxFormatRepairs.
+const (
+	N3 AIBudgetLimitsMaxFormatRepairs = 3
+)
+
+// Valid indicates whether the value is a known member of the AIBudgetLimitsMaxFormatRepairs enum.
+func (e AIBudgetLimitsMaxFormatRepairs) Valid() bool {
+	switch e {
+	case N3:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AIConstraintOperator.
+const (
+	Equal          AIConstraintOperator = "equal"
+	Greater        AIConstraintOperator = "greater"
+	GreaterOrEqual AIConstraintOperator = "greater_or_equal"
+	In             AIConstraintOperator = "in"
+	Less           AIConstraintOperator = "less"
+	LessOrEqual    AIConstraintOperator = "less_or_equal"
+	NotEqual       AIConstraintOperator = "not_equal"
+	Range          AIConstraintOperator = "range"
+)
+
+// Valid indicates whether the value is a known member of the AIConstraintOperator enum.
+func (e AIConstraintOperator) Valid() bool {
+	switch e {
+	case Equal:
+		return true
+	case Greater:
+		return true
+	case GreaterOrEqual:
+		return true
+	case In:
+		return true
+	case Less:
+		return true
+	case LessOrEqual:
+		return true
+	case NotEqual:
+		return true
+	case Range:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AIDraftOperationKind.
+const (
+	AIDraftOperationKindAdd     AIDraftOperationKind = "add"
+	AIDraftOperationKindRemove  AIDraftOperationKind = "remove"
+	AIDraftOperationKindReplace AIDraftOperationKind = "replace"
+)
+
+// Valid indicates whether the value is a known member of the AIDraftOperationKind enum.
+func (e AIDraftOperationKind) Valid() bool {
+	switch e {
+	case AIDraftOperationKindAdd:
+		return true
+	case AIDraftOperationKindRemove:
+		return true
+	case AIDraftOperationKindReplace:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AIEndpointClassification.
+const (
+	Cloud    AIEndpointClassification = "cloud"
+	Loopback AIEndpointClassification = "loopback"
+)
+
+// Valid indicates whether the value is a known member of the AIEndpointClassification enum.
+func (e AIEndpointClassification) Valid() bool {
+	switch e {
+	case Cloud:
+		return true
+	case Loopback:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AIEvidenceRefKind.
+const (
+	Retrieval  AIEvidenceRefKind = "retrieval"
+	Risk       AIEvidenceRefKind = "risk"
+	Search     AIEvidenceRefKind = "search"
+	Simulation AIEvidenceRefKind = "simulation"
+	Validation AIEvidenceRefKind = "validation"
+)
+
+// Valid indicates whether the value is a known member of the AIEvidenceRefKind enum.
+func (e AIEvidenceRefKind) Valid() bool {
+	switch e {
+	case Retrieval:
+		return true
+	case Risk:
+		return true
+	case Search:
+		return true
+	case Simulation:
+		return true
+	case Validation:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AIEvidenceRefMode.
+const (
+	AIEvidenceRefModeBm25Only    AIEvidenceRefMode = "bm25_only"
+	AIEvidenceRefModeHybrid      AIEvidenceRefMode = "hybrid"
+	AIEvidenceRefModeLessThannil AIEvidenceRefMode = "<nil>"
+	AIEvidenceRefModeVectorOnly  AIEvidenceRefMode = "vector_only"
+)
+
+// Valid indicates whether the value is a known member of the AIEvidenceRefMode enum.
+func (e AIEvidenceRefMode) Valid() bool {
+	switch e {
+	case AIEvidenceRefModeBm25Only:
+		return true
+	case AIEvidenceRefModeHybrid:
+		return true
+	case AIEvidenceRefModeLessThannil:
+		return true
+	case AIEvidenceRefModeVectorOnly:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AIFreshnessProjectionState.
+const (
+	AIFreshnessProjectionStateFresh AIFreshnessProjectionState = "fresh"
+	AIFreshnessProjectionStateStale AIFreshnessProjectionState = "stale"
+)
+
+// Valid indicates whether the value is a known member of the AIFreshnessProjectionState enum.
+func (e AIFreshnessProjectionState) Valid() bool {
+	switch e {
+	case AIFreshnessProjectionStateFresh:
+		return true
+	case AIFreshnessProjectionStateStale:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AIHumanDecisionProjectionKind.
+const (
+	Accepted  AIHumanDecisionProjectionKind = "accepted"
+	Discarded AIHumanDecisionProjectionKind = "discarded"
+)
+
+// Valid indicates whether the value is a known member of the AIHumanDecisionProjectionKind enum.
+func (e AIHumanDecisionProjectionKind) Valid() bool {
+	switch e {
+	case Accepted:
+		return true
+	case Discarded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AIMetricGoalDirection.
+const (
+	AIMetricGoalDirectionMaximize AIMetricGoalDirection = "maximize"
+	AIMetricGoalDirectionMinimize AIMetricGoalDirection = "minimize"
+	AIMetricGoalDirectionTarget   AIMetricGoalDirection = "target"
+)
+
+// Valid indicates whether the value is a known member of the AIMetricGoalDirection enum.
+func (e AIMetricGoalDirection) Valid() bool {
+	switch e {
+	case AIMetricGoalDirectionMaximize:
+		return true
+	case AIMetricGoalDirectionMinimize:
+		return true
+	case AIMetricGoalDirectionTarget:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AIPreviewProjectionAdvisory.
+const (
+	AIPreviewProjectionAdvisoryTrue AIPreviewProjectionAdvisory = true
+)
+
+// Valid indicates whether the value is a known member of the AIPreviewProjectionAdvisory enum.
+func (e AIPreviewProjectionAdvisory) Valid() bool {
+	switch e {
+	case AIPreviewProjectionAdvisoryTrue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AIProviderCapabilityState.
+const (
+	AIProviderCapabilityStateAvailable    AIProviderCapabilityState = "available"
+	AIProviderCapabilityStateDegraded     AIProviderCapabilityState = "degraded"
+	AIProviderCapabilityStateUnavailable  AIProviderCapabilityState = "unavailable"
+	AIProviderCapabilityStateUnconfigured AIProviderCapabilityState = "unconfigured"
+)
+
+// Valid indicates whether the value is a known member of the AIProviderCapabilityState enum.
+func (e AIProviderCapabilityState) Valid() bool {
+	switch e {
+	case AIProviderCapabilityStateAvailable:
+		return true
+	case AIProviderCapabilityStateDegraded:
+		return true
+	case AIProviderCapabilityStateUnavailable:
+		return true
+	case AIProviderCapabilityStateUnconfigured:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AcceptDraftPatchResultPublished.
+const (
+	False AcceptDraftPatchResultPublished = false
+)
+
+// Valid indicates whether the value is a known member of the AcceptDraftPatchResultPublished enum.
+func (e AcceptDraftPatchResultPublished) Valid() bool {
+	switch e {
+	case False:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AttributePayloadValueType.
 const (
 	AttributePayloadValueTypeBoolean AttributePayloadValueType = "boolean"
@@ -42,6 +372,24 @@ const (
 func (e CreateCheckpointRevisionKind) Valid() bool {
 	switch e {
 	case Checkpoint:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CredentialSource.
+const (
+	CredentialManager CredentialSource = "credential_manager"
+	Environment       CredentialSource = "environment"
+)
+
+// Valid indicates whether the value is a known member of the CredentialSource enum.
+func (e CredentialSource) Valid() bool {
+	switch e {
+	case CredentialManager:
+		return true
+	case Environment:
 		return true
 	default:
 		return false
@@ -588,6 +936,29 @@ func (e OpenProjectRequestMode) Valid() bool {
 // Defines values for ProblemCode.
 const (
 	ACTIVEPROJECTCONFLICT               ProblemCode = "ACTIVE_PROJECT_CONFLICT"
+	AIBUDGETEXCEEDED                    ProblemCode = "AI_BUDGET_EXCEEDED"
+	AICANCELED                          ProblemCode = "AI_CANCELED"
+	AICAPABILITYUNAVAILABLE             ProblemCode = "AI_CAPABILITY_UNAVAILABLE"
+	AICREDENTIALINVALID                 ProblemCode = "AI_CREDENTIAL_INVALID"
+	AICREDENTIALSTOREFAILED             ProblemCode = "AI_CREDENTIAL_STORE_FAILED"
+	AIDECISIONCONFLICT                  ProblemCode = "AI_DECISION_CONFLICT"
+	AIEVIDENCEUNAVAILABLE               ProblemCode = "AI_EVIDENCE_UNAVAILABLE"
+	AIIDEMPOTENCYREQUIRED               ProblemCode = "AI_IDEMPOTENCY_REQUIRED"
+	AIINPUTINVALID                      ProblemCode = "AI_INPUT_INVALID"
+	AIINTERRUPTED                       ProblemCode = "AI_INTERRUPTED"
+	AIOUTPUTINVALID                     ProblemCode = "AI_OUTPUT_INVALID"
+	AIPATCHNOTACCEPTABLE                ProblemCode = "AI_PATCH_NOT_ACCEPTABLE"
+	AIPATCHNOTFOUND                     ProblemCode = "AI_PATCH_NOT_FOUND"
+	AIPATCHSTALE                        ProblemCode = "AI_PATCH_STALE"
+	AIPREVIEWBLOCKED                    ProblemCode = "AI_PREVIEW_BLOCKED"
+	AIPROVIDERFAILED                    ProblemCode = "AI_PROVIDER_FAILED"
+	AIPROVIDERTIMEOUT                   ProblemCode = "AI_PROVIDER_TIMEOUT"
+	AIPROVIDERUNCONFIGURED              ProblemCode = "AI_PROVIDER_UNCONFIGURED"
+	AIREPAIREXHAUSTED                   ProblemCode = "AI_REPAIR_EXHAUSTED"
+	AIRETRIEVALUNAVAILABLE              ProblemCode = "AI_RETRIEVAL_UNAVAILABLE"
+	AISNAPSHOTIDENTITYMISMATCH          ProblemCode = "AI_SNAPSHOT_IDENTITY_MISMATCH"
+	AISNAPSHOTINDEXNOTREADY             ProblemCode = "AI_SNAPSHOT_INDEX_NOT_READY"
+	AITOOLPOLICYVIOLATION               ProblemCode = "AI_TOOL_POLICY_VIOLATION"
 	BASESNAPSHOTNOTFOUND                ProblemCode = "BASE_SNAPSHOT_NOT_FOUND"
 	BASESNAPSHOTNOTREADY                ProblemCode = "BASE_SNAPSHOT_NOT_READY"
 	BUDGETEXCEEDED                      ProblemCode = "BUDGET_EXCEEDED"
@@ -675,6 +1046,52 @@ const (
 func (e ProblemCode) Valid() bool {
 	switch e {
 	case ACTIVEPROJECTCONFLICT:
+		return true
+	case AIBUDGETEXCEEDED:
+		return true
+	case AICANCELED:
+		return true
+	case AICAPABILITYUNAVAILABLE:
+		return true
+	case AICREDENTIALINVALID:
+		return true
+	case AICREDENTIALSTOREFAILED:
+		return true
+	case AIDECISIONCONFLICT:
+		return true
+	case AIEVIDENCEUNAVAILABLE:
+		return true
+	case AIIDEMPOTENCYREQUIRED:
+		return true
+	case AIINPUTINVALID:
+		return true
+	case AIINTERRUPTED:
+		return true
+	case AIOUTPUTINVALID:
+		return true
+	case AIPATCHNOTACCEPTABLE:
+		return true
+	case AIPATCHNOTFOUND:
+		return true
+	case AIPATCHSTALE:
+		return true
+	case AIPREVIEWBLOCKED:
+		return true
+	case AIPROVIDERFAILED:
+		return true
+	case AIPROVIDERTIMEOUT:
+		return true
+	case AIPROVIDERUNCONFIGURED:
+		return true
+	case AIREPAIREXHAUSTED:
+		return true
+	case AIRETRIEVALUNAVAILABLE:
+		return true
+	case AISNAPSHOTIDENTITYMISMATCH:
+		return true
+	case AISNAPSHOTINDEXNOTREADY:
+		return true
+	case AITOOLPOLICYVIOLATION:
 		return true
 	case BASESNAPSHOTNOTFOUND:
 		return true
@@ -837,6 +1254,21 @@ func (e ProblemCode) Valid() bool {
 	case VALIDATIONSOURCENOTFOUND:
 		return true
 	case VALIDATIONSTORAGEFAILURE:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProviderCredentialStatusProvider.
+const (
+	ProviderCredentialStatusProviderOpenaiCompatible ProviderCredentialStatusProvider = "openai-compatible"
+)
+
+// Valid indicates whether the value is a known member of the ProviderCredentialStatusProvider enum.
+func (e ProviderCredentialStatusProvider) Valid() bool {
+	switch e {
+	case ProviderCredentialStatusProviderOpenaiCompatible:
 		return true
 	default:
 		return false
@@ -1571,19 +2003,19 @@ func (e StackRuleOperation) Valid() bool {
 
 // Defines values for StackRuleRefreshPolicy.
 const (
-	Ignore  StackRuleRefreshPolicy = "ignore"
-	Refresh StackRuleRefreshPolicy = "refresh"
-	Replace StackRuleRefreshPolicy = "replace"
+	StackRuleRefreshPolicyIgnore  StackRuleRefreshPolicy = "ignore"
+	StackRuleRefreshPolicyRefresh StackRuleRefreshPolicy = "refresh"
+	StackRuleRefreshPolicyReplace StackRuleRefreshPolicy = "replace"
 )
 
 // Valid indicates whether the value is a known member of the StackRuleRefreshPolicy enum.
 func (e StackRuleRefreshPolicy) Valid() bool {
 	switch e {
-	case Ignore:
+	case StackRuleRefreshPolicyIgnore:
 		return true
-	case Refresh:
+	case StackRuleRefreshPolicyRefresh:
 		return true
-	case Replace:
+	case StackRuleRefreshPolicyReplace:
 		return true
 	default:
 		return false
@@ -1722,6 +2154,307 @@ func (e VersionContributorState) Valid() bool {
 	}
 }
 
+// Defines values for AIProviderName.
+const (
+	AIProviderNameOpenaiCompatible AIProviderName = "openai-compatible"
+)
+
+// Valid indicates whether the value is a known member of the AIProviderName enum.
+func (e AIProviderName) Valid() bool {
+	switch e {
+	case AIProviderNameOpenaiCompatible:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DeleteProviderCredentialParamsProvider.
+const (
+	DeleteProviderCredentialParamsProviderOpenaiCompatible DeleteProviderCredentialParamsProvider = "openai-compatible"
+)
+
+// Valid indicates whether the value is a known member of the DeleteProviderCredentialParamsProvider enum.
+func (e DeleteProviderCredentialParamsProvider) Valid() bool {
+	switch e {
+	case DeleteProviderCredentialParamsProviderOpenaiCompatible:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PutProviderCredentialParamsProvider.
+const (
+	PutProviderCredentialParamsProviderOpenaiCompatible PutProviderCredentialParamsProvider = "openai-compatible"
+)
+
+// Valid indicates whether the value is a known member of the PutProviderCredentialParamsProvider enum.
+func (e PutProviderCredentialParamsProvider) Valid() bool {
+	switch e {
+	case PutProviderCredentialParamsProviderOpenaiCompatible:
+		return true
+	default:
+		return false
+	}
+}
+
+// AIAllowedPath defines model for AIAllowedPath.
+type AIAllowedPath struct {
+	Operations []AIAllowedPathOperations `json:"operations"`
+	Path       string                    `json:"path"`
+}
+
+// AIAllowedPathOperations defines model for AIAllowedPath.Operations.
+type AIAllowedPathOperations string
+
+// AIAllowedTarget defines model for AIAllowedTarget.
+type AIAllowedTarget struct {
+	// EntityId Server allocated UUIDv7.
+	EntityId              UUIDv7          `json:"entity_id"`
+	ExpectedEntityVersion int             `json:"expected_entity_version"`
+	Kind                  EntityKind      `json:"kind"`
+	Paths                 []AIAllowedPath `json:"paths"`
+}
+
+// AIAttemptProjection defines model for AIAttemptProjection.
+type AIAttemptProjection struct {
+	// Id Server allocated UUIDv7.
+	Id              UUIDv7                     `json:"id"`
+	Manifest        AIVersionIdentity          `json:"manifest"`
+	Ordinal         int                        `json:"ordinal"`
+	Outcome         AIAttemptProjectionOutcome `json:"outcome"`
+	ParentAttemptId *UUIDv7                    `json:"parent_attempt_id,omitempty"`
+	RepairRound     int                        `json:"repair_round"`
+	Stage           AIAttemptProjectionStage   `json:"stage"`
+}
+
+// AIAttemptProjectionOutcome defines model for AIAttemptProjection.Outcome.
+type AIAttemptProjectionOutcome string
+
+// AIAttemptProjectionStage defines model for AIAttemptProjection.Stage.
+type AIAttemptProjectionStage string
+
+// AIBudgetLimits defines model for AIBudgetLimits.
+type AIBudgetLimits struct {
+	MaxContextBytes      int                            `json:"max_context_bytes"`
+	MaxDurationMillis    int                            `json:"max_duration_millis"`
+	MaxFormatRepairs     AIBudgetLimitsMaxFormatRepairs `json:"max_format_repairs"`
+	MaxOutputBytes       int                            `json:"max_output_bytes"`
+	MaxProviderTurns     int                            `json:"max_provider_turns"`
+	MaxSearchCandidates  int                            `json:"max_search_candidates"`
+	MaxToolCalls         int                            `json:"max_tool_calls"`
+	MaxToolResultBytes   int                            `json:"max_tool_result_bytes"`
+	Policy               AIVersionIdentity              `json:"policy"`
+	RetrievalGraphDepth  int                            `json:"retrieval_graph_depth"`
+	RetrievalResultLimit int                            `json:"retrieval_result_limit"`
+	RetrievalSeedLimit   int                            `json:"retrieval_seed_limit"`
+}
+
+// AIBudgetLimitsMaxFormatRepairs defines model for AIBudgetLimits.MaxFormatRepairs.
+type AIBudgetLimitsMaxFormatRepairs int
+
+// AIConstraint defines model for AIConstraint.
+type AIConstraint struct {
+	Id       string               `json:"id"`
+	Operator AIConstraintOperator `json:"operator"`
+	Path     string               `json:"path"`
+
+	// Value Typed JSON constraint value interpreted by the registered entity Schema.
+	Value interface{} `json:"value"`
+}
+
+// AIConstraintOperator defines model for AIConstraint.Operator.
+type AIConstraintOperator string
+
+// AIDesignJobAccepted defines model for AIDesignJobAccepted.
+type AIDesignJobAccepted struct {
+	// DraftPatchUrl Null until a terminal Patch has been sealed.
+	DraftPatchUrl *string `json:"draft_patch_url"`
+	Job           Job     `json:"job"`
+	Location      string  `json:"location"`
+}
+
+// AIDraftOperation defines model for AIDraftOperation.
+type AIDraftOperation struct {
+	Evidence []string             `json:"evidence"`
+	Kind     AIDraftOperationKind `json:"kind"`
+	Ordinal  int                  `json:"ordinal"`
+	Path     string               `json:"path"`
+
+	// Value Canonical typed JSON value.
+	Value interface{} `json:"value"`
+}
+
+// AIDraftOperationKind defines model for AIDraftOperation.Kind.
+type AIDraftOperationKind string
+
+// AIDraftTarget defines model for AIDraftTarget.
+type AIDraftTarget struct {
+	// EntityId Server allocated UUIDv7.
+	EntityId              UUIDv7             `json:"entity_id"`
+	ExpectedEntityVersion int                `json:"expected_entity_version"`
+	Kind                  EntityKind         `json:"kind"`
+	Operations            []AIDraftOperation `json:"operations"`
+}
+
+// AIEndpointClassification defines model for AIEndpointClassification.
+type AIEndpointClassification string
+
+// AIEvidenceRef defines model for AIEvidenceRef.
+type AIEvidenceRef struct {
+	Citation     *string                  `json:"citation"`
+	Degraded     bool                     `json:"degraded"`
+	Generations  []AIVersionIdentity      `json:"generations"`
+	Id           string                   `json:"id"`
+	Kind         AIEvidenceRefKind        `json:"kind"`
+	ManifestHash Hash                     `json:"manifest_hash"`
+	Mode         *AIEvidenceRefMode       `json:"mode"`
+	Scores       map[string]DecimalString `json:"scores"`
+	Warnings     []string                 `json:"warnings"`
+}
+
+// AIEvidenceRefKind defines model for AIEvidenceRef.Kind.
+type AIEvidenceRefKind string
+
+// AIEvidenceRefMode defines model for AIEvidenceRef.Mode.
+type AIEvidenceRefMode string
+
+// AIFreshnessProjection defines model for AIFreshnessProjection.
+type AIFreshnessProjection struct {
+	ConflictingTargets []UUIDv7                   `json:"conflicting_targets"`
+	State              AIFreshnessProjectionState `json:"state"`
+}
+
+// AIFreshnessProjectionState defines model for AIFreshnessProjection.State.
+type AIFreshnessProjectionState string
+
+// AIGoal defines model for AIGoal.
+type AIGoal struct {
+	Description string `json:"description"`
+	Id          string `json:"id"`
+}
+
+// AIHumanDecisionProjection defines model for AIHumanDecisionProjection.
+type AIHumanDecisionProjection struct {
+	AcceptedRevisionId *UUIDv7   `json:"accepted_revision_id,omitempty"`
+	Actor              string    `json:"actor"`
+	DecidedAt          time.Time `json:"decided_at"`
+
+	// Id Server allocated UUIDv7.
+	Id          UUIDv7                        `json:"id"`
+	Kind        AIHumanDecisionProjectionKind `json:"kind"`
+	RequestHash Hash                          `json:"request_hash"`
+	ResultHash  Hash                          `json:"result_hash"`
+}
+
+// AIHumanDecisionProjectionKind defines model for AIHumanDecisionProjection.Kind.
+type AIHumanDecisionProjectionKind string
+
+// AIMetricGoal defines model for AIMetricGoal.
+type AIMetricGoal struct {
+	Direction AIMetricGoalDirection `json:"direction"`
+	MetricId  string                `json:"metric_id"`
+
+	// Target Canonical finite decimal128 string.
+	Target  *DecimalString `json:"target,omitempty"`
+	Unit    string         `json:"unit"`
+	Version string         `json:"version"`
+}
+
+// AIMetricGoalDirection defines model for AIMetricGoal.Direction.
+type AIMetricGoalDirection string
+
+// AIPreviewProjection defines model for AIPreviewProjection.
+type AIPreviewProjection struct {
+	Acceptable bool                        `json:"acceptable"`
+	Advisory   AIPreviewProjectionAdvisory `json:"advisory"`
+	Evaluators []AIVersionIdentity         `json:"evaluators"`
+	Evidence   []AIEvidenceRef             `json:"evidence"`
+	InputHash  Hash                        `json:"input_hash"`
+	Issues     []string                    `json:"issues"`
+	ResultHash Hash                        `json:"result_hash"`
+}
+
+// AIPreviewProjectionAdvisory defines model for AIPreviewProjection.Advisory.
+type AIPreviewProjectionAdvisory bool
+
+// AIProviderCapability defines model for AIProviderCapability.
+type AIProviderCapability struct {
+	Budget                 AIVersionIdentity         `json:"budget"`
+	CredentialPresent      bool                      `json:"credential_present"`
+	DraftPatchSchema       AIVersionIdentity         `json:"draft_patch_schema"`
+	Enabled                bool                      `json:"enabled"`
+	EndpointClassification *AIEndpointClassification `json:"endpoint_classification"`
+	Limits                 AIBudgetLimits            `json:"limits"`
+	Orchestrator           AIVersionIdentity         `json:"orchestrator"`
+	Prompt                 AIVersionIdentity         `json:"prompt"`
+	Reasons                []string                  `json:"reasons"`
+	State                  AIProviderCapabilityState `json:"state"`
+	Streaming              bool                      `json:"streaming"`
+	StructuredOutput       bool                      `json:"structured_output"`
+	ToolCalls              bool                      `json:"tool_calls"`
+	Tools                  []AIVersionIdentity       `json:"tools"`
+}
+
+// AIProviderCapabilityState defines model for AIProviderCapability.State.
+type AIProviderCapabilityState string
+
+// AIProviderSettings defines model for AIProviderSettings.
+type AIProviderSettings struct {
+	// AllowCloud Explicit user selection permitting a non-loopback HTTPS endpoint.
+	AllowCloud bool `json:"allow_cloud"`
+
+	// CredentialPresent Presence only; credential material is never returned.
+	CredentialPresent bool `json:"credential_present"`
+	Enabled           bool `json:"enabled"`
+
+	// Endpoint Non-sensitive OpenAI-compatible base URL.
+	Endpoint               string                    `json:"endpoint"`
+	EndpointClassification *AIEndpointClassification `json:"endpoint_classification"`
+	Model                  string                    `json:"model"`
+	RequestTimeoutSeconds  int                       `json:"request_timeout_seconds"`
+}
+
+// AITargetPrecondition defines model for AITargetPrecondition.
+type AITargetPrecondition struct {
+	// EntityId Server allocated UUIDv7.
+	EntityId              UUIDv7 `json:"entity_id"`
+	ExpectedEntityVersion int    `json:"expected_entity_version"`
+}
+
+// AIVersionIdentity defines model for AIVersionIdentity.
+type AIVersionIdentity struct {
+	Hash    Hash   `json:"hash"`
+	Id      string `json:"id"`
+	Version string `json:"version"`
+}
+
+// AcceptDraftPatchRequest defines model for AcceptDraftPatchRequest.
+type AcceptDraftPatchRequest struct {
+	// BaseRevisionId Server allocated UUIDv7.
+	BaseRevisionId UUIDv7                 `json:"base_revision_id"`
+	PatchHash      Hash                   `json:"patch_hash"`
+	Targets        []AITargetPrecondition `json:"targets"`
+}
+
+// AcceptDraftPatchResult defines model for AcceptDraftPatchResult.
+type AcceptDraftPatchResult struct {
+	Decision  AIHumanDecisionProjection `json:"decision"`
+	PatchHash Hash                      `json:"patch_hash"`
+
+	// PatchId Server allocated UUIDv7.
+	PatchId   UUIDv7                          `json:"patch_id"`
+	Published AcceptDraftPatchResultPublished `json:"published"`
+
+	// RevisionId Server allocated UUIDv7.
+	RevisionId  UUIDv7 `json:"revision_id"`
+	RevisionUrl string `json:"revision_url"`
+}
+
+// AcceptDraftPatchResultPublished defines model for AcceptDraftPatchResult.Published.
+type AcceptDraftPatchResultPublished bool
+
 // ActiveReleasePointer defines model for ActiveReleasePointer.
 type ActiveReleasePointer struct {
 	Generation int     `json:"generation"`
@@ -1770,6 +2503,21 @@ type CharacterPayload struct {
 	ItemIds         []UUIDv7         `json:"item_ids"`
 	RuleBlocks      []TriggerRule    `json:"rule_blocks"`
 	SkillIds        []UUIDv7         `json:"skill_ids"`
+}
+
+// CreateAIDesignJobRequest defines model for CreateAIDesignJobRequest.
+type CreateAIDesignJobRequest struct {
+	AllowedTargets []AIAllowedTarget `json:"allowed_targets"`
+
+	// BaseRevisionId Server allocated UUIDv7.
+	BaseRevisionId UUIDv7         `json:"base_revision_id"`
+	Constraints    []AIConstraint `json:"constraints"`
+	Goals          []AIGoal       `json:"goals"`
+	Metrics        []AIMetricGoal `json:"metrics"`
+
+	// RequestedBudget Optional bounded request; the server rejects values above the registered policy and persists the fully resolved limits.
+	RequestedBudget *AIBudgetLimits `json:"requested_budget,omitempty"`
+	Scenes          []string        `json:"scenes"`
 }
 
 // CreateCheckpointRevision defines model for CreateCheckpointRevision.
@@ -1833,6 +2581,9 @@ type CreateValidationRunRequest struct {
 	Source    ValidationSource `json:"source"`
 }
 
+// CredentialSource defines model for CredentialSource.
+type CredentialSource string
+
 // CurrentWorkingPrecondition defines model for CurrentWorkingPrecondition.
 type CurrentWorkingPrecondition struct {
 	// EntityEtag Optional strong entity ETag when a single entity is the source of the operation.
@@ -1847,6 +2598,53 @@ type DecimalString = string
 
 // DiffBaselineState defines model for DiffBaselineState.
 type DiffBaselineState string
+
+// DiscardDraftPatchRequest defines model for DiscardDraftPatchRequest.
+type DiscardDraftPatchRequest struct {
+	PatchHash Hash    `json:"patch_hash"`
+	Reason    *string `json:"reason,omitempty"`
+}
+
+// DiscardDraftPatchResult defines model for DiscardDraftPatchResult.
+type DiscardDraftPatchResult struct {
+	Decision  AIHumanDecisionProjection `json:"decision"`
+	PatchHash Hash                      `json:"patch_hash"`
+
+	// PatchId Server allocated UUIDv7.
+	PatchId UUIDv7 `json:"patch_id"`
+}
+
+// DraftPatchResource defines model for DraftPatchResource.
+type DraftPatchResource struct {
+	Assumptions []string              `json:"assumptions"`
+	Attempts    []AIAttemptProjection `json:"attempts"`
+
+	// BaseRevisionId Server allocated UUIDv7.
+	BaseRevisionId   UUIDv7                     `json:"base_revision_id"`
+	CreatedAt        time.Time                  `json:"created_at"`
+	Decision         *AIHumanDecisionProjection `json:"decision"`
+	EvidenceManifest AIVersionIdentity          `json:"evidence_manifest"`
+	Freshness        AIFreshnessProjection      `json:"freshness"`
+
+	// Id Server allocated UUIDv7.
+	Id        UUIDv7 `json:"id"`
+	InputHash Hash   `json:"input_hash"`
+	Links     struct {
+		Accept           string  `json:"accept"`
+		Discard          string  `json:"discard"`
+		FormalGraph      *string `json:"formal_graph"`
+		FormalRisk       *string `json:"formal_risk"`
+		FormalSimulation *string `json:"formal_simulation"`
+		FormalValidation *string `json:"formal_validation"`
+		Job              string  `json:"job"`
+		Self             string  `json:"self"`
+	} `json:"links"`
+	PatchHash Hash                 `json:"patch_hash"`
+	Preview   *AIPreviewProjection `json:"preview"`
+	Rationale string               `json:"rationale"`
+	Schema    AIVersionIdentity    `json:"schema"`
+	Targets   []AIDraftTarget      `json:"targets"`
+}
 
 // DslFunctionMetadata defines model for DslFunctionMetadata.
 type DslFunctionMetadata struct {
@@ -2269,6 +3067,20 @@ type OpenProjectRequest struct {
 // OpenProjectRequestMode defines model for OpenProjectRequest.Mode.
 type OpenProjectRequestMode string
 
+// PatchAIProviderSettings defines model for PatchAIProviderSettings.
+type PatchAIProviderSettings struct {
+	AllowCloud            bool   `json:"allow_cloud"`
+	Enabled               bool   `json:"enabled"`
+	Endpoint              string `json:"endpoint"`
+	Model                 string `json:"model"`
+	RequestTimeoutSeconds int    `json:"request_timeout_seconds"`
+}
+
+// PatchSettingsRequest defines model for PatchSettingsRequest.
+type PatchSettingsRequest struct {
+	Ai PatchAIProviderSettings `json:"ai"`
+}
+
 // Problem defines model for Problem.
 type Problem struct {
 	Code    ProblemCode             `json:"code"`
@@ -2304,6 +3116,24 @@ type ProjectSelection struct {
 
 	// Token Opaque short-lived process-local capability.
 	Token string `json:"token"`
+}
+
+// ProviderCredentialStatus defines model for ProviderCredentialStatus.
+type ProviderCredentialStatus struct {
+	CredentialPresent bool                             `json:"credential_present"`
+	Provider          ProviderCredentialStatusProvider `json:"provider"`
+
+	// Source Persistent credential manager wins over the non-persistent environment fallback.
+	Source *CredentialSource `json:"source"`
+}
+
+// ProviderCredentialStatusProvider defines model for ProviderCredentialStatus.Provider.
+type ProviderCredentialStatusProvider string
+
+// PutProviderCredentialRequest defines model for PutProviderCredentialRequest.
+type PutProviderCredentialRequest struct {
+	// Credential Write-only Provider credential stored by the platform credential manager.
+	Credential *string `json:"credential,omitempty"`
 }
 
 // RecordNumericDecisionCommand defines model for RecordNumericDecisionCommand.
@@ -2913,8 +3743,10 @@ type RiskThresholdSelection struct {
 	union json.RawMessage
 }
 
-// RuntimeCapabilities Safe runtime availability projection. It deliberately omits backup credentials, service endpoints, and client-computed Gate pass state.
+// RuntimeCapabilities Safe runtime availability projection. It deliberately omits credential material and client-computed Gate pass state.
 type RuntimeCapabilities struct {
+	Ai AIProviderCapability `json:"ai"`
+
 	// Graph Server-authoritative Graph provider health and compatibility. Graph release readiness remains a Gate result for an exact candidate revision.
 	Graph   GraphRuntimeCapability `json:"graph"`
 	Release ReleaseCapability      `json:"release"`
@@ -2924,6 +3756,12 @@ type RuntimeCapabilities struct {
 type SaveEntityResponse struct {
 	Entity   Entity          `json:"entity"`
 	Revision RevisionSummary `json:"revision"`
+}
+
+// SettingsResource defines model for SettingsResource.
+type SettingsResource struct {
+	Ai            AIProviderSettings `json:"ai"`
+	SchemaVersion int                `json:"schema_version"`
 }
 
 // SeveritySummary defines model for SeveritySummary.
@@ -3236,6 +4074,12 @@ type WorkingValidationSource struct {
 	Type interface{} `json:"type"`
 }
 
+// AIProviderName defines model for AIProviderName.
+type AIProviderName string
+
+// DraftPatchID Server allocated UUIDv7.
+type DraftPatchID = UUIDv7
+
 // EntityID Server allocated UUIDv7.
 type EntityID = UUIDv7
 
@@ -3274,6 +4118,24 @@ type SimulationRunID = UUIDv7
 
 // ValidationRunID Server allocated UUIDv7.
 type ValidationRunID = UUIDv7
+
+// CreateAIDesignJobParams defines parameters for CreateAIDesignJob.
+type CreateAIDesignJobParams struct {
+	// IdempotencyKey Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict.
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// AcceptDraftPatchParams defines parameters for AcceptDraftPatch.
+type AcceptDraftPatchParams struct {
+	// IdempotencyKey Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict.
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// DiscardDraftPatchParams defines parameters for DiscardDraftPatch.
+type DiscardDraftPatchParams struct {
+	// IdempotencyKey Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict.
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
 
 // ListEntitiesParams defines parameters for ListEntities.
 type ListEntitiesParams struct {
@@ -3347,11 +4209,26 @@ type CreateRiskReviewParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// DeleteProviderCredentialParamsProvider defines parameters for DeleteProviderCredential.
+type DeleteProviderCredentialParamsProvider string
+
+// PutProviderCredentialParamsProvider defines parameters for PutProviderCredential.
+type PutProviderCredentialParamsProvider string
+
 // CreateSimulationJobParams defines parameters for CreateSimulationJob.
 type CreateSimulationJobParams struct {
 	// IdempotencyKey Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict.
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
+
+// CreateAIDesignJobJSONRequestBody defines body for CreateAIDesignJob for application/json ContentType.
+type CreateAIDesignJobJSONRequestBody = CreateAIDesignJobRequest
+
+// AcceptDraftPatchJSONRequestBody defines body for AcceptDraftPatch for application/json ContentType.
+type AcceptDraftPatchJSONRequestBody = AcceptDraftPatchRequest
+
+// DiscardDraftPatchJSONRequestBody defines body for DiscardDraftPatch for application/json ContentType.
+type DiscardDraftPatchJSONRequestBody = DiscardDraftPatchRequest
 
 // CreateEntityJSONRequestBody defines body for CreateEntity for application/json ContentType.
 type CreateEntityJSONRequestBody = EntityDraft
@@ -3376,6 +4253,12 @@ type EnsureGraphSyncJSONRequestBody = GraphSyncRequest
 
 // CreateRiskReviewJSONRequestBody defines body for CreateRiskReview for application/json ContentType.
 type CreateRiskReviewJSONRequestBody = RiskReviewCommand
+
+// PatchSettingsJSONRequestBody defines body for PatchSettings for application/json ContentType.
+type PatchSettingsJSONRequestBody = PatchSettingsRequest
+
+// PutProviderCredentialJSONRequestBody defines body for PutProviderCredential for application/json ContentType.
+type PutProviderCredentialJSONRequestBody = PutProviderCredentialRequest
 
 // CreateSimulationJobJSONRequestBody defines body for CreateSimulationJob for application/json ContentType.
 type CreateSimulationJobJSONRequestBody = CreateSimulationJobRequest

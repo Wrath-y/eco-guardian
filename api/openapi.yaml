@@ -279,6 +279,91 @@ paths:
       responses:
         '200': { description: Immutable risk review detail., content: { application/json: { schema: { $ref: '#/components/schemas/RiskReview' } } } }
         default: { $ref: '#/components/responses/Problem' }
+  /ai-design-jobs:
+    post:
+      operationId: createAIDesignJob
+      description: Admits a bounded AI proposal Job over one explicit immutable base revision. The Job can produce only a reviewable DraftPatch and never writes a revision or release.
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateAIDesignJobRequest' } } }
+      responses:
+        '202':
+          description: Existing or newly admitted durable AI design Job.
+          headers: { Location: { required: true, schema: { type: string, format: uri-reference } } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/AIDesignJobAccepted' } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /draft-patches/{id}:
+    get:
+      operationId: getDraftPatch
+      description: Reads an immutable generated Patch, evidence, attempt lineage and advisory preview plus read-time freshness and decision projections.
+      parameters: [ { $ref: '#/components/parameters/DraftPatchID' } ]
+      responses:
+        '200': { description: DraftPatch review resource., content: { application/json: { schema: { $ref: '#/components/schemas/DraftPatchResource' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /draft-patches/{id}/accept:
+    post:
+      operationId: acceptDraftPatch
+      description: Records an explicit human acceptance and atomically creates one revision after server-side freshness and policy revalidation. It never publishes a release.
+      parameters: [ { $ref: '#/components/parameters/DraftPatchID' }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AcceptDraftPatchRequest' } } }
+      responses:
+        '200': { description: Existing or newly committed acceptance result., content: { application/json: { schema: { $ref: '#/components/schemas/AcceptDraftPatchResult' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /draft-patches/{id}/discard:
+    post:
+      operationId: discardDraftPatch
+      description: Records an append-only human discard decision without changing the working draft.
+      parameters: [ { $ref: '#/components/parameters/DraftPatchID' }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DiscardDraftPatchRequest' } } }
+      responses:
+        '200': { description: Existing or newly recorded discard result., content: { application/json: { schema: { $ref: '#/components/schemas/DiscardDraftPatchResult' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /settings:
+    get:
+      operationId: getSettings
+      description: Reads non-sensitive machine-local settings and Provider readiness metadata. Credential material is never returned.
+      responses:
+        '200': { description: Non-sensitive runtime settings., content: { application/json: { schema: { $ref: '#/components/schemas/SettingsResource' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+    patch:
+      operationId: patchSettings
+      description: Replaces the bounded non-sensitive AI Provider selection. Credential material is rejected and uses the separate write-only endpoint.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PatchSettingsRequest' } } }
+      responses:
+        '200': { description: Updated non-sensitive runtime settings., content: { application/json: { schema: { $ref: '#/components/schemas/SettingsResource' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /settings/credentials/{provider}:
+    put:
+      operationId: putProviderCredential
+      description: Writes a Provider credential to the platform credential manager. The credential is write-only and is never returned or persisted in settings.
+      parameters: [ { $ref: '#/components/parameters/AIProviderName' } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PutProviderCredentialRequest' } } }
+      responses:
+        '200': { description: Safe credential presence and source metadata., content: { application/json: { schema: { $ref: '#/components/schemas/ProviderCredentialStatus' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+    delete:
+      operationId: deleteProviderCredential
+      description: Deletes the persistent Provider credential. A process environment credential may remain available as a non-persistent, lower-precedence fallback.
+      parameters: [ { $ref: '#/components/parameters/AIProviderName' } ]
+      responses:
+        '200': { description: Safe credential presence and source metadata after deletion., content: { application/json: { schema: { $ref: '#/components/schemas/ProviderCredentialStatus' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /runtime/status:
+    get:
+      operationId: getRuntimeStatus
+      description: Reads safe process-wide capability, registered contract and bounded-limit status without secrets.
+      responses:
+        '200': { description: Safe runtime status., content: { application/json: { schema: { $ref: '#/components/schemas/RuntimeCapabilities' } } } }
+        default: { $ref: '#/components/responses/Problem' }
   /runtime/capabilities:
     get:
       operationId: getRuntimeCapabilities
@@ -296,6 +381,8 @@ components:
     JobID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     SimulationRunID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     RiskReviewID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
+    DraftPatchID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
+    AIProviderName: { name: provider, in: path, required: true, schema: { type: string, enum: [openai-compatible] } }
     IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 256 }, description: Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. }
     GraphRetryIdempotencyKey: { name: Idempotency-Key, in: header, required: false, schema: { type: string, minLength: 1, maxLength: 256 }, description: Required when graph-sync intent is retry; reuse returns the original retry Job and changed retry input conflicts. It is ignored for ensure. }
     LastEventID: { name: Last-Event-ID, in: header, schema: { type: integer, minimum: 0 }, description: Resume SSE delivery strictly after this persisted event ordinal. }
@@ -1301,13 +1388,84 @@ components:
       properties:
         enabled: { type: boolean, description: Server-authoritative release-entry state; it is never computed by the client. }
         disabled_reasons: { type: array, items: { $ref: '#/components/schemas/ReleaseDisabledReason' } }
+    AIEndpointClassification: { type: string, enum: [loopback, cloud] }
+    AIProviderSettings:
+      type: object
+      additionalProperties: false
+      required: [enabled, endpoint, model, request_timeout_seconds, allow_cloud, endpoint_classification, credential_present]
+      properties:
+        enabled: { type: boolean }
+        endpoint: { type: string, maxLength: 2048, description: Non-sensitive OpenAI-compatible base URL. }
+        model: { type: string, maxLength: 256 }
+        request_timeout_seconds: { type: integer, minimum: 1, maximum: 600 }
+        allow_cloud: { type: boolean, description: Explicit user selection permitting a non-loopback HTTPS endpoint. }
+        endpoint_classification: { oneOf: [{ $ref: '#/components/schemas/AIEndpointClassification' }, { type: 'null' }] }
+        credential_present: { type: boolean, description: Presence only; credential material is never returned. }
+    PatchAIProviderSettings:
+      type: object
+      additionalProperties: false
+      required: [enabled, endpoint, model, request_timeout_seconds, allow_cloud]
+      properties:
+        enabled: { type: boolean }
+        endpoint: { type: string, maxLength: 2048 }
+        model: { type: string, maxLength: 256 }
+        request_timeout_seconds: { type: integer, minimum: 1, maximum: 600 }
+        allow_cloud: { type: boolean }
+    SettingsResource:
+      type: object
+      additionalProperties: false
+      required: [schema_version, ai]
+      properties:
+        schema_version: { type: integer, minimum: 1 }
+        ai: { $ref: '#/components/schemas/AIProviderSettings' }
+    PatchSettingsRequest:
+      type: object
+      additionalProperties: false
+      required: [ai]
+      properties:
+        ai: { $ref: '#/components/schemas/PatchAIProviderSettings' }
+    PutProviderCredentialRequest:
+      type: object
+      additionalProperties: false
+      required: [credential]
+      properties:
+        credential: { type: string, minLength: 1, maxLength: 2560, writeOnly: true, description: Write-only Provider credential stored by the platform credential manager. }
+    ProviderCredentialStatus:
+      type: object
+      additionalProperties: false
+      required: [provider, credential_present, source]
+      properties:
+        provider: { type: string, enum: [openai-compatible] }
+        credential_present: { type: boolean }
+        source: { oneOf: [{ $ref: '#/components/schemas/CredentialSource' }, { type: 'null' }], description: Persistent credential manager wins over the non-persistent environment fallback. }
+    CredentialSource: { type: string, enum: [credential_manager, environment] }
+    AIProviderCapability:
+      type: object
+      additionalProperties: false
+      required: [state, enabled, endpoint_classification, credential_present, structured_output, tool_calls, streaming, reasons, prompt, draft_patch_schema, tools, orchestrator, budget, limits]
+      properties:
+        state: { type: string, enum: [unconfigured, available, degraded, unavailable] }
+        enabled: { type: boolean }
+        endpoint_classification: { oneOf: [{ $ref: '#/components/schemas/AIEndpointClassification' }, { type: 'null' }] }
+        credential_present: { type: boolean }
+        structured_output: { type: boolean }
+        tool_calls: { type: boolean }
+        streaming: { type: boolean }
+        reasons: { type: array, items: { type: string, minLength: 1, maxLength: 256 } }
+        prompt: { $ref: '#/components/schemas/AIVersionIdentity' }
+        draft_patch_schema: { $ref: '#/components/schemas/AIVersionIdentity' }
+        tools: { type: array, minItems: 6, maxItems: 6, items: { $ref: '#/components/schemas/AIVersionIdentity' } }
+        orchestrator: { $ref: '#/components/schemas/AIVersionIdentity' }
+        budget: { $ref: '#/components/schemas/AIVersionIdentity' }
+        limits: { $ref: '#/components/schemas/AIBudgetLimits' }
     RuntimeCapabilities:
       type: object
-      required: [release, graph]
-      description: Safe runtime availability projection. It deliberately omits backup credentials, service endpoints, and client-computed Gate pass state.
+      required: [release, graph, ai]
+      description: Safe runtime availability projection. It deliberately omits credential material and client-computed Gate pass state.
       properties:
         release: { $ref: '#/components/schemas/ReleaseCapability' }
         graph: { $ref: '#/components/schemas/GraphRuntimeCapability' }
+        ai: { $ref: '#/components/schemas/AIProviderCapability' }
     GraphRuntimeCapability:
       type: object
       required: [available, compatible, required_capabilities, degradations, disabled_reasons, release_disabled_reasons]
@@ -1418,6 +1576,242 @@ components:
       properties:
         items: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/Entity' } }
         next_cursor: { type: [string, 'null'] }
+    AIVersionIdentity:
+      type: object
+      additionalProperties: false
+      required: [id, version, hash]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 128 }
+        version: { type: string, minLength: 1, maxLength: 64 }
+        hash: { $ref: '#/components/schemas/Hash' }
+    AIBudgetLimits:
+      type: object
+      additionalProperties: false
+      required: [policy, max_format_repairs, max_provider_turns, max_tool_calls, max_search_candidates, max_duration_millis, max_context_bytes, max_output_bytes, max_tool_result_bytes, retrieval_seed_limit, retrieval_result_limit, retrieval_graph_depth]
+      properties:
+        policy: { $ref: '#/components/schemas/AIVersionIdentity' }
+        max_format_repairs: { type: integer, const: 3 }
+        max_provider_turns: { type: integer, minimum: 1, maximum: 16 }
+        max_tool_calls: { type: integer, minimum: 1, maximum: 64 }
+        max_search_candidates: { type: integer, minimum: 1, maximum: 1000 }
+        max_duration_millis: { type: integer, minimum: 1, maximum: 600000 }
+        max_context_bytes: { type: integer, minimum: 1, maximum: 1048576 }
+        max_output_bytes: { type: integer, minimum: 1, maximum: 262144 }
+        max_tool_result_bytes: { type: integer, minimum: 1, maximum: 262144 }
+        retrieval_seed_limit: { type: integer, minimum: 1, maximum: 100 }
+        retrieval_result_limit: { type: integer, minimum: 1, maximum: 100 }
+        retrieval_graph_depth: { type: integer, minimum: 0, maximum: 3 }
+    AIGoal:
+      type: object
+      additionalProperties: false
+      required: [id, description]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 128 }
+        description: { type: string, minLength: 1, maxLength: 2000 }
+    AIMetricGoal:
+      type: object
+      additionalProperties: false
+      required: [metric_id, version, direction, unit]
+      properties:
+        metric_id: { type: string, minLength: 1, maxLength: 128 }
+        version: { type: string, minLength: 1, maxLength: 64 }
+        direction: { type: string, enum: [minimize, maximize, target] }
+        target: { $ref: '#/components/schemas/DecimalString' }
+        unit: { type: string, minLength: 1, maxLength: 64 }
+    AIConstraint:
+      type: object
+      additionalProperties: false
+      required: [id, path, operator, value]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 128 }
+        path: { type: string, minLength: 1, maxLength: 512, pattern: '^/' }
+        operator: { type: string, enum: [equal, not_equal, less, less_or_equal, greater, greater_or_equal, in, range] }
+        value: { description: Typed JSON constraint value interpreted by the registered entity Schema. }
+    AIAllowedPath:
+      type: object
+      additionalProperties: false
+      required: [path, operations]
+      properties:
+        path: { type: string, minLength: 1, maxLength: 512, pattern: '^/' }
+        operations: { type: array, minItems: 1, maxItems: 3, uniqueItems: true, items: { type: string, enum: [replace, add, remove] } }
+    AIAllowedTarget:
+      type: object
+      additionalProperties: false
+      required: [entity_id, kind, expected_entity_version, paths]
+      properties:
+        entity_id: { $ref: '#/components/schemas/UUIDv7' }
+        kind: { $ref: '#/components/schemas/EntityKind' }
+        expected_entity_version: { type: integer, minimum: 1 }
+        paths: { type: array, minItems: 1, maxItems: 200, items: { $ref: '#/components/schemas/AIAllowedPath' } }
+    CreateAIDesignJobRequest:
+      type: object
+      additionalProperties: false
+      required: [base_revision_id, goals, metrics, constraints, allowed_targets, scenes]
+      properties:
+        base_revision_id: { $ref: '#/components/schemas/UUIDv7' }
+        goals: { type: array, minItems: 1, maxItems: 50, items: { $ref: '#/components/schemas/AIGoal' } }
+        metrics: { type: array, minItems: 1, maxItems: 100, items: { $ref: '#/components/schemas/AIMetricGoal' } }
+        constraints: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/AIConstraint' } }
+        allowed_targets: { type: array, minItems: 1, maxItems: 200, items: { $ref: '#/components/schemas/AIAllowedTarget' } }
+        scenes: { type: array, minItems: 1, maxItems: 100, uniqueItems: true, items: { type: string, minLength: 1, maxLength: 128 } }
+        requested_budget: { $ref: '#/components/schemas/AIBudgetLimits', description: Optional bounded request; the server rejects values above the registered policy and persists the fully resolved limits. }
+    AIDesignJobAccepted:
+      type: object
+      additionalProperties: false
+      required: [job, location, draft_patch_url]
+      properties:
+        job: { $ref: '#/components/schemas/Job' }
+        location: { type: string, format: uri-reference }
+        draft_patch_url: { type: [string, 'null'], format: uri-reference, description: Null until a terminal Patch has been sealed. }
+    AIEvidenceRef:
+      type: object
+      additionalProperties: false
+      required: [id, kind, manifest_hash, citation, mode, degraded, generations, scores, warnings]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 128 }
+        kind: { type: string, enum: [retrieval, validation, simulation, risk, search] }
+        manifest_hash: { $ref: '#/components/schemas/Hash' }
+        citation: { type: [string, 'null'], maxLength: 4000 }
+        mode: { type: [string, 'null'], enum: [hybrid, bm25_only, vector_only, null] }
+        degraded: { type: boolean }
+        generations: { type: array, maxItems: 3, items: { $ref: '#/components/schemas/AIVersionIdentity' } }
+        scores: { type: object, additionalProperties: { $ref: '#/components/schemas/DecimalString' } }
+        warnings: { type: array, maxItems: 20, items: { type: string, minLength: 1, maxLength: 512 } }
+    AIDraftOperation:
+      type: object
+      additionalProperties: false
+      required: [ordinal, kind, path, value, evidence]
+      properties:
+        ordinal: { type: integer, minimum: 1 }
+        kind: { type: string, enum: [replace, add, remove] }
+        path: { type: string, minLength: 1, maxLength: 512, pattern: '^/' }
+        value: { description: Canonical typed JSON value. }
+        evidence: { type: array, minItems: 1, maxItems: 100, uniqueItems: true, items: { type: string, minLength: 1, maxLength: 128 } }
+    AIDraftTarget:
+      type: object
+      additionalProperties: false
+      required: [entity_id, kind, expected_entity_version, operations]
+      properties:
+        entity_id: { $ref: '#/components/schemas/UUIDv7' }
+        kind: { $ref: '#/components/schemas/EntityKind' }
+        expected_entity_version: { type: integer, minimum: 1 }
+        operations: { type: array, minItems: 1, maxItems: 500, items: { $ref: '#/components/schemas/AIDraftOperation' } }
+    AIAttemptProjection:
+      type: object
+      additionalProperties: false
+      required: [id, ordinal, stage, outcome, manifest, repair_round]
+      properties:
+        id: { $ref: '#/components/schemas/UUIDv7' }
+        ordinal: { type: integer, minimum: 1 }
+        parent_attempt_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        stage: { type: string, enum: [input_pinned, evidence_pinned, provider_tool_loop, deterministic_preview, patch_sealed] }
+        outcome: { type: string, enum: [running, succeeded, failed, canceled, interrupted, ignored_late_result] }
+        manifest: { $ref: '#/components/schemas/AIVersionIdentity' }
+        repair_round: { type: integer, minimum: 0, maximum: 3 }
+    AIPreviewProjection:
+      type: object
+      additionalProperties: false
+      required: [advisory, input_hash, result_hash, evaluators, evidence, acceptable, issues]
+      properties:
+        advisory: { type: boolean, const: true }
+        input_hash: { $ref: '#/components/schemas/Hash' }
+        result_hash: { $ref: '#/components/schemas/Hash' }
+        evaluators: { type: array, minItems: 1, items: { $ref: '#/components/schemas/AIVersionIdentity' } }
+        evidence: { type: array, items: { $ref: '#/components/schemas/AIEvidenceRef' } }
+        acceptable: { type: boolean }
+        issues: { type: array, items: { type: string, minLength: 1, maxLength: 2000 } }
+    AIFreshnessProjection:
+      type: object
+      additionalProperties: false
+      required: [state, conflicting_targets]
+      properties:
+        state: { type: string, enum: [fresh, stale] }
+        conflicting_targets: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/UUIDv7' } }
+    AIHumanDecisionProjection:
+      type: object
+      additionalProperties: false
+      required: [id, kind, actor, request_hash, result_hash, decided_at]
+      properties:
+        id: { $ref: '#/components/schemas/UUIDv7' }
+        kind: { type: string, enum: [accepted, discarded] }
+        actor: { type: string, minLength: 1, maxLength: 128 }
+        request_hash: { $ref: '#/components/schemas/Hash' }
+        result_hash: { $ref: '#/components/schemas/Hash' }
+        accepted_revision_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        decided_at: { type: string, format: date-time }
+    DraftPatchResource:
+      type: object
+      additionalProperties: false
+      required: [id, patch_hash, schema, base_revision_id, input_hash, evidence_manifest, targets, rationale, assumptions, attempts, preview, freshness, decision, links, created_at]
+      properties:
+        id: { $ref: '#/components/schemas/UUIDv7' }
+        patch_hash: { $ref: '#/components/schemas/Hash' }
+        schema: { $ref: '#/components/schemas/AIVersionIdentity' }
+        base_revision_id: { $ref: '#/components/schemas/UUIDv7' }
+        input_hash: { $ref: '#/components/schemas/Hash' }
+        evidence_manifest: { $ref: '#/components/schemas/AIVersionIdentity' }
+        targets: { type: array, minItems: 1, maxItems: 200, items: { $ref: '#/components/schemas/AIDraftTarget' } }
+        rationale: { type: string, minLength: 1, maxLength: 10000 }
+        assumptions: { type: array, minItems: 1, maxItems: 100, items: { type: string, minLength: 1, maxLength: 2000 } }
+        attempts: { type: array, minItems: 1, maxItems: 20, items: { $ref: '#/components/schemas/AIAttemptProjection' } }
+        preview: { oneOf: [{ $ref: '#/components/schemas/AIPreviewProjection' }, { type: 'null' }] }
+        freshness: { $ref: '#/components/schemas/AIFreshnessProjection' }
+        decision: { oneOf: [{ $ref: '#/components/schemas/AIHumanDecisionProjection' }, { type: 'null' }] }
+        links:
+          type: object
+          additionalProperties: false
+          required: [self, job, accept, discard, formal_validation, formal_graph, formal_simulation, formal_risk]
+          properties:
+            self: { type: string, format: uri-reference }
+            job: { type: string, format: uri-reference }
+            accept: { type: string, format: uri-reference }
+            discard: { type: string, format: uri-reference }
+            formal_validation: { type: [string, 'null'], format: uri-reference }
+            formal_graph: { type: [string, 'null'], format: uri-reference }
+            formal_simulation: { type: [string, 'null'], format: uri-reference }
+            formal_risk: { type: [string, 'null'], format: uri-reference }
+        created_at: { type: string, format: date-time }
+    AITargetPrecondition:
+      type: object
+      additionalProperties: false
+      required: [entity_id, expected_entity_version]
+      properties:
+        entity_id: { $ref: '#/components/schemas/UUIDv7' }
+        expected_entity_version: { type: integer, minimum: 1 }
+    AcceptDraftPatchRequest:
+      type: object
+      additionalProperties: false
+      required: [patch_hash, base_revision_id, targets]
+      properties:
+        patch_hash: { $ref: '#/components/schemas/Hash' }
+        base_revision_id: { $ref: '#/components/schemas/UUIDv7' }
+        targets: { type: array, minItems: 1, maxItems: 200, items: { $ref: '#/components/schemas/AITargetPrecondition' } }
+    AcceptDraftPatchResult:
+      type: object
+      additionalProperties: false
+      required: [patch_id, patch_hash, decision, revision_id, revision_url, published]
+      properties:
+        patch_id: { $ref: '#/components/schemas/UUIDv7' }
+        patch_hash: { $ref: '#/components/schemas/Hash' }
+        decision: { $ref: '#/components/schemas/AIHumanDecisionProjection' }
+        revision_id: { $ref: '#/components/schemas/UUIDv7' }
+        revision_url: { type: string, format: uri-reference }
+        published: { type: boolean, const: false }
+    DiscardDraftPatchRequest:
+      type: object
+      additionalProperties: false
+      required: [patch_hash]
+      properties:
+        patch_hash: { $ref: '#/components/schemas/Hash' }
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+    DiscardDraftPatchResult:
+      type: object
+      additionalProperties: false
+      required: [patch_id, patch_hash, decision]
+      properties:
+        patch_id: { $ref: '#/components/schemas/UUIDv7' }
+        patch_hash: { $ref: '#/components/schemas/Hash' }
+        decision: { $ref: '#/components/schemas/AIHumanDecisionProjection' }
     Problem:
       type: object
       required: [type, title, status, code, retryable, request_id]
@@ -1427,7 +1821,7 @@ components:
         status: { type: integer }
         detail: { type: string }
         instance: { type: string }
-        code: { type: string, enum: [INVALID_SELECTION, PROJECT_LOCKED, ACTIVE_PROJECT_CONFLICT, CLOSE_BLOCKED, UNSUPPORTED_KIND, UNSUPPORTED_SCHEMA, DUPLICATE_KEY, PRECONDITION_REQUIRED, REVISION_CONFLICT, ENTITY_REFERENCED, VALIDATION_FAILED, PROJECT_NOT_OPEN, INVALID_VALIDATION_REQUEST, INVALID_VALIDATION_SOURCE, INVALID_VALIDATION_SCOPE, INVALID_VALIDATION_TARGET, VALIDATION_SOURCE_NOT_FOUND, VALIDATION_RUN_NOT_FOUND, VALIDATION_STORAGE_FAILURE, REVISION_NOT_FOUND, REVISION_IMMUTABLE, DIFF_BASE_INVALID, RELEASE_POLICY_INVALID, RELEASE_CAPABILITY_DISABLED, RELEASE_PREFLIGHT_FAILED, RELEASE_BASE_CONFLICT, IDEMPOTENCY_CONFLICT, MANDATORY_BACKUP_FAILED, MIGRATION_BACKUP_REQUIRED, INVALID_CONFIRMATION, HISTORY_NOT_FOUND, STORAGE_FAILURE, EXTERNAL_SERVICE_FAILURE, GRAPH_VALIDATION_REQUIRED, GRAPH_VALIDATION_BLOCKED, PROJECTOR_VERSION_UNAVAILABLE, GRAPH_CAPABILITY_UNAVAILABLE, BASE_SNAPSHOT_NOT_FOUND, BASE_SNAPSHOT_NOT_READY, CONTENT_HASH_MISMATCH, CONTENT_HASH_CONFLICT, PROVIDER_TASK_FAILED, GRAPH_RETRY_EXHAUSTED, GRAPH_RETRY_NOT_SAFE, GRAPH_STATUS_UNAVAILABLE, SIMULATION_CAPABILITY_UNAVAILABLE, SIMULATION_IDEMPOTENCY_REQUIRED, SIMULATION_INPUT_INVALID, SIMULATION_SEED_INVALID, SIMULATION_VALIDATION_REQUIRED, SIMULATION_SOURCE_INVALID, SIMULATION_SCENE_INVALID, SIMULATION_PARAMETER_INVALID, SIMULATION_METRIC_INVALID, SIMULATION_SAMPLE_INVALID, SIMULATION_BUDGET_INVALID, SIMULATION_IMPLEMENTATION_UNAVAILABLE, SIMULATION_VERIFICATION_TARGET_INVALID, SIMULATION_RUN_NOT_FOUND, SIMULATION_RUN_UNAVAILABLE, BUDGET_EXCEEDED, TIMEOUT, RECOVERY_MISMATCH, RECOVERY_UNAVAILABLE, RISK_IDEMPOTENCY_REQUIRED, RISK_COMMAND_INVALID, RISK_REVISION_INVALID, RISK_BASELINE_INVALID, RISK_POLICY_INVALID, THRESHOLD_NOT_CONFIGURED, THRESHOLD_INVALID, RISK_VALIDATION_INVALID, RISK_SIMULATION_INVALID, RISK_COHORT_INVALID, RISK_REQUIRED_METRIC_UNAVAILABLE, RISK_STALE_IDENTITY, RISK_REGISTRY_INCOMPATIBLE, RISK_RULE_CONTRACT_INVALID, RISK_DECISION_INVALID, RISK_REVIEW_NOT_FOUND, RISK_CANCELED, RISK_INTERRUPTED] }
+        code: { type: string, enum: [INVALID_SELECTION, PROJECT_LOCKED, ACTIVE_PROJECT_CONFLICT, CLOSE_BLOCKED, UNSUPPORTED_KIND, UNSUPPORTED_SCHEMA, DUPLICATE_KEY, PRECONDITION_REQUIRED, REVISION_CONFLICT, ENTITY_REFERENCED, VALIDATION_FAILED, PROJECT_NOT_OPEN, INVALID_VALIDATION_REQUEST, INVALID_VALIDATION_SOURCE, INVALID_VALIDATION_SCOPE, INVALID_VALIDATION_TARGET, VALIDATION_SOURCE_NOT_FOUND, VALIDATION_RUN_NOT_FOUND, VALIDATION_STORAGE_FAILURE, REVISION_NOT_FOUND, REVISION_IMMUTABLE, DIFF_BASE_INVALID, RELEASE_POLICY_INVALID, RELEASE_CAPABILITY_DISABLED, RELEASE_PREFLIGHT_FAILED, RELEASE_BASE_CONFLICT, IDEMPOTENCY_CONFLICT, MANDATORY_BACKUP_FAILED, MIGRATION_BACKUP_REQUIRED, INVALID_CONFIRMATION, HISTORY_NOT_FOUND, STORAGE_FAILURE, EXTERNAL_SERVICE_FAILURE, GRAPH_VALIDATION_REQUIRED, GRAPH_VALIDATION_BLOCKED, PROJECTOR_VERSION_UNAVAILABLE, GRAPH_CAPABILITY_UNAVAILABLE, BASE_SNAPSHOT_NOT_FOUND, BASE_SNAPSHOT_NOT_READY, CONTENT_HASH_MISMATCH, CONTENT_HASH_CONFLICT, PROVIDER_TASK_FAILED, GRAPH_RETRY_EXHAUSTED, GRAPH_RETRY_NOT_SAFE, GRAPH_STATUS_UNAVAILABLE, SIMULATION_CAPABILITY_UNAVAILABLE, SIMULATION_IDEMPOTENCY_REQUIRED, SIMULATION_INPUT_INVALID, SIMULATION_SEED_INVALID, SIMULATION_VALIDATION_REQUIRED, SIMULATION_SOURCE_INVALID, SIMULATION_SCENE_INVALID, SIMULATION_PARAMETER_INVALID, SIMULATION_METRIC_INVALID, SIMULATION_SAMPLE_INVALID, SIMULATION_BUDGET_INVALID, SIMULATION_IMPLEMENTATION_UNAVAILABLE, SIMULATION_VERIFICATION_TARGET_INVALID, SIMULATION_RUN_NOT_FOUND, SIMULATION_RUN_UNAVAILABLE, BUDGET_EXCEEDED, TIMEOUT, RECOVERY_MISMATCH, RECOVERY_UNAVAILABLE, RISK_IDEMPOTENCY_REQUIRED, RISK_COMMAND_INVALID, RISK_REVISION_INVALID, RISK_BASELINE_INVALID, RISK_POLICY_INVALID, THRESHOLD_NOT_CONFIGURED, THRESHOLD_INVALID, RISK_VALIDATION_INVALID, RISK_SIMULATION_INVALID, RISK_COHORT_INVALID, RISK_REQUIRED_METRIC_UNAVAILABLE, RISK_STALE_IDENTITY, RISK_REGISTRY_INCOMPATIBLE, RISK_RULE_CONTRACT_INVALID, RISK_DECISION_INVALID, RISK_REVIEW_NOT_FOUND, RISK_CANCELED, RISK_INTERRUPTED, AI_IDEMPOTENCY_REQUIRED, AI_PROVIDER_UNCONFIGURED, AI_CAPABILITY_UNAVAILABLE, AI_INPUT_INVALID, AI_EVIDENCE_UNAVAILABLE, AI_SNAPSHOT_IDENTITY_MISMATCH, AI_SNAPSHOT_INDEX_NOT_READY, AI_RETRIEVAL_UNAVAILABLE, AI_PROVIDER_FAILED, AI_PROVIDER_TIMEOUT, AI_OUTPUT_INVALID, AI_REPAIR_EXHAUSTED, AI_TOOL_POLICY_VIOLATION, AI_BUDGET_EXCEEDED, AI_PREVIEW_BLOCKED, AI_PATCH_NOT_FOUND, AI_PATCH_NOT_ACCEPTABLE, AI_PATCH_STALE, AI_DECISION_CONFLICT, AI_CANCELED, AI_INTERRUPTED, AI_CREDENTIAL_INVALID, AI_CREDENTIAL_STORE_FAILED] }
         retryable: { type: boolean }
         request_id: { type: string }
         entity_id: { $ref: '#/components/schemas/UUIDv7' }

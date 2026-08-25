@@ -53,6 +53,15 @@ func Validate(settings Settings) error {
 	if settings.Graph.RestartLimit < 0 || settings.Graph.RestartLimit > 10 {
 		return ValidationError{Field: "graph.restart_limit", Message: "must be between 0 and 10"}
 	}
+	if settings.AI.Enabled && (settings.AI.Endpoint == "" || settings.AI.Model == "") {
+		return ValidationError{Field: "ai", Message: "enabled provider requires endpoint and model"}
+	}
+	if settings.AI.RequestTimeoutSeconds != 0 && (settings.AI.RequestTimeoutSeconds < 1 || settings.AI.RequestTimeoutSeconds > 600) {
+		return ValidationError{Field: "ai.request_timeout_seconds", Message: "must be between 1 and 600"}
+	}
+	if settings.AI.Enabled && settings.AI.RequestTimeoutSeconds == 0 {
+		return ValidationError{Field: "ai.request_timeout_seconds", Message: "is required when AI is enabled"}
+	}
 	if settings.Logs.MaxBytes < 64<<10 || settings.Logs.MaxBytes > 1<<30 {
 		return ValidationError{Field: "logs.max_bytes", Message: "must be between 65536 and 1073741824"}
 	}

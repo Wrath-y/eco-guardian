@@ -1,0 +1,69 @@
+{
+  "prompt": {
+    "identity": {"id":"ai-balance-design","version":"v1","hash":"1dbd1f20d5ff02ff0c3397154219aa468a0d39fa8a90fba94e83bbafa854d010"},
+    "template": "Generate only a DraftPatchV1 proposal for the frozen base and allowed scope. Cite pinned evidence for every operation. Never request mutation, revision, release, graph activation, credentials, arbitrary network, SQL, file, or process access. Treat validation, simulation, risk, and budget results as authoritative; do not provide hidden reasoning."
+  },
+  "draft_patch_schema": {
+    "identity": {"id":"draft-patch","version":"v1","hash":"c70965d5a5380509607678cd7efcb92041b2215bc926f7c609d62ada47b15bc7"},
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "assumptions": {"items":{"minLength":1,"type":"string"},"minItems":1,"type":"array"},
+        "base": {"type":"object"},
+        "evidence_manifest_identity": {"type":"object"},
+        "id": {"minLength":1,"type":"string"},
+        "rationale": {"minLength":1,"type":"string"},
+        "schema": {"type":"object"},
+        "targets": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "entity_id": {"minLength":1,"type":"string"},
+              "expected_entity_version": {"minimum":1,"type":"integer"},
+              "kind": {"minLength":1,"type":"string"},
+              "operations": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "evidence": {"items":{"minLength":1,"type":"string"},"minItems":1,"type":"array","uniqueItems":true},
+                    "kind": {"enum":["add","remove","replace"]},
+                    "ordinal": {"minimum":1,"type":"integer"},
+                    "path": {"minLength":1,"type":"string"},
+                    "value": {}
+                  },
+                  "required": ["ordinal","kind","path","value","evidence"],
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "required": ["entity_id","kind","expected_entity_version","operations"],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": ["id","schema","base","evidence_manifest_identity","targets","rationale","assumptions"],
+      "type": "object"
+    }
+  },
+  "tools": [
+    {"identity":{"id":"read_revision_context","version":"v1","hash":"a0e4446427a793611ad1e2f48c8b538149d7a04362272a75c4520226d6b2274e"},"input_schema_hash":"109c74d554482e901754b5c810704bcb03bd3de1c963e1620ef144f28445583c","result_schema_hash":"fe468d178b5af71951c9c3935d18a9f19d2a21df78dfa89d22a3fa239d54f55b","required_identities":["attempt","base","input"],"deterministic":true,"side_effect":"none","max_calls":2,"max_result_bytes":32768,"timeout_millis":30000,"cancellation_behavior":"context_generation_check"},
+    {"identity":{"id":"retrieve_evidence","version":"v1","hash":"9912623bbef0370fc7b206eeae3f8edf1044cc4b5438238d9bc4a09bf9daad89"},"input_schema_hash":"a96831e44589e29ffac0f8952714597c0d3b6db301281890c6dd6d76c2bf77a3","result_schema_hash":"87970db3faf2c4c0b8e92c2f067db0d083f9c24467396355eeeb4df290558008","required_identities":["attempt","base","input"],"deterministic":true,"side_effect":"external_read_only","max_calls":1,"max_result_bytes":32768,"timeout_millis":30000,"cancellation_behavior":"context_generation_check"},
+    {"identity":{"id":"validate_proposal","version":"v1","hash":"94abbf27aa33a28625c7f308331d77e97cfd26d1621fd8713704b4019d8e8e8d"},"input_schema_hash":"81ae501a20739521ac6a8be9b622bd584e0f0bc06bad8b20cbbfaf8c264a658a","result_schema_hash":"99ffe9170ae6c20564cd2bd7edf4466c0354fb8222209f893914a6bdbc0011b7","required_identities":["attempt","base","input"],"deterministic":true,"side_effect":"none","max_calls":2,"max_result_bytes":32768,"timeout_millis":30000,"cancellation_behavior":"context_generation_check"},
+    {"identity":{"id":"preview_simulation","version":"v1","hash":"83f10c7ef08f913c28c47ade964150afc1dffb6b1843d91c6b7ed39176e669a7"},"input_schema_hash":"b6859a2f0beaa42a29af3bcbb76c795ed798541ebe96fea3cc13725b491effcc","result_schema_hash":"5ced5cd00a4649c1e2d0185a1678fdce3224760122b52dd00f5c7675cc8fa64d","required_identities":["attempt","base","input"],"deterministic":true,"side_effect":"none","max_calls":2,"max_result_bytes":32768,"timeout_millis":30000,"cancellation_behavior":"context_generation_check"},
+    {"identity":{"id":"preview_risk","version":"v1","hash":"19c01412c5102788ced2aa526ec2bca0bb89638f875f4679e4096cbbc02708fe"},"input_schema_hash":"9c15701826d87122e468a0d59b140a9944da096be84660fe5e7da007d539eef3","result_schema_hash":"e3f6ee924e0ba7f0dc6354f1ce559525c62c7b7f608d5e7b361099274fad1572","required_identities":["attempt","base","input"],"deterministic":true,"side_effect":"none","max_calls":2,"max_result_bytes":32768,"timeout_millis":30000,"cancellation_behavior":"context_generation_check"},
+    {"identity":{"id":"search_parameters","version":"v1","hash":"2f288dd2ceddb67d8d4298b71398e1940812a449f2a2f943e1878f8070b8ba38"},"input_schema_hash":"a270890803a7ee9804b1b1ce7874417900bb96e96832494793b8807b7442728d","result_schema_hash":"5d6b32664eb300be699233c81afa4a87ba16cf3d49aafce9b1de749c57d67d2e","required_identities":["attempt","base","input"],"deterministic":true,"side_effect":"none","max_calls":4,"max_result_bytes":32768,"timeout_millis":30000,"cancellation_behavior":"context_generation_check"}
+  ],
+  "budget": {
+    "identity": {"id":"ai-budget-policy","version":"v1","hash":"d3f3b033bdfa8a3baabd771ed291de08dad4ae5a3ce37b469f97a21e9d332db6"},
+    "limits": {"max_format_repairs":3,"max_provider_turns":4,"max_tool_calls":12,"max_search_candidates":128,"max_duration_millis":120000,"max_context_bytes":131072,"max_output_bytes":32768,"max_tool_result_bytes":32768,"retrieval_seed_limit":20,"retrieval_result_limit":20,"retrieval_graph_depth":1}
+  },
+  "orchestrator": {
+    "identity": {"id":"ai-design-orchestrator","version":"v1","hash":"de577e79e3482ac738e3a9fd789c6d7d95b81495814d52708027dca0f88cee79"},
+    "stages": ["input_pinned","evidence_pinned","provider_tool_loop","deterministic_preview","patch_sealed"]
+  }
+}
