@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -47,7 +48,15 @@ func (s *Store) ReadRuleSource(ctx context.Context, revisionID domain.ID) (mater
 }
 
 func (s *Store) ruleMaterializationEntities(ctx context.Context, revisionID domain.ID) ([]domain.Entity, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT b.json FROM revision_entities r JOIN entity_blobs b ON b.hash=r.blob_hash WHERE r.revision_id=? ORDER BY r.entity_id`, revisionID)
+	return ruleMaterializationEntitiesFrom(ctx, s.db, revisionID)
+}
+
+type ruleMaterializationQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func ruleMaterializationEntitiesFrom(ctx context.Context, queryer ruleMaterializationQueryer, revisionID domain.ID) ([]domain.Entity, error) {
+	rows, err := queryer.QueryContext(ctx, `SELECT b.json FROM revision_entities r JOIN entity_blobs b ON b.hash=r.blob_hash WHERE r.revision_id=? ORDER BY r.entity_id`, revisionID)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +77,11 @@ func (s *Store) ruleMaterializationEntities(ctx context.Context, revisionID doma
 }
 
 func (s *Store) ruleMaterializationFormulaIndexes(ctx context.Context, revisionID domain.ID) ([]validation.FormulaIndexRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT entity_id,field_path,formula_hash,ast_version,dsl_version,registry_version,ast,ast_hash FROM compiled_ast WHERE revision_id=? ORDER BY entity_id,field_path`, revisionID)
+	return ruleMaterializationFormulaIndexesFrom(ctx, s.db, revisionID)
+}
+
+func ruleMaterializationFormulaIndexesFrom(ctx context.Context, queryer ruleMaterializationQueryer, revisionID domain.ID) ([]validation.FormulaIndexRecord, error) {
+	rows, err := queryer.QueryContext(ctx, `SELECT entity_id,field_path,formula_hash,ast_version,dsl_version,registry_version,ast,ast_hash FROM compiled_ast WHERE revision_id=? ORDER BY entity_id,field_path`, revisionID)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +92,7 @@ func (s *Store) ruleMaterializationFormulaIndexes(ctx context.Context, revisionI
 		if err = rows.Scan(&record.SourceID, &record.FieldPath, &record.FormulaHash, &record.ASTVersion, &record.DSLVersion, &record.RegistryVersion, &record.AST, &record.ASTHash); err != nil {
 			return nil, err
 		}
-		readRows, readErr := s.db.QueryContext(ctx, `SELECT output_attribute_id,scope,symbol,span_start,span_end FROM formula_index WHERE revision_id=? AND source_entity_id=? AND field_path=? ORDER BY read_ordinal`, revisionID, record.SourceID, record.FieldPath)
+		readRows, readErr := queryer.QueryContext(ctx, `SELECT output_attribute_id,scope,symbol,span_start,span_end FROM formula_index WHERE revision_id=? AND source_entity_id=? AND field_path=? ORDER BY read_ordinal`, revisionID, record.SourceID, record.FieldPath)
 		if readErr != nil {
 			return nil, readErr
 		}
