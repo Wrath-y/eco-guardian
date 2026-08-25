@@ -124,9 +124,9 @@ func patchDecodeContext() DecodeContext {
 		EvidenceManifestIdentity: aicontract.VersionIdentity{ID: "retrieval-evidence", Version: "v1", Hash: hash},
 		EvidenceIDs:              []aicontract.EvidenceID{"evidence-a", "evidence-z"},
 		Values: []ValueScope{
-			{EntityID: firstID, Path: "/payload/cost", ValueType: JSONInteger},
-			{EntityID: firstID, Path: "/payload/damage", ValueType: JSONInteger},
-			{EntityID: secondID, Path: "/payload/effect_ids", ValueType: JSONArray, ElementType: JSONString},
+			{EntityID: firstID, Path: "/payload/cost", ValueType: JSONInteger, Original: json.RawMessage("10")},
+			{EntityID: firstID, Path: "/payload/damage", ValueType: JSONInteger, Original: json.RawMessage("10")},
+			{EntityID: secondID, Path: "/payload/effect_ids", ValueType: JSONArray, ElementType: JSONString, Original: json.RawMessage("[]")},
 		},
 	}
 }

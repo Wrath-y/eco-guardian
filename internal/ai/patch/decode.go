@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	aicontract "github.com/zouyi/eco-guardian/internal/ai/contract"
+	"github.com/zouyi/eco-guardian/internal/domain"
 )
 
 type ErrorCode string
@@ -23,6 +24,9 @@ const (
 	ErrorCollectionViolation ErrorCode = "DRAFT_PATCH_COLLECTION_VIOLATION"
 	ErrorEvidenceViolation   ErrorCode = "DRAFT_PATCH_EVIDENCE_VIOLATION"
 	ErrorTypeViolation       ErrorCode = "DRAFT_PATCH_TYPE_VIOLATION"
+	ErrorNumericViolation    ErrorCode = "DRAFT_PATCH_NUMERIC_VIOLATION"
+	ErrorUnitViolation       ErrorCode = "DRAFT_PATCH_UNIT_VIOLATION"
+	ErrorArrayAmbiguous      ErrorCode = "DRAFT_PATCH_ARRAY_AMBIGUOUS"
 )
 
 var ErrInvalid = errors.New("DraftPatchV1 is invalid")
@@ -48,10 +52,15 @@ func (v JSONType) Valid() bool {
 }
 
 type ValueScope struct {
-	EntityID    aicontract.EntityID
-	Path        aicontract.FieldPath
-	ValueType   JSONType
-	ElementType JSONType
+	EntityID      aicontract.EntityID
+	Path          aicontract.FieldPath
+	ValueType     JSONType
+	ElementType   JSONType
+	Schema        json.RawMessage
+	ElementSchema json.RawMessage
+	Original      json.RawMessage
+	UnitDimension string
+	UnitValueType string
 }
 
 type DecodeContext struct {
@@ -60,6 +69,7 @@ type DecodeContext struct {
 	EvidenceManifestIdentity aicontract.VersionIdentity
 	EvidenceIDs              []aicontract.EvidenceID
 	Values                   []ValueScope
+	Registry                 *domain.Registry
 }
 
 func (v DecodeContext) Valid() bool {
@@ -79,7 +89,7 @@ func (v DecodeContext) Valid() bool {
 	}
 	values := map[string]struct{}{}
 	for _, value := range v.Values {
-		if !value.EntityID.Valid() || !value.Path.Valid() || !value.ValueType.Valid() || (value.ElementType != "" && !value.ElementType.Valid()) || !allowedValue(v.Input.AllowedTargets, value) {
+		if !value.EntityID.Valid() || !value.Path.Valid() || !value.ValueType.Valid() || (value.ElementType != "" && !value.ElementType.Valid()) || !allowedValue(v.Input.AllowedTargets, value) || len(value.Original) == 0 || !json.Valid(value.Original) {
 			return false
 		}
 		if (value.ValueType == JSONArray) != (value.ElementType != "") {
@@ -175,6 +185,7 @@ func validateScope(value aicontract.DraftPatchV1, scope DecodeContext) error {
 			return decodeError(ErrorScopeViolation)
 		}
 		ordinals := make(map[int]struct{}, len(target.Operations))
+		seenPaths := make(map[aicontract.FieldPath]struct{}, len(target.Operations))
 		for _, operation := range target.Operations {
 			if _, duplicate := ordinals[operation.Ordinal]; duplicate || operation.Ordinal > len(target.Operations) {
 				return decodeError(ErrorSchemaViolation)
@@ -183,6 +194,13 @@ func validateScope(value aicontract.DraftPatchV1, scope DecodeContext) error {
 			if !allowedOperation(*allowed, operation.Path, operation.Kind) {
 				return decodeError(ErrorScopeViolation)
 			}
+			if forbiddenMutationPath(operation.Path) {
+				return decodeError(ErrorScopeViolation)
+			}
+			if _, duplicate := seenPaths[operation.Path]; duplicate {
+				return decodeError(ErrorArrayAmbiguous)
+			}
+			seenPaths[operation.Path] = struct{}{}
 			valueScope, found := values[string(target.EntityID)+"\x00"+string(operation.Path)]
 			if !found {
 				return decodeError(ErrorScopeViolation)
@@ -196,6 +214,18 @@ func validateScope(value aicontract.DraftPatchV1, scope DecodeContext) error {
 			}
 			if !valueMatchesType(operation.Value, expectedType) {
 				return decodeError(ErrorTypeViolation)
+			}
+			schema := valueScope.Schema
+			if operation.Kind != aicontract.OperationReplace {
+				schema = valueScope.ElementSchema
+				if !unambiguousCollectionOperation(valueScope.Original, operation) {
+					return decodeError(ErrorArrayAmbiguous)
+				}
+			}
+			if len(schema) > 0 {
+				if err := validateSchemaValue(operation.Value, schema, scope.Registry, valueScope); err != nil {
+					return err
+				}
 			}
 			for _, id := range operation.Evidence {
 				if _, found := evidence[id]; !found {
@@ -298,6 +328,41 @@ func valueMatchesType(raw json.RawMessage, expected JSONType) bool {
 	default:
 		return false
 	}
+}
+
+func forbiddenMutationPath(path aicontract.FieldPath) bool {
+	tokens, ok := pointerTokens(string(path))
+	if !ok || len(tokens) == 0 {
+		return true
+	}
+	switch strings.ToLower(tokens[0]) {
+	case "id", "kind", "key", "status", "schema_version", "entity_version", "created_at", "updated_at", "extensions", "revision", "revisions", "release", "releases", "registry", "graph":
+		return true
+	default:
+		return false
+	}
+}
+
+func unambiguousCollectionOperation(original json.RawMessage, operation aicontract.DraftOperation) bool {
+	var values []json.RawMessage
+	if json.Unmarshal(original, &values) != nil {
+		return false
+	}
+	canonicalValue, err := aicontract.CanonicalToolPayload(operation.Value)
+	if err != nil {
+		return false
+	}
+	matches := 0
+	for _, candidate := range values {
+		canonicalCandidate, err := aicontract.CanonicalToolPayload(candidate)
+		if err == nil && bytes.Equal(canonicalCandidate, canonicalValue) {
+			matches++
+		}
+	}
+	if operation.Kind == aicontract.OperationAdd {
+		return matches == 0
+	}
+	return operation.Kind == aicontract.OperationRemove && matches == 1
 }
 
 func rejectDuplicateMembers(raw json.RawMessage) error {
