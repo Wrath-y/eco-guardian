@@ -74,6 +74,17 @@ func TestSimulationDoesNotDependOnOptionalCapabilities(t *testing.T) {
 	}, "simulation must use its transport-neutral ports, not optional capability implementations")
 }
 
+func TestSimulationPreviewHasNoJobPersistenceOrTransportDependencies(t *testing.T) {
+	assertImports(t, "../simulation/preview", func(importPath string) bool {
+		for _, forbidden := range []string{"gin-gonic", "modernc.org/sqlite", "/httpapi", "/storage", "/job", "/app", "/ai", "/versioning/release"} {
+			if strings.Contains(importPath, forbidden) {
+				return true
+			}
+		}
+		return false
+	}, "simulation preview must remain a pure advisory evaluator boundary")
+}
+
 func TestSimulationCoreDoesNotIntroduceFloatingPointOrGlobalRandomness(t *testing.T) {
 	err := filepath.WalkDir("../simulation", func(name string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
