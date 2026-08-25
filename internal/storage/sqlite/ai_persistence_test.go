@@ -212,4 +212,21 @@ func TestSQLiteAIPersistenceSealsEvidenceAttemptsEventsAndDraftPatch(t *testing.
 			t.Fatalf("%s count=%d want=%d err=%v", table, count, want, err)
 		}
 	}
+
+	for name, statement := range map[string]string{
+		"attempt update":           `UPDATE ai_attempts SET manifest_hash=lower(manifest_hash)`,
+		"response delete":          `DELETE FROM ai_attempt_responses`,
+		"outcome update":           `UPDATE ai_attempt_outcomes SET outcome_hash=lower(outcome_hash)`,
+		"evidence manifest delete": `DELETE FROM ai_evidence_manifests`,
+		"evidence ref update":      `UPDATE ai_evidence_refs SET evidence_hash=lower(evidence_hash)`,
+		"blob delete":              `DELETE FROM ai_blobs`,
+		"draft patch update":       `UPDATE ai_draft_patches SET patch_hash=lower(patch_hash)`,
+		"patch seal delete":        `DELETE FROM ai_attempt_patch_seals`,
+		"event detail update":      `UPDATE ai_job_event_details SET event_hash=lower(event_hash)`,
+		"shared event delete":      `DELETE FROM job_events WHERE job_id='` + string(state.Job.ID) + `'`,
+	} {
+		if _, err := store.db.Exec(statement); err == nil {
+			t.Fatalf("sealed generation fact accepted %s", name)
+		}
+	}
 }

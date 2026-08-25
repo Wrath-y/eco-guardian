@@ -109,6 +109,11 @@ type DeterministicRecoveryExecutor interface {
 	RerunDeterministicPhase(context.Context, DeterministicRecoveryIdentity) error
 }
 
+type DeterministicCheckpointRepository interface {
+	SaveDeterministicCheckpoint(context.Context, DeterministicCheckpoint) (bool, error)
+	LoadDeterministicCheckpoint(context.Context, domain.ID) (DeterministicCheckpoint, bool, error)
+}
+
 type AIRecoveryAction string
 
 const (
