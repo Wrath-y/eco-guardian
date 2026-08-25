@@ -10,7 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
+
+	aiprovider "github.com/zouyi/eco-guardian/internal/ai/provider"
 )
 
 const previousSuffix = ".previous"
@@ -55,6 +58,14 @@ func Validate(settings Settings) error {
 	}
 	if settings.AI.Enabled && (settings.AI.Endpoint == "" || settings.AI.Model == "") {
 		return ValidationError{Field: "ai", Message: "enabled provider requires endpoint and model"}
+	}
+	if settings.AI.Endpoint != "" {
+		if _, err := aiprovider.ValidateEndpoint(settings.AI.Endpoint, settings.AI.AllowCloud); err != nil {
+			return ValidationError{Field: "ai.endpoint", Message: "must be loopback HTTP(S) or explicitly allowed cloud HTTPS"}
+		}
+	}
+	if len(settings.AI.Model) > 256 || strings.TrimSpace(settings.AI.Model) != settings.AI.Model || strings.ContainsAny(settings.AI.Model, "\r\n\x00") {
+		return ValidationError{Field: "ai.model", Message: "is invalid"}
 	}
 	if settings.AI.RequestTimeoutSeconds != 0 && (settings.AI.RequestTimeoutSeconds < 1 || settings.AI.RequestTimeoutSeconds > 600) {
 		return ValidationError{Field: "ai.request_timeout_seconds", Message: "must be between 1 and 600"}

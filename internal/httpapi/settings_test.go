@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -48,5 +49,48 @@ func TestSettingsHandlerStrictlyUpdatesBoundedAIReference(t *testing.T) {
 	engine.ServeHTTP(badResponse, bad)
 	if badResponse.Code != http.StatusBadRequest || strings.Contains(badResponse.Body.String(), "secret") {
 		t.Fatalf("credential field response=%d body=%s", badResponse.Code, badResponse.Body.String())
+	}
+}
+
+func TestSettingsHandlerRequiresCloudDisclosureAndReportsClassification(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := runtimeconfig.NewStore(filepath.Join(t.TempDir(), "settings.json"))
+	engine := gin.New()
+	NewSettingsHandler(store, nil).Register(engine)
+
+	for _, test := range []struct {
+		allow  bool
+		status int
+	}{
+		{false, http.StatusBadRequest},
+		{true, http.StatusOK},
+	} {
+		body := `{"ai":{"enabled":true,"endpoint":"https://api.example.com/v1","model":"fixture","request_timeout_seconds":90,"allow_cloud":` + strconv.FormatBool(test.allow) + `}}`
+		request := httptest.NewRequest(http.MethodPatch, "/api/v1/settings", strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		engine.ServeHTTP(response, request)
+		if response.Code != test.status {
+			t.Fatalf("allow_cloud=%v response=%d body=%s", test.allow, response.Code, response.Body.String())
+		}
+		if test.status == http.StatusOK && !strings.Contains(response.Body.String(), `"endpoint_classification":"cloud"`) {
+			t.Fatalf("cloud classification missing: %s", response.Body.String())
+		}
+	}
+}
+
+func TestProblemDetailsRedactSensitiveAssignments(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.GET("/problem", func(c *gin.Context) {
+		problemDetails(c, http.StatusBadGateway, "AI_PROVIDER_FAILED", "Provider authorization=secret-canary failed", map[string]any{
+			"provider_error": "Bearer secret-canary",
+			"api_key":        "secret-canary",
+		}, "")
+	})
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/problem", nil))
+	if response.Code != http.StatusBadGateway || strings.Contains(response.Body.String(), "secret-canary") || !strings.Contains(response.Body.String(), "[REDACTED]") {
+		t.Fatalf("unsafe Problem Details: %s", response.Body.String())
 	}
 }

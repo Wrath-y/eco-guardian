@@ -105,6 +105,60 @@ func (e AIBudgetLimitsMaxFormatRepairs) Valid() bool {
 	}
 }
 
+// Defines values for AICapabilityReason.
+const (
+	AICapabilityReasonAICLOUDNOTALLOWED             AICapabilityReason = "AI_CLOUD_NOT_ALLOWED"
+	AICapabilityReasonAICREDENTIALREQUIRED          AICapabilityReason = "AI_CREDENTIAL_REQUIRED"
+	AICapabilityReasonAICREDENTIALUNAVAILABLE       AICapabilityReason = "AI_CREDENTIAL_UNAVAILABLE"
+	AICapabilityReasonAIDISABLED                    AICapabilityReason = "AI_DISABLED"
+	AICapabilityReasonAIENDPOINTINVALID             AICapabilityReason = "AI_ENDPOINT_INVALID"
+	AICapabilityReasonAIENDPOINTREQUIRED            AICapabilityReason = "AI_ENDPOINT_REQUIRED"
+	AICapabilityReasonAIMODELREQUIRED               AICapabilityReason = "AI_MODEL_REQUIRED"
+	AICapabilityReasonAIMODELUNAVAILABLE            AICapabilityReason = "AI_MODEL_UNAVAILABLE"
+	AICapabilityReasonAIPROVIDERUNAVAILABLE         AICapabilityReason = "AI_PROVIDER_UNAVAILABLE"
+	AICapabilityReasonAIPROVIDERUNCONFIGURED        AICapabilityReason = "AI_PROVIDER_UNCONFIGURED"
+	AICapabilityReasonAISETTINGSUNAVAILABLE         AICapabilityReason = "AI_SETTINGS_UNAVAILABLE"
+	AICapabilityReasonAISTREAMINGUNAVAILABLE        AICapabilityReason = "AI_STREAMING_UNAVAILABLE"
+	AICapabilityReasonAISTRUCTUREDOUTPUTUNSUPPORTED AICapabilityReason = "AI_STRUCTURED_OUTPUT_UNSUPPORTED"
+	AICapabilityReasonAITOOLCALLSUNSUPPORTED        AICapabilityReason = "AI_TOOL_CALLS_UNSUPPORTED"
+)
+
+// Valid indicates whether the value is a known member of the AICapabilityReason enum.
+func (e AICapabilityReason) Valid() bool {
+	switch e {
+	case AICapabilityReasonAICLOUDNOTALLOWED:
+		return true
+	case AICapabilityReasonAICREDENTIALREQUIRED:
+		return true
+	case AICapabilityReasonAICREDENTIALUNAVAILABLE:
+		return true
+	case AICapabilityReasonAIDISABLED:
+		return true
+	case AICapabilityReasonAIENDPOINTINVALID:
+		return true
+	case AICapabilityReasonAIENDPOINTREQUIRED:
+		return true
+	case AICapabilityReasonAIMODELREQUIRED:
+		return true
+	case AICapabilityReasonAIMODELUNAVAILABLE:
+		return true
+	case AICapabilityReasonAIPROVIDERUNAVAILABLE:
+		return true
+	case AICapabilityReasonAIPROVIDERUNCONFIGURED:
+		return true
+	case AICapabilityReasonAISETTINGSUNAVAILABLE:
+		return true
+	case AICapabilityReasonAISTREAMINGUNAVAILABLE:
+		return true
+	case AICapabilityReasonAISTRUCTUREDOUTPUTUNSUPPORTED:
+		return true
+	case AICapabilityReasonAITOOLCALLSUNSUPPORTED:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AIConstraintOperator.
 const (
 	Equal          AIConstraintOperator = "equal"
@@ -935,325 +989,325 @@ func (e OpenProjectRequestMode) Valid() bool {
 
 // Defines values for ProblemCode.
 const (
-	ACTIVEPROJECTCONFLICT               ProblemCode = "ACTIVE_PROJECT_CONFLICT"
-	AIBUDGETEXCEEDED                    ProblemCode = "AI_BUDGET_EXCEEDED"
-	AICANCELED                          ProblemCode = "AI_CANCELED"
-	AICAPABILITYUNAVAILABLE             ProblemCode = "AI_CAPABILITY_UNAVAILABLE"
-	AICREDENTIALINVALID                 ProblemCode = "AI_CREDENTIAL_INVALID"
-	AICREDENTIALSTOREFAILED             ProblemCode = "AI_CREDENTIAL_STORE_FAILED"
-	AIDECISIONCONFLICT                  ProblemCode = "AI_DECISION_CONFLICT"
-	AIEVIDENCEUNAVAILABLE               ProblemCode = "AI_EVIDENCE_UNAVAILABLE"
-	AIIDEMPOTENCYREQUIRED               ProblemCode = "AI_IDEMPOTENCY_REQUIRED"
-	AIINPUTINVALID                      ProblemCode = "AI_INPUT_INVALID"
-	AIINTERRUPTED                       ProblemCode = "AI_INTERRUPTED"
-	AIOUTPUTINVALID                     ProblemCode = "AI_OUTPUT_INVALID"
-	AIPATCHNOTACCEPTABLE                ProblemCode = "AI_PATCH_NOT_ACCEPTABLE"
-	AIPATCHNOTFOUND                     ProblemCode = "AI_PATCH_NOT_FOUND"
-	AIPATCHSTALE                        ProblemCode = "AI_PATCH_STALE"
-	AIPREVIEWBLOCKED                    ProblemCode = "AI_PREVIEW_BLOCKED"
-	AIPROVIDERFAILED                    ProblemCode = "AI_PROVIDER_FAILED"
-	AIPROVIDERTIMEOUT                   ProblemCode = "AI_PROVIDER_TIMEOUT"
-	AIPROVIDERUNCONFIGURED              ProblemCode = "AI_PROVIDER_UNCONFIGURED"
-	AIREPAIREXHAUSTED                   ProblemCode = "AI_REPAIR_EXHAUSTED"
-	AIRETRIEVALUNAVAILABLE              ProblemCode = "AI_RETRIEVAL_UNAVAILABLE"
-	AISNAPSHOTIDENTITYMISMATCH          ProblemCode = "AI_SNAPSHOT_IDENTITY_MISMATCH"
-	AISNAPSHOTINDEXNOTREADY             ProblemCode = "AI_SNAPSHOT_INDEX_NOT_READY"
-	AITOOLPOLICYVIOLATION               ProblemCode = "AI_TOOL_POLICY_VIOLATION"
-	BASESNAPSHOTNOTFOUND                ProblemCode = "BASE_SNAPSHOT_NOT_FOUND"
-	BASESNAPSHOTNOTREADY                ProblemCode = "BASE_SNAPSHOT_NOT_READY"
-	BUDGETEXCEEDED                      ProblemCode = "BUDGET_EXCEEDED"
-	CLOSEBLOCKED                        ProblemCode = "CLOSE_BLOCKED"
-	CONTENTHASHCONFLICT                 ProblemCode = "CONTENT_HASH_CONFLICT"
-	CONTENTHASHMISMATCH                 ProblemCode = "CONTENT_HASH_MISMATCH"
-	DIFFBASEINVALID                     ProblemCode = "DIFF_BASE_INVALID"
-	DUPLICATEKEY                        ProblemCode = "DUPLICATE_KEY"
-	ENTITYREFERENCED                    ProblemCode = "ENTITY_REFERENCED"
-	EXTERNALSERVICEFAILURE              ProblemCode = "EXTERNAL_SERVICE_FAILURE"
-	GRAPHCAPABILITYUNAVAILABLE          ProblemCode = "GRAPH_CAPABILITY_UNAVAILABLE"
-	GRAPHRETRYEXHAUSTED                 ProblemCode = "GRAPH_RETRY_EXHAUSTED"
-	GRAPHRETRYNOTSAFE                   ProblemCode = "GRAPH_RETRY_NOT_SAFE"
-	GRAPHSTATUSUNAVAILABLE              ProblemCode = "GRAPH_STATUS_UNAVAILABLE"
-	GRAPHVALIDATIONBLOCKED              ProblemCode = "GRAPH_VALIDATION_BLOCKED"
-	GRAPHVALIDATIONREQUIRED             ProblemCode = "GRAPH_VALIDATION_REQUIRED"
-	HISTORYNOTFOUND                     ProblemCode = "HISTORY_NOT_FOUND"
-	IDEMPOTENCYCONFLICT                 ProblemCode = "IDEMPOTENCY_CONFLICT"
-	INVALIDCONFIRMATION                 ProblemCode = "INVALID_CONFIRMATION"
-	INVALIDSELECTION                    ProblemCode = "INVALID_SELECTION"
-	INVALIDVALIDATIONREQUEST            ProblemCode = "INVALID_VALIDATION_REQUEST"
-	INVALIDVALIDATIONSCOPE              ProblemCode = "INVALID_VALIDATION_SCOPE"
-	INVALIDVALIDATIONSOURCE             ProblemCode = "INVALID_VALIDATION_SOURCE"
-	INVALIDVALIDATIONTARGET             ProblemCode = "INVALID_VALIDATION_TARGET"
-	MANDATORYBACKUPFAILED               ProblemCode = "MANDATORY_BACKUP_FAILED"
-	MIGRATIONBACKUPREQUIRED             ProblemCode = "MIGRATION_BACKUP_REQUIRED"
-	PRECONDITIONREQUIRED                ProblemCode = "PRECONDITION_REQUIRED"
-	PROJECTLOCKED                       ProblemCode = "PROJECT_LOCKED"
-	PROJECTNOTOPEN                      ProblemCode = "PROJECT_NOT_OPEN"
-	PROJECTORVERSIONUNAVAILABLE         ProblemCode = "PROJECTOR_VERSION_UNAVAILABLE"
-	PROVIDERTASKFAILED                  ProblemCode = "PROVIDER_TASK_FAILED"
-	RECOVERYMISMATCH                    ProblemCode = "RECOVERY_MISMATCH"
-	RECOVERYUNAVAILABLE                 ProblemCode = "RECOVERY_UNAVAILABLE"
-	RELEASEBASECONFLICT                 ProblemCode = "RELEASE_BASE_CONFLICT"
-	RELEASECAPABILITYDISABLED           ProblemCode = "RELEASE_CAPABILITY_DISABLED"
-	RELEASEPOLICYINVALID                ProblemCode = "RELEASE_POLICY_INVALID"
-	RELEASEPREFLIGHTFAILED              ProblemCode = "RELEASE_PREFLIGHT_FAILED"
-	REVISIONCONFLICT                    ProblemCode = "REVISION_CONFLICT"
-	REVISIONIMMUTABLE                   ProblemCode = "REVISION_IMMUTABLE"
-	REVISIONNOTFOUND                    ProblemCode = "REVISION_NOT_FOUND"
-	RISKBASELINEINVALID                 ProblemCode = "RISK_BASELINE_INVALID"
-	RISKCANCELED                        ProblemCode = "RISK_CANCELED"
-	RISKCOHORTINVALID                   ProblemCode = "RISK_COHORT_INVALID"
-	RISKCOMMANDINVALID                  ProblemCode = "RISK_COMMAND_INVALID"
-	RISKDECISIONINVALID                 ProblemCode = "RISK_DECISION_INVALID"
-	RISKIDEMPOTENCYREQUIRED             ProblemCode = "RISK_IDEMPOTENCY_REQUIRED"
-	RISKINTERRUPTED                     ProblemCode = "RISK_INTERRUPTED"
-	RISKPOLICYINVALID                   ProblemCode = "RISK_POLICY_INVALID"
-	RISKREGISTRYINCOMPATIBLE            ProblemCode = "RISK_REGISTRY_INCOMPATIBLE"
-	RISKREQUIREDMETRICUNAVAILABLE       ProblemCode = "RISK_REQUIRED_METRIC_UNAVAILABLE"
-	RISKREVIEWNOTFOUND                  ProblemCode = "RISK_REVIEW_NOT_FOUND"
-	RISKREVISIONINVALID                 ProblemCode = "RISK_REVISION_INVALID"
-	RISKRULECONTRACTINVALID             ProblemCode = "RISK_RULE_CONTRACT_INVALID"
-	RISKSIMULATIONINVALID               ProblemCode = "RISK_SIMULATION_INVALID"
-	RISKSTALEIDENTITY                   ProblemCode = "RISK_STALE_IDENTITY"
-	RISKVALIDATIONINVALID               ProblemCode = "RISK_VALIDATION_INVALID"
-	SIMULATIONBUDGETINVALID             ProblemCode = "SIMULATION_BUDGET_INVALID"
-	SIMULATIONCAPABILITYUNAVAILABLE     ProblemCode = "SIMULATION_CAPABILITY_UNAVAILABLE"
-	SIMULATIONIDEMPOTENCYREQUIRED       ProblemCode = "SIMULATION_IDEMPOTENCY_REQUIRED"
-	SIMULATIONIMPLEMENTATIONUNAVAILABLE ProblemCode = "SIMULATION_IMPLEMENTATION_UNAVAILABLE"
-	SIMULATIONINPUTINVALID              ProblemCode = "SIMULATION_INPUT_INVALID"
-	SIMULATIONMETRICINVALID             ProblemCode = "SIMULATION_METRIC_INVALID"
-	SIMULATIONPARAMETERINVALID          ProblemCode = "SIMULATION_PARAMETER_INVALID"
-	SIMULATIONRUNNOTFOUND               ProblemCode = "SIMULATION_RUN_NOT_FOUND"
-	SIMULATIONRUNUNAVAILABLE            ProblemCode = "SIMULATION_RUN_UNAVAILABLE"
-	SIMULATIONSAMPLEINVALID             ProblemCode = "SIMULATION_SAMPLE_INVALID"
-	SIMULATIONSCENEINVALID              ProblemCode = "SIMULATION_SCENE_INVALID"
-	SIMULATIONSEEDINVALID               ProblemCode = "SIMULATION_SEED_INVALID"
-	SIMULATIONSOURCEINVALID             ProblemCode = "SIMULATION_SOURCE_INVALID"
-	SIMULATIONVALIDATIONREQUIRED        ProblemCode = "SIMULATION_VALIDATION_REQUIRED"
-	SIMULATIONVERIFICATIONTARGETINVALID ProblemCode = "SIMULATION_VERIFICATION_TARGET_INVALID"
-	STORAGEFAILURE                      ProblemCode = "STORAGE_FAILURE"
-	THRESHOLDINVALID                    ProblemCode = "THRESHOLD_INVALID"
-	THRESHOLDNOTCONFIGURED              ProblemCode = "THRESHOLD_NOT_CONFIGURED"
-	TIMEOUT                             ProblemCode = "TIMEOUT"
-	UNSUPPORTEDKIND                     ProblemCode = "UNSUPPORTED_KIND"
-	UNSUPPORTEDSCHEMA                   ProblemCode = "UNSUPPORTED_SCHEMA"
-	VALIDATIONFAILED                    ProblemCode = "VALIDATION_FAILED"
-	VALIDATIONRUNNOTFOUND               ProblemCode = "VALIDATION_RUN_NOT_FOUND"
-	VALIDATIONSOURCENOTFOUND            ProblemCode = "VALIDATION_SOURCE_NOT_FOUND"
-	VALIDATIONSTORAGEFAILURE            ProblemCode = "VALIDATION_STORAGE_FAILURE"
+	ProblemCodeACTIVEPROJECTCONFLICT               ProblemCode = "ACTIVE_PROJECT_CONFLICT"
+	ProblemCodeAIBUDGETEXCEEDED                    ProblemCode = "AI_BUDGET_EXCEEDED"
+	ProblemCodeAICANCELED                          ProblemCode = "AI_CANCELED"
+	ProblemCodeAICAPABILITYUNAVAILABLE             ProblemCode = "AI_CAPABILITY_UNAVAILABLE"
+	ProblemCodeAICREDENTIALINVALID                 ProblemCode = "AI_CREDENTIAL_INVALID"
+	ProblemCodeAICREDENTIALSTOREFAILED             ProblemCode = "AI_CREDENTIAL_STORE_FAILED"
+	ProblemCodeAIDECISIONCONFLICT                  ProblemCode = "AI_DECISION_CONFLICT"
+	ProblemCodeAIEVIDENCEUNAVAILABLE               ProblemCode = "AI_EVIDENCE_UNAVAILABLE"
+	ProblemCodeAIIDEMPOTENCYREQUIRED               ProblemCode = "AI_IDEMPOTENCY_REQUIRED"
+	ProblemCodeAIINPUTINVALID                      ProblemCode = "AI_INPUT_INVALID"
+	ProblemCodeAIINTERRUPTED                       ProblemCode = "AI_INTERRUPTED"
+	ProblemCodeAIOUTPUTINVALID                     ProblemCode = "AI_OUTPUT_INVALID"
+	ProblemCodeAIPATCHNOTACCEPTABLE                ProblemCode = "AI_PATCH_NOT_ACCEPTABLE"
+	ProblemCodeAIPATCHNOTFOUND                     ProblemCode = "AI_PATCH_NOT_FOUND"
+	ProblemCodeAIPATCHSTALE                        ProblemCode = "AI_PATCH_STALE"
+	ProblemCodeAIPREVIEWBLOCKED                    ProblemCode = "AI_PREVIEW_BLOCKED"
+	ProblemCodeAIPROVIDERFAILED                    ProblemCode = "AI_PROVIDER_FAILED"
+	ProblemCodeAIPROVIDERTIMEOUT                   ProblemCode = "AI_PROVIDER_TIMEOUT"
+	ProblemCodeAIPROVIDERUNCONFIGURED              ProblemCode = "AI_PROVIDER_UNCONFIGURED"
+	ProblemCodeAIREPAIREXHAUSTED                   ProblemCode = "AI_REPAIR_EXHAUSTED"
+	ProblemCodeAIRETRIEVALUNAVAILABLE              ProblemCode = "AI_RETRIEVAL_UNAVAILABLE"
+	ProblemCodeAISNAPSHOTIDENTITYMISMATCH          ProblemCode = "AI_SNAPSHOT_IDENTITY_MISMATCH"
+	ProblemCodeAISNAPSHOTINDEXNOTREADY             ProblemCode = "AI_SNAPSHOT_INDEX_NOT_READY"
+	ProblemCodeAITOOLPOLICYVIOLATION               ProblemCode = "AI_TOOL_POLICY_VIOLATION"
+	ProblemCodeBASESNAPSHOTNOTFOUND                ProblemCode = "BASE_SNAPSHOT_NOT_FOUND"
+	ProblemCodeBASESNAPSHOTNOTREADY                ProblemCode = "BASE_SNAPSHOT_NOT_READY"
+	ProblemCodeBUDGETEXCEEDED                      ProblemCode = "BUDGET_EXCEEDED"
+	ProblemCodeCLOSEBLOCKED                        ProblemCode = "CLOSE_BLOCKED"
+	ProblemCodeCONTENTHASHCONFLICT                 ProblemCode = "CONTENT_HASH_CONFLICT"
+	ProblemCodeCONTENTHASHMISMATCH                 ProblemCode = "CONTENT_HASH_MISMATCH"
+	ProblemCodeDIFFBASEINVALID                     ProblemCode = "DIFF_BASE_INVALID"
+	ProblemCodeDUPLICATEKEY                        ProblemCode = "DUPLICATE_KEY"
+	ProblemCodeENTITYREFERENCED                    ProblemCode = "ENTITY_REFERENCED"
+	ProblemCodeEXTERNALSERVICEFAILURE              ProblemCode = "EXTERNAL_SERVICE_FAILURE"
+	ProblemCodeGRAPHCAPABILITYUNAVAILABLE          ProblemCode = "GRAPH_CAPABILITY_UNAVAILABLE"
+	ProblemCodeGRAPHRETRYEXHAUSTED                 ProblemCode = "GRAPH_RETRY_EXHAUSTED"
+	ProblemCodeGRAPHRETRYNOTSAFE                   ProblemCode = "GRAPH_RETRY_NOT_SAFE"
+	ProblemCodeGRAPHSTATUSUNAVAILABLE              ProblemCode = "GRAPH_STATUS_UNAVAILABLE"
+	ProblemCodeGRAPHVALIDATIONBLOCKED              ProblemCode = "GRAPH_VALIDATION_BLOCKED"
+	ProblemCodeGRAPHVALIDATIONREQUIRED             ProblemCode = "GRAPH_VALIDATION_REQUIRED"
+	ProblemCodeHISTORYNOTFOUND                     ProblemCode = "HISTORY_NOT_FOUND"
+	ProblemCodeIDEMPOTENCYCONFLICT                 ProblemCode = "IDEMPOTENCY_CONFLICT"
+	ProblemCodeINVALIDCONFIRMATION                 ProblemCode = "INVALID_CONFIRMATION"
+	ProblemCodeINVALIDSELECTION                    ProblemCode = "INVALID_SELECTION"
+	ProblemCodeINVALIDVALIDATIONREQUEST            ProblemCode = "INVALID_VALIDATION_REQUEST"
+	ProblemCodeINVALIDVALIDATIONSCOPE              ProblemCode = "INVALID_VALIDATION_SCOPE"
+	ProblemCodeINVALIDVALIDATIONSOURCE             ProblemCode = "INVALID_VALIDATION_SOURCE"
+	ProblemCodeINVALIDVALIDATIONTARGET             ProblemCode = "INVALID_VALIDATION_TARGET"
+	ProblemCodeMANDATORYBACKUPFAILED               ProblemCode = "MANDATORY_BACKUP_FAILED"
+	ProblemCodeMIGRATIONBACKUPREQUIRED             ProblemCode = "MIGRATION_BACKUP_REQUIRED"
+	ProblemCodePRECONDITIONREQUIRED                ProblemCode = "PRECONDITION_REQUIRED"
+	ProblemCodePROJECTLOCKED                       ProblemCode = "PROJECT_LOCKED"
+	ProblemCodePROJECTNOTOPEN                      ProblemCode = "PROJECT_NOT_OPEN"
+	ProblemCodePROJECTORVERSIONUNAVAILABLE         ProblemCode = "PROJECTOR_VERSION_UNAVAILABLE"
+	ProblemCodePROVIDERTASKFAILED                  ProblemCode = "PROVIDER_TASK_FAILED"
+	ProblemCodeRECOVERYMISMATCH                    ProblemCode = "RECOVERY_MISMATCH"
+	ProblemCodeRECOVERYUNAVAILABLE                 ProblemCode = "RECOVERY_UNAVAILABLE"
+	ProblemCodeRELEASEBASECONFLICT                 ProblemCode = "RELEASE_BASE_CONFLICT"
+	ProblemCodeRELEASECAPABILITYDISABLED           ProblemCode = "RELEASE_CAPABILITY_DISABLED"
+	ProblemCodeRELEASEPOLICYINVALID                ProblemCode = "RELEASE_POLICY_INVALID"
+	ProblemCodeRELEASEPREFLIGHTFAILED              ProblemCode = "RELEASE_PREFLIGHT_FAILED"
+	ProblemCodeREVISIONCONFLICT                    ProblemCode = "REVISION_CONFLICT"
+	ProblemCodeREVISIONIMMUTABLE                   ProblemCode = "REVISION_IMMUTABLE"
+	ProblemCodeREVISIONNOTFOUND                    ProblemCode = "REVISION_NOT_FOUND"
+	ProblemCodeRISKBASELINEINVALID                 ProblemCode = "RISK_BASELINE_INVALID"
+	ProblemCodeRISKCANCELED                        ProblemCode = "RISK_CANCELED"
+	ProblemCodeRISKCOHORTINVALID                   ProblemCode = "RISK_COHORT_INVALID"
+	ProblemCodeRISKCOMMANDINVALID                  ProblemCode = "RISK_COMMAND_INVALID"
+	ProblemCodeRISKDECISIONINVALID                 ProblemCode = "RISK_DECISION_INVALID"
+	ProblemCodeRISKIDEMPOTENCYREQUIRED             ProblemCode = "RISK_IDEMPOTENCY_REQUIRED"
+	ProblemCodeRISKINTERRUPTED                     ProblemCode = "RISK_INTERRUPTED"
+	ProblemCodeRISKPOLICYINVALID                   ProblemCode = "RISK_POLICY_INVALID"
+	ProblemCodeRISKREGISTRYINCOMPATIBLE            ProblemCode = "RISK_REGISTRY_INCOMPATIBLE"
+	ProblemCodeRISKREQUIREDMETRICUNAVAILABLE       ProblemCode = "RISK_REQUIRED_METRIC_UNAVAILABLE"
+	ProblemCodeRISKREVIEWNOTFOUND                  ProblemCode = "RISK_REVIEW_NOT_FOUND"
+	ProblemCodeRISKREVISIONINVALID                 ProblemCode = "RISK_REVISION_INVALID"
+	ProblemCodeRISKRULECONTRACTINVALID             ProblemCode = "RISK_RULE_CONTRACT_INVALID"
+	ProblemCodeRISKSIMULATIONINVALID               ProblemCode = "RISK_SIMULATION_INVALID"
+	ProblemCodeRISKSTALEIDENTITY                   ProblemCode = "RISK_STALE_IDENTITY"
+	ProblemCodeRISKVALIDATIONINVALID               ProblemCode = "RISK_VALIDATION_INVALID"
+	ProblemCodeSIMULATIONBUDGETINVALID             ProblemCode = "SIMULATION_BUDGET_INVALID"
+	ProblemCodeSIMULATIONCAPABILITYUNAVAILABLE     ProblemCode = "SIMULATION_CAPABILITY_UNAVAILABLE"
+	ProblemCodeSIMULATIONIDEMPOTENCYREQUIRED       ProblemCode = "SIMULATION_IDEMPOTENCY_REQUIRED"
+	ProblemCodeSIMULATIONIMPLEMENTATIONUNAVAILABLE ProblemCode = "SIMULATION_IMPLEMENTATION_UNAVAILABLE"
+	ProblemCodeSIMULATIONINPUTINVALID              ProblemCode = "SIMULATION_INPUT_INVALID"
+	ProblemCodeSIMULATIONMETRICINVALID             ProblemCode = "SIMULATION_METRIC_INVALID"
+	ProblemCodeSIMULATIONPARAMETERINVALID          ProblemCode = "SIMULATION_PARAMETER_INVALID"
+	ProblemCodeSIMULATIONRUNNOTFOUND               ProblemCode = "SIMULATION_RUN_NOT_FOUND"
+	ProblemCodeSIMULATIONRUNUNAVAILABLE            ProblemCode = "SIMULATION_RUN_UNAVAILABLE"
+	ProblemCodeSIMULATIONSAMPLEINVALID             ProblemCode = "SIMULATION_SAMPLE_INVALID"
+	ProblemCodeSIMULATIONSCENEINVALID              ProblemCode = "SIMULATION_SCENE_INVALID"
+	ProblemCodeSIMULATIONSEEDINVALID               ProblemCode = "SIMULATION_SEED_INVALID"
+	ProblemCodeSIMULATIONSOURCEINVALID             ProblemCode = "SIMULATION_SOURCE_INVALID"
+	ProblemCodeSIMULATIONVALIDATIONREQUIRED        ProblemCode = "SIMULATION_VALIDATION_REQUIRED"
+	ProblemCodeSIMULATIONVERIFICATIONTARGETINVALID ProblemCode = "SIMULATION_VERIFICATION_TARGET_INVALID"
+	ProblemCodeSTORAGEFAILURE                      ProblemCode = "STORAGE_FAILURE"
+	ProblemCodeTHRESHOLDINVALID                    ProblemCode = "THRESHOLD_INVALID"
+	ProblemCodeTHRESHOLDNOTCONFIGURED              ProblemCode = "THRESHOLD_NOT_CONFIGURED"
+	ProblemCodeTIMEOUT                             ProblemCode = "TIMEOUT"
+	ProblemCodeUNSUPPORTEDKIND                     ProblemCode = "UNSUPPORTED_KIND"
+	ProblemCodeUNSUPPORTEDSCHEMA                   ProblemCode = "UNSUPPORTED_SCHEMA"
+	ProblemCodeVALIDATIONFAILED                    ProblemCode = "VALIDATION_FAILED"
+	ProblemCodeVALIDATIONRUNNOTFOUND               ProblemCode = "VALIDATION_RUN_NOT_FOUND"
+	ProblemCodeVALIDATIONSOURCENOTFOUND            ProblemCode = "VALIDATION_SOURCE_NOT_FOUND"
+	ProblemCodeVALIDATIONSTORAGEFAILURE            ProblemCode = "VALIDATION_STORAGE_FAILURE"
 )
 
 // Valid indicates whether the value is a known member of the ProblemCode enum.
 func (e ProblemCode) Valid() bool {
 	switch e {
-	case ACTIVEPROJECTCONFLICT:
+	case ProblemCodeACTIVEPROJECTCONFLICT:
 		return true
-	case AIBUDGETEXCEEDED:
+	case ProblemCodeAIBUDGETEXCEEDED:
 		return true
-	case AICANCELED:
+	case ProblemCodeAICANCELED:
 		return true
-	case AICAPABILITYUNAVAILABLE:
+	case ProblemCodeAICAPABILITYUNAVAILABLE:
 		return true
-	case AICREDENTIALINVALID:
+	case ProblemCodeAICREDENTIALINVALID:
 		return true
-	case AICREDENTIALSTOREFAILED:
+	case ProblemCodeAICREDENTIALSTOREFAILED:
 		return true
-	case AIDECISIONCONFLICT:
+	case ProblemCodeAIDECISIONCONFLICT:
 		return true
-	case AIEVIDENCEUNAVAILABLE:
+	case ProblemCodeAIEVIDENCEUNAVAILABLE:
 		return true
-	case AIIDEMPOTENCYREQUIRED:
+	case ProblemCodeAIIDEMPOTENCYREQUIRED:
 		return true
-	case AIINPUTINVALID:
+	case ProblemCodeAIINPUTINVALID:
 		return true
-	case AIINTERRUPTED:
+	case ProblemCodeAIINTERRUPTED:
 		return true
-	case AIOUTPUTINVALID:
+	case ProblemCodeAIOUTPUTINVALID:
 		return true
-	case AIPATCHNOTACCEPTABLE:
+	case ProblemCodeAIPATCHNOTACCEPTABLE:
 		return true
-	case AIPATCHNOTFOUND:
+	case ProblemCodeAIPATCHNOTFOUND:
 		return true
-	case AIPATCHSTALE:
+	case ProblemCodeAIPATCHSTALE:
 		return true
-	case AIPREVIEWBLOCKED:
+	case ProblemCodeAIPREVIEWBLOCKED:
 		return true
-	case AIPROVIDERFAILED:
+	case ProblemCodeAIPROVIDERFAILED:
 		return true
-	case AIPROVIDERTIMEOUT:
+	case ProblemCodeAIPROVIDERTIMEOUT:
 		return true
-	case AIPROVIDERUNCONFIGURED:
+	case ProblemCodeAIPROVIDERUNCONFIGURED:
 		return true
-	case AIREPAIREXHAUSTED:
+	case ProblemCodeAIREPAIREXHAUSTED:
 		return true
-	case AIRETRIEVALUNAVAILABLE:
+	case ProblemCodeAIRETRIEVALUNAVAILABLE:
 		return true
-	case AISNAPSHOTIDENTITYMISMATCH:
+	case ProblemCodeAISNAPSHOTIDENTITYMISMATCH:
 		return true
-	case AISNAPSHOTINDEXNOTREADY:
+	case ProblemCodeAISNAPSHOTINDEXNOTREADY:
 		return true
-	case AITOOLPOLICYVIOLATION:
+	case ProblemCodeAITOOLPOLICYVIOLATION:
 		return true
-	case BASESNAPSHOTNOTFOUND:
+	case ProblemCodeBASESNAPSHOTNOTFOUND:
 		return true
-	case BASESNAPSHOTNOTREADY:
+	case ProblemCodeBASESNAPSHOTNOTREADY:
 		return true
-	case BUDGETEXCEEDED:
+	case ProblemCodeBUDGETEXCEEDED:
 		return true
-	case CLOSEBLOCKED:
+	case ProblemCodeCLOSEBLOCKED:
 		return true
-	case CONTENTHASHCONFLICT:
+	case ProblemCodeCONTENTHASHCONFLICT:
 		return true
-	case CONTENTHASHMISMATCH:
+	case ProblemCodeCONTENTHASHMISMATCH:
 		return true
-	case DIFFBASEINVALID:
+	case ProblemCodeDIFFBASEINVALID:
 		return true
-	case DUPLICATEKEY:
+	case ProblemCodeDUPLICATEKEY:
 		return true
-	case ENTITYREFERENCED:
+	case ProblemCodeENTITYREFERENCED:
 		return true
-	case EXTERNALSERVICEFAILURE:
+	case ProblemCodeEXTERNALSERVICEFAILURE:
 		return true
-	case GRAPHCAPABILITYUNAVAILABLE:
+	case ProblemCodeGRAPHCAPABILITYUNAVAILABLE:
 		return true
-	case GRAPHRETRYEXHAUSTED:
+	case ProblemCodeGRAPHRETRYEXHAUSTED:
 		return true
-	case GRAPHRETRYNOTSAFE:
+	case ProblemCodeGRAPHRETRYNOTSAFE:
 		return true
-	case GRAPHSTATUSUNAVAILABLE:
+	case ProblemCodeGRAPHSTATUSUNAVAILABLE:
 		return true
-	case GRAPHVALIDATIONBLOCKED:
+	case ProblemCodeGRAPHVALIDATIONBLOCKED:
 		return true
-	case GRAPHVALIDATIONREQUIRED:
+	case ProblemCodeGRAPHVALIDATIONREQUIRED:
 		return true
-	case HISTORYNOTFOUND:
+	case ProblemCodeHISTORYNOTFOUND:
 		return true
-	case IDEMPOTENCYCONFLICT:
+	case ProblemCodeIDEMPOTENCYCONFLICT:
 		return true
-	case INVALIDCONFIRMATION:
+	case ProblemCodeINVALIDCONFIRMATION:
 		return true
-	case INVALIDSELECTION:
+	case ProblemCodeINVALIDSELECTION:
 		return true
-	case INVALIDVALIDATIONREQUEST:
+	case ProblemCodeINVALIDVALIDATIONREQUEST:
 		return true
-	case INVALIDVALIDATIONSCOPE:
+	case ProblemCodeINVALIDVALIDATIONSCOPE:
 		return true
-	case INVALIDVALIDATIONSOURCE:
+	case ProblemCodeINVALIDVALIDATIONSOURCE:
 		return true
-	case INVALIDVALIDATIONTARGET:
+	case ProblemCodeINVALIDVALIDATIONTARGET:
 		return true
-	case MANDATORYBACKUPFAILED:
+	case ProblemCodeMANDATORYBACKUPFAILED:
 		return true
-	case MIGRATIONBACKUPREQUIRED:
+	case ProblemCodeMIGRATIONBACKUPREQUIRED:
 		return true
-	case PRECONDITIONREQUIRED:
+	case ProblemCodePRECONDITIONREQUIRED:
 		return true
-	case PROJECTLOCKED:
+	case ProblemCodePROJECTLOCKED:
 		return true
-	case PROJECTNOTOPEN:
+	case ProblemCodePROJECTNOTOPEN:
 		return true
-	case PROJECTORVERSIONUNAVAILABLE:
+	case ProblemCodePROJECTORVERSIONUNAVAILABLE:
 		return true
-	case PROVIDERTASKFAILED:
+	case ProblemCodePROVIDERTASKFAILED:
 		return true
-	case RECOVERYMISMATCH:
+	case ProblemCodeRECOVERYMISMATCH:
 		return true
-	case RECOVERYUNAVAILABLE:
+	case ProblemCodeRECOVERYUNAVAILABLE:
 		return true
-	case RELEASEBASECONFLICT:
+	case ProblemCodeRELEASEBASECONFLICT:
 		return true
-	case RELEASECAPABILITYDISABLED:
+	case ProblemCodeRELEASECAPABILITYDISABLED:
 		return true
-	case RELEASEPOLICYINVALID:
+	case ProblemCodeRELEASEPOLICYINVALID:
 		return true
-	case RELEASEPREFLIGHTFAILED:
+	case ProblemCodeRELEASEPREFLIGHTFAILED:
 		return true
-	case REVISIONCONFLICT:
+	case ProblemCodeREVISIONCONFLICT:
 		return true
-	case REVISIONIMMUTABLE:
+	case ProblemCodeREVISIONIMMUTABLE:
 		return true
-	case REVISIONNOTFOUND:
+	case ProblemCodeREVISIONNOTFOUND:
 		return true
-	case RISKBASELINEINVALID:
+	case ProblemCodeRISKBASELINEINVALID:
 		return true
-	case RISKCANCELED:
+	case ProblemCodeRISKCANCELED:
 		return true
-	case RISKCOHORTINVALID:
+	case ProblemCodeRISKCOHORTINVALID:
 		return true
-	case RISKCOMMANDINVALID:
+	case ProblemCodeRISKCOMMANDINVALID:
 		return true
-	case RISKDECISIONINVALID:
+	case ProblemCodeRISKDECISIONINVALID:
 		return true
-	case RISKIDEMPOTENCYREQUIRED:
+	case ProblemCodeRISKIDEMPOTENCYREQUIRED:
 		return true
-	case RISKINTERRUPTED:
+	case ProblemCodeRISKINTERRUPTED:
 		return true
-	case RISKPOLICYINVALID:
+	case ProblemCodeRISKPOLICYINVALID:
 		return true
-	case RISKREGISTRYINCOMPATIBLE:
+	case ProblemCodeRISKREGISTRYINCOMPATIBLE:
 		return true
-	case RISKREQUIREDMETRICUNAVAILABLE:
+	case ProblemCodeRISKREQUIREDMETRICUNAVAILABLE:
 		return true
-	case RISKREVIEWNOTFOUND:
+	case ProblemCodeRISKREVIEWNOTFOUND:
 		return true
-	case RISKREVISIONINVALID:
+	case ProblemCodeRISKREVISIONINVALID:
 		return true
-	case RISKRULECONTRACTINVALID:
+	case ProblemCodeRISKRULECONTRACTINVALID:
 		return true
-	case RISKSIMULATIONINVALID:
+	case ProblemCodeRISKSIMULATIONINVALID:
 		return true
-	case RISKSTALEIDENTITY:
+	case ProblemCodeRISKSTALEIDENTITY:
 		return true
-	case RISKVALIDATIONINVALID:
+	case ProblemCodeRISKVALIDATIONINVALID:
 		return true
-	case SIMULATIONBUDGETINVALID:
+	case ProblemCodeSIMULATIONBUDGETINVALID:
 		return true
-	case SIMULATIONCAPABILITYUNAVAILABLE:
+	case ProblemCodeSIMULATIONCAPABILITYUNAVAILABLE:
 		return true
-	case SIMULATIONIDEMPOTENCYREQUIRED:
+	case ProblemCodeSIMULATIONIDEMPOTENCYREQUIRED:
 		return true
-	case SIMULATIONIMPLEMENTATIONUNAVAILABLE:
+	case ProblemCodeSIMULATIONIMPLEMENTATIONUNAVAILABLE:
 		return true
-	case SIMULATIONINPUTINVALID:
+	case ProblemCodeSIMULATIONINPUTINVALID:
 		return true
-	case SIMULATIONMETRICINVALID:
+	case ProblemCodeSIMULATIONMETRICINVALID:
 		return true
-	case SIMULATIONPARAMETERINVALID:
+	case ProblemCodeSIMULATIONPARAMETERINVALID:
 		return true
-	case SIMULATIONRUNNOTFOUND:
+	case ProblemCodeSIMULATIONRUNNOTFOUND:
 		return true
-	case SIMULATIONRUNUNAVAILABLE:
+	case ProblemCodeSIMULATIONRUNUNAVAILABLE:
 		return true
-	case SIMULATIONSAMPLEINVALID:
+	case ProblemCodeSIMULATIONSAMPLEINVALID:
 		return true
-	case SIMULATIONSCENEINVALID:
+	case ProblemCodeSIMULATIONSCENEINVALID:
 		return true
-	case SIMULATIONSEEDINVALID:
+	case ProblemCodeSIMULATIONSEEDINVALID:
 		return true
-	case SIMULATIONSOURCEINVALID:
+	case ProblemCodeSIMULATIONSOURCEINVALID:
 		return true
-	case SIMULATIONVALIDATIONREQUIRED:
+	case ProblemCodeSIMULATIONVALIDATIONREQUIRED:
 		return true
-	case SIMULATIONVERIFICATIONTARGETINVALID:
+	case ProblemCodeSIMULATIONVERIFICATIONTARGETINVALID:
 		return true
-	case STORAGEFAILURE:
+	case ProblemCodeSTORAGEFAILURE:
 		return true
-	case THRESHOLDINVALID:
+	case ProblemCodeTHRESHOLDINVALID:
 		return true
-	case THRESHOLDNOTCONFIGURED:
+	case ProblemCodeTHRESHOLDNOTCONFIGURED:
 		return true
-	case TIMEOUT:
+	case ProblemCodeTIMEOUT:
 		return true
-	case UNSUPPORTEDKIND:
+	case ProblemCodeUNSUPPORTEDKIND:
 		return true
-	case UNSUPPORTEDSCHEMA:
+	case ProblemCodeUNSUPPORTEDSCHEMA:
 		return true
-	case VALIDATIONFAILED:
+	case ProblemCodeVALIDATIONFAILED:
 		return true
-	case VALIDATIONRUNNOTFOUND:
+	case ProblemCodeVALIDATIONRUNNOTFOUND:
 		return true
-	case VALIDATIONSOURCENOTFOUND:
+	case ProblemCodeVALIDATIONSOURCENOTFOUND:
 		return true
-	case VALIDATIONSTORAGEFAILURE:
+	case ProblemCodeVALIDATIONSTORAGEFAILURE:
 		return true
 	default:
 		return false
@@ -2254,6 +2308,9 @@ type AIBudgetLimits struct {
 // AIBudgetLimitsMaxFormatRepairs defines model for AIBudgetLimits.MaxFormatRepairs.
 type AIBudgetLimitsMaxFormatRepairs int
 
+// AICapabilityReason defines model for AICapabilityReason.
+type AICapabilityReason string
+
 // AIConstraint defines model for AIConstraint.
 type AIConstraint struct {
 	Id       string               `json:"id"`
@@ -2389,7 +2446,7 @@ type AIProviderCapability struct {
 	Limits                 AIBudgetLimits            `json:"limits"`
 	Orchestrator           AIVersionIdentity         `json:"orchestrator"`
 	Prompt                 AIVersionIdentity         `json:"prompt"`
-	Reasons                []string                  `json:"reasons"`
+	Reasons                []AICapabilityReason      `json:"reasons"`
 	State                  AIProviderCapabilityState `json:"state"`
 	Streaming              bool                      `json:"streaming"`
 	StructuredOutput       bool                      `json:"structured_output"`

@@ -31,7 +31,7 @@ func TestOpenAPIContainsStrictAIDesignContracts(t *testing.T) {
 		t.Fatal(err)
 	}
 	contract := string(raw)
-	for _, schema := range []string{"CreateAIDesignJobRequest", "AIDesignJobAccepted", "DraftPatchResource", "AcceptDraftPatchRequest", "AcceptDraftPatchResult", "DiscardDraftPatchRequest", "DiscardDraftPatchResult", "AIAttemptProjection", "AIPreviewProjection", "AIFreshnessProjection", "AIEvidenceRef", "PutProviderCredentialRequest", "ProviderCredentialStatus", "CredentialSource"} {
+	for _, schema := range []string{"CreateAIDesignJobRequest", "AIDesignJobAccepted", "DraftPatchResource", "AcceptDraftPatchRequest", "AcceptDraftPatchResult", "DiscardDraftPatchRequest", "DiscardDraftPatchResult", "AIAttemptProjection", "AIPreviewProjection", "AIFreshnessProjection", "AIEvidenceRef", "PutProviderCredentialRequest", "ProviderCredentialStatus", "CredentialSource", "AICapabilityReason"} {
 		if !strings.Contains(contract, "    "+schema+":") {
 			t.Errorf("OpenAPI missing AI schema %s", schema)
 		}

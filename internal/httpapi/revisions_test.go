@@ -6,11 +6,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	aiprovider "github.com/zouyi/eco-guardian/internal/ai/provider"
 	"github.com/zouyi/eco-guardian/internal/app"
 	"github.com/zouyi/eco-guardian/internal/domain"
 	graphsync "github.com/zouyi/eco-guardian/internal/graph/sync"
@@ -107,6 +109,64 @@ func TestVersionHandlerDelegatesPolicyCapabilityAndReleaseCommands(t *testing.T)
 	var accepted map[string]string
 	if err := json.Unmarshal(releaseResponse.Body.Bytes(), &accepted); err != nil || accepted["location"] != "/api/v1/jobs/"+string(jobID) {
 		t.Fatalf("accepted=%v err=%v", accepted, err)
+	}
+}
+
+func TestUnavailableAICapabilityDoesNotChangeReleaseOrGraphCapabilities(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &fakeVersionService{capability: versioninggate.ReleaseCapability{Enabled: true}}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/status", nil)
+
+	baselineEngine := gin.New()
+	NewVersionHandler(func() app.VersioningService { return service }).Register(baselineEngine)
+	baselineResponse := httptest.NewRecorder()
+	baselineEngine.ServeHTTP(baselineResponse, request)
+
+	failedEngine := gin.New()
+	handler := NewVersionHandler(func() app.VersioningService { return service })
+	handler.RegisterAICapabilityProvider(func(context.Context) aiprovider.Capability {
+		return aiprovider.Capability{
+			State: aiprovider.CapabilityUnavailable, Enabled: true,
+			CredentialPresent: true, Reasons: []string{aiprovider.ReasonProviderUnavailable},
+		}
+	})
+	handler.Register(failedEngine)
+	failedResponse := httptest.NewRecorder()
+	failedEngine.ServeHTTP(failedResponse, httptest.NewRequest(http.MethodGet, "/api/v1/runtime/status", nil))
+
+	var baseline, failed map[string]any
+	if err := json.Unmarshal(baselineResponse.Body.Bytes(), &baseline); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(failedResponse.Body.Bytes(), &failed); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(baseline["release"], failed["release"]) || !reflect.DeepEqual(baseline["graph"], failed["graph"]) {
+		t.Fatalf("AI failure changed deterministic capabilities: baseline=%v failed=%v", baseline, failed)
+	}
+	ai := failed["ai"].(map[string]any)
+	if ai["state"] != "unavailable" || !strings.Contains(failedResponse.Body.String(), aiprovider.ReasonProviderUnavailable) {
+		t.Fatalf("AI failure was not isolated: %s", failedResponse.Body.String())
+	}
+}
+
+func TestRuntimeStatusProjectsMissingAndIncompatibleAIReasons(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &fakeVersionService{capability: versioninggate.ReleaseCapability{Enabled: true}}
+	for _, capability := range []aiprovider.Capability{
+		{State: aiprovider.CapabilityUnconfigured, Enabled: true, Reasons: []string{aiprovider.ReasonCredentialRequired}},
+		{State: aiprovider.CapabilityUnavailable, Enabled: true, CredentialPresent: true, StructuredOutput: true, Streaming: true, Reasons: []string{aiprovider.ReasonToolCallsUnsupported}},
+	} {
+		engine := gin.New()
+		handler := NewVersionHandler(func() app.VersioningService { return service })
+		projected := capability
+		handler.RegisterAICapabilityProvider(func(context.Context) aiprovider.Capability { return projected })
+		handler.Register(engine)
+		response := httptest.NewRecorder()
+		engine.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/runtime/status", nil))
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), capability.Reasons[0]) || !strings.Contains(response.Body.String(), `"release":{"disabled_reasons":[],"enabled":true}`) {
+			t.Fatalf("runtime capability response=%d body=%s", response.Code, response.Body.String())
+		}
 	}
 }
 

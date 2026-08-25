@@ -2,12 +2,11 @@ package httpapi
 
 import (
 	"io"
-	"net"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	aiprovider "github.com/zouyi/eco-guardian/internal/ai/provider"
 	runtimeconfig "github.com/zouyi/eco-guardian/internal/app/runtime/config"
 	"github.com/zouyi/eco-guardian/internal/httpapi/riskdto"
 )
@@ -90,26 +89,19 @@ func (h *SettingsHandler) resource(settings runtimeconfig.Settings) gin.H {
 			"model":                   settings.AI.Model,
 			"request_timeout_seconds": settings.AI.RequestTimeoutSeconds,
 			"allow_cloud":             settings.AI.AllowCloud,
-			"endpoint_classification": endpointClassification(settings.AI.Endpoint),
+			"endpoint_classification": endpointClassification(settings.AI.Endpoint, settings.AI.AllowCloud),
 			"credential_present":      h.credential("openai-compatible"),
 		},
 	}
 }
 
-func endpointClassification(value string) any {
+func endpointClassification(value string, allowCloud bool) any {
 	if value == "" {
 		return nil
 	}
-	parsed, err := url.Parse(value)
-	if err != nil || parsed.Hostname() == "" {
+	classification, err := aiprovider.ValidateEndpoint(value, allowCloud)
+	if err != nil {
 		return nil
 	}
-	host := parsed.Hostname()
-	if host == "localhost" {
-		return "loopback"
-	}
-	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-		return "loopback"
-	}
-	return "cloud"
+	return classification
 }

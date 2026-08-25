@@ -2,13 +2,19 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	aiprovider "github.com/zouyi/eco-guardian/internal/ai/provider"
+	runtimeconfig "github.com/zouyi/eco-guardian/internal/app/runtime/config"
+	"github.com/zouyi/eco-guardian/internal/domain"
+	storesqlite "github.com/zouyi/eco-guardian/internal/storage/sqlite"
 )
 
 type httpCredentialStore struct{ value []byte }
@@ -59,11 +65,77 @@ func TestCredentialHandlerIsWriteOnlyAndManagerTakesPrecedence(t *testing.T) {
 	if string(store.value) != "manager-canary" {
 		t.Fatal("credential was not written through the credential port")
 	}
+	replacement := httptest.NewRequest(http.MethodPut, "/api/v1/settings/credentials/openai-compatible", strings.NewReader(`{"credential":"replacement-canary"}`))
+	replacement.Header.Set("Content-Type", "application/json")
+	replacementResponse := httptest.NewRecorder()
+	engine.ServeHTTP(replacementResponse, replacement)
+	if replacementResponse.Code != http.StatusOK || string(store.value) != "replacement-canary" || strings.Contains(replacementResponse.Body.String(), "manager-canary") || strings.Contains(replacementResponse.Body.String(), "replacement-canary") {
+		t.Fatalf("unsafe credential replacement response=%d body=%s stored=%q", replacementResponse.Code, replacementResponse.Body.String(), store.value)
+	}
 
 	response = httptest.NewRecorder()
 	engine.ServeHTTP(response, httptest.NewRequest(http.MethodDelete, "/api/v1/settings/credentials/openai-compatible", nil))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"credential_present":true`) || !strings.Contains(response.Body.String(), `"source":"environment"`) || strings.Contains(response.Body.String(), "environment-canary") {
 		t.Fatalf("unsafe credential DELETE response=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestCredentialsAndEnvironmentAreExcludedFromSettingsAndProjectBackupSource(t *testing.T) {
+	const managerCanary = "manager-backup-canary"
+	const environmentCanary = "environment-backup-canary"
+	machineDirectory := t.TempDir()
+	projectDirectory := t.TempDir()
+
+	settingsStore := runtimeconfig.NewStore(filepath.Join(machineDirectory, "settings.json"))
+	settings := runtimeconfig.Default()
+	settings.AI.Enabled = true
+	settings.AI.Endpoint = "http://127.0.0.1:11434/v1"
+	settings.AI.Model = "fixture"
+	if err := settingsStore.Save(settings); err != nil {
+		t.Fatal(err)
+	}
+	credentialStore := &httpCredentialStore{}
+	resolver := aiprovider.CredentialResolver{
+		Store: credentialStore, Environment: httpEnvironment{aiprovider.OpenAIAPIKeyEnvironment: environmentCanary},
+	}
+	if err := resolver.Put(context.Background(), aiprovider.OpenAICompatibleProvider, []byte(managerCanary)); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := domain.NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectStore, _, err := storesqlite.Create(context.Background(), projectDirectory, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := projectStore.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, root := range []string{machineDirectory, projectDirectory} {
+		err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil || entry.IsDir() {
+				return walkErr
+			}
+			contents, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+			for _, canary := range []string{managerCanary, environmentCanary} {
+				if strings.Contains(string(contents), canary) {
+					t.Errorf("credential leaked into backup source %s", filepath.Base(path))
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	settingsJSON, err := json.Marshal(settings)
+	if err != nil || strings.Contains(string(settingsJSON), managerCanary) || strings.Contains(string(settingsJSON), environmentCanary) {
+		t.Fatalf("settings projection leaked credential: %s err=%v", settingsJSON, err)
 	}
 }
 

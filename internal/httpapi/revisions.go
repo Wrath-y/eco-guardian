@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	aicontract "github.com/zouyi/eco-guardian/internal/ai/contract"
+	aiprovider "github.com/zouyi/eco-guardian/internal/ai/provider"
 	"github.com/zouyi/eco-guardian/internal/app"
 	"github.com/zouyi/eco-guardian/internal/domain"
 	graphsync "github.com/zouyi/eco-guardian/internal/graph/sync"
@@ -24,9 +25,11 @@ import (
 )
 
 type VersionServiceProvider func() app.VersioningService
+type AICapabilityProvider func(context.Context) aiprovider.Capability
 type VersionHandler struct {
 	service   VersionServiceProvider
 	graph     GraphSyncServiceProvider
+	ai        AICapabilityProvider
 	resolvers []DurableResolver
 }
 
@@ -65,6 +68,13 @@ func NewVersionHandler(service VersionServiceProvider) *VersionHandler {
 // release jobs rather than creating a second public job API.
 func NewVersionHandlerWithGraph(service VersionServiceProvider, graph GraphSyncServiceProvider) *VersionHandler {
 	return &VersionHandler{service: service, graph: graph, resolvers: []DurableResolver{releaseResolver(service), graphResolver(graph)}}
+}
+
+// RegisterAICapabilityProvider adds an optional process-wide observation. AI
+// failures are represented inside the AI capability and never fail or mutate
+// the release and Graph capability projections.
+func (h *VersionHandler) RegisterAICapabilityProvider(provider AICapabilityProvider) {
+	h.ai = provider
 }
 
 // RegisterDurableResolver composes another capability into the shared Job
@@ -629,25 +639,39 @@ func (h *VersionHandler) capability(c *gin.Context) {
 		reasons = append(reasons, gin.H{"capability_id": reason.CapabilityID, "gate_id": reason.GateID, "code": code, "detail": nullable(reason.Reason)})
 	}
 	graph := s.GraphRuntimeCapability(c.Request.Context())
-	c.JSON(http.StatusOK, gin.H{"release": gin.H{"enabled": capability.Enabled, "disabled_reasons": reasons}, "graph": gin.H{"available": graph.Available, "compatible": graph.Compatible, "required_capabilities": graph.RequiredCapabilities, "degradations": graph.Degradations, "disabled_reasons": graph.Reasons, "release_disabled_reasons": graph.Reasons, "observed_at": graph.ObservedAt}, "ai": defaultAICapabilityJSON()})
+	ai := defaultAICapability()
+	if h.ai != nil {
+		ai = h.ai(c.Request.Context())
+	}
+	c.JSON(http.StatusOK, gin.H{"release": gin.H{"enabled": capability.Enabled, "disabled_reasons": reasons}, "graph": gin.H{"available": graph.Available, "compatible": graph.Compatible, "required_capabilities": graph.RequiredCapabilities, "degradations": graph.Degradations, "disabled_reasons": graph.Reasons, "release_disabled_reasons": graph.Reasons, "observed_at": graph.ObservedAt}, "ai": aiCapabilityJSON(ai)})
 }
 
-func defaultAICapabilityJSON() gin.H {
+func defaultAICapability() aiprovider.Capability {
+	return aiprovider.Capability{
+		State: aiprovider.CapabilityUnconfigured, Reasons: []string{aiprovider.ReasonProviderUnconfigured},
+	}
+}
+
+func aiCapabilityJSON(capability aiprovider.Capability) gin.H {
 	fixture := aicontract.V1Fixture()
 	toolIdentities := make([]aicontract.VersionIdentity, 0, len(fixture.Tools))
 	for _, tool := range fixture.Tools {
 		toolIdentities = append(toolIdentities, tool.Identity)
 	}
 	limits := aicontract.Budget{Policy: fixture.Budget.Identity, BudgetLimits: fixture.Budget.Limits}
+	reasons := capability.Reasons
+	if reasons == nil {
+		reasons = []string{}
+	}
 	return gin.H{
-		"state":                   "unconfigured",
-		"enabled":                 false,
-		"endpoint_classification": nil,
-		"credential_present":      false,
-		"structured_output":       false,
-		"tool_calls":              false,
-		"streaming":               false,
-		"reasons":                 []string{"AI_PROVIDER_UNCONFIGURED"},
+		"state":                   capability.State,
+		"enabled":                 capability.Enabled,
+		"endpoint_classification": capability.EndpointClassification,
+		"credential_present":      capability.CredentialPresent,
+		"structured_output":       capability.StructuredOutput,
+		"tool_calls":              capability.ToolCalls,
+		"streaming":               capability.Streaming,
+		"reasons":                 reasons,
 		"prompt":                  fixture.Prompt.Identity,
 		"draft_patch_schema":      fixture.PatchSchema.Identity,
 		"tools":                   toolIdentities,

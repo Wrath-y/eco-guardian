@@ -164,6 +164,20 @@ func TestValidateBoundsNonSecretAIProviderSettings(t *testing.T) {
 	if err := Validate(settings); err != nil {
 		t.Fatalf("bounded non-secret AI settings rejected: %v", err)
 	}
+	settings.AI.Endpoint = "https://api.example.com/v1"
+	if err := Validate(settings); err == nil {
+		t.Fatal("cloud AI endpoint without explicit disclosure was accepted")
+	}
+	settings.AI.AllowCloud = true
+	if err := Validate(settings); err != nil {
+		t.Fatalf("explicit cloud AI endpoint rejected: %v", err)
+	}
+	settings.AI.Endpoint = "http://api.example.com/v1"
+	if err := Validate(settings); err == nil {
+		t.Fatal("plaintext cloud AI endpoint was accepted")
+	}
+	settings.AI.Endpoint = "http://127.0.0.1:11434/v1"
+	settings.AI.AllowCloud = false
 	settings.AI.RequestTimeoutSeconds = 601
 	if err := Validate(settings); err == nil {
 		t.Fatal("unbounded AI timeout was accepted")

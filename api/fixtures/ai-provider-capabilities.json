@@ -1,0 +1,47 @@
+[
+  {
+    "name": "disabled",
+    "state": "unconfigured",
+    "enabled": false,
+    "structured_output": false,
+    "tool_calls": false,
+    "streaming": false,
+    "reasons": ["AI_DISABLED"]
+  },
+  {
+    "name": "missing-credential",
+    "state": "unconfigured",
+    "enabled": true,
+    "structured_output": false,
+    "tool_calls": false,
+    "streaming": false,
+    "reasons": ["AI_CREDENTIAL_REQUIRED"]
+  },
+  {
+    "name": "incompatible-tools",
+    "state": "unavailable",
+    "enabled": true,
+    "structured_output": true,
+    "tool_calls": false,
+    "streaming": true,
+    "reasons": ["AI_TOOL_CALLS_UNSUPPORTED"]
+  },
+  {
+    "name": "no-streaming",
+    "state": "degraded",
+    "enabled": true,
+    "structured_output": true,
+    "tool_calls": true,
+    "streaming": false,
+    "reasons": ["AI_STREAMING_UNAVAILABLE"]
+  },
+  {
+    "name": "available",
+    "state": "available",
+    "enabled": true,
+    "structured_output": true,
+    "tool_calls": true,
+    "streaming": true,
+    "reasons": []
+  }
+]

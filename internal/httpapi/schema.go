@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	aiaudit "github.com/zouyi/eco-guardian/internal/ai/audit"
 	"github.com/zouyi/eco-guardian/internal/domain"
 	"github.com/zouyi/eco-guardian/internal/formula"
 )
@@ -31,6 +32,9 @@ func problem(c *gin.Context, status int, code, title string) {
 }
 
 func writeProblem(c *gin.Context, value Problem) {
+	redactor := aiaudit.NewRedactor()
+	value.Title = redactor.RedactString(value.Title)
+	value.Details = redactor.Value(value.Details)
 	c.Header("Content-Type", "application/problem+json")
 	c.Header("X-Request-ID", value.RequestID)
 	c.JSON(value.Status, value)

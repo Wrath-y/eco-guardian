@@ -1523,6 +1523,8 @@ export interface components {
         };
         /** @enum {string} */
         CredentialSource: "credential_manager" | "environment";
+        /** @enum {string} */
+        AICapabilityReason: "AI_PROVIDER_UNCONFIGURED" | "AI_DISABLED" | "AI_ENDPOINT_REQUIRED" | "AI_MODEL_REQUIRED" | "AI_CREDENTIAL_REQUIRED" | "AI_CREDENTIAL_UNAVAILABLE" | "AI_SETTINGS_UNAVAILABLE" | "AI_ENDPOINT_INVALID" | "AI_CLOUD_NOT_ALLOWED" | "AI_PROVIDER_UNAVAILABLE" | "AI_MODEL_UNAVAILABLE" | "AI_STRUCTURED_OUTPUT_UNSUPPORTED" | "AI_TOOL_CALLS_UNSUPPORTED" | "AI_STREAMING_UNAVAILABLE";
         AIProviderCapability: {
             /** @enum {string} */
             state: "unconfigured" | "available" | "degraded" | "unavailable";
@@ -1532,7 +1534,7 @@ export interface components {
             structured_output: boolean;
             tool_calls: boolean;
             streaming: boolean;
-            reasons: string[];
+            reasons: components["schemas"]["AICapabilityReason"][];
             prompt: components["schemas"]["AIVersionIdentity"];
             draft_patch_schema: components["schemas"]["AIVersionIdentity"];
             tools: components["schemas"]["AIVersionIdentity"][];

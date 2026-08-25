@@ -1439,6 +1439,9 @@ components:
         credential_present: { type: boolean }
         source: { oneOf: [{ $ref: '#/components/schemas/CredentialSource' }, { type: 'null' }], description: Persistent credential manager wins over the non-persistent environment fallback. }
     CredentialSource: { type: string, enum: [credential_manager, environment] }
+    AICapabilityReason:
+      type: string
+      enum: [AI_PROVIDER_UNCONFIGURED, AI_DISABLED, AI_ENDPOINT_REQUIRED, AI_MODEL_REQUIRED, AI_CREDENTIAL_REQUIRED, AI_CREDENTIAL_UNAVAILABLE, AI_SETTINGS_UNAVAILABLE, AI_ENDPOINT_INVALID, AI_CLOUD_NOT_ALLOWED, AI_PROVIDER_UNAVAILABLE, AI_MODEL_UNAVAILABLE, AI_STRUCTURED_OUTPUT_UNSUPPORTED, AI_TOOL_CALLS_UNSUPPORTED, AI_STREAMING_UNAVAILABLE]
     AIProviderCapability:
       type: object
       additionalProperties: false
@@ -1451,7 +1454,7 @@ components:
         structured_output: { type: boolean }
         tool_calls: { type: boolean }
         streaming: { type: boolean }
-        reasons: { type: array, items: { type: string, minLength: 1, maxLength: 256 } }
+        reasons: { type: array, items: { $ref: '#/components/schemas/AICapabilityReason' } }
         prompt: { $ref: '#/components/schemas/AIVersionIdentity' }
         draft_patch_schema: { $ref: '#/components/schemas/AIVersionIdentity' }
         tools: { type: array, minItems: 6, maxItems: 6, items: { $ref: '#/components/schemas/AIVersionIdentity' } }
