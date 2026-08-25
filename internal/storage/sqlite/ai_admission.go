@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	aicontract "github.com/zouyi/eco-guardian/internal/ai/contract"
@@ -22,7 +24,7 @@ var ErrAIAdmissionSnapshotInvalid = errors.New("AI admission snapshot is invalid
 // FULL-validation/materialization, targets, graph identity and active baseline
 // are read through one read transaction and detached before commit.
 func (s *Store) ResolveAIAdmissionSnapshot(ctx context.Context, selection aiorchestration.AdmissionSelection) (aiorchestration.AdmissionSnapshot, error) {
-	if selection.ProjectID != aicontract.ProjectID(s.projectID) || !selection.BaseRevisionID.Valid() || len(selection.TargetIDs) == 0 {
+	if selection.ProjectID != aicontract.ProjectID(s.projectID) || !selection.BaseRevisionID.Valid() || len(selection.Targets) == 0 {
 		return aiorchestration.AdmissionSnapshot{}, ErrAIAdmissionSnapshotInvalid
 	}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
@@ -97,13 +99,21 @@ func (s *Store) ResolveAIAdmissionSnapshot(ctx context.Context, selection aiorch
 			version int64
 		}{kind: string(entity.Kind), version: entity.EntityVersion}
 	}
-	targets := make([]aiorchestration.ResolvedTarget, 0, len(selection.TargetIDs))
-	for _, targetID := range selection.TargetIDs {
-		fact, found := byID[domain.ID(targetID)]
+	entityByID := make(map[domain.ID]domain.Entity, len(entities))
+	for _, entity := range entities {
+		entityByID[entity.ID] = entity
+	}
+	targets := make([]aiorchestration.ResolvedTarget, 0, len(selection.Targets))
+	for _, selected := range selection.Targets {
+		fact, found := byID[domain.ID(selected.EntityID)]
 		if !found {
 			return aiorchestration.AdmissionSnapshot{}, ErrAIAdmissionSnapshotInvalid
 		}
-		targets = append(targets, aiorchestration.ResolvedTarget{EntityID: targetID, Kind: fact.kind, EntityVersion: fact.version})
+		entity := entityByID[domain.ID(selected.EntityID)]
+		if entity.Status != domain.StatusActive || !validAIAllowedPaths(s.registry, entity, selected.Paths) {
+			return aiorchestration.AdmissionSnapshot{}, aiorchestration.ErrAdmissionScopeInvalid
+		}
+		targets = append(targets, aiorchestration.ResolvedTarget{EntityID: selected.EntityID, Kind: fact.kind, EntityVersion: fact.version, Paths: cloneAIAllowedPaths(selected.Paths)})
 	}
 	versions, ok := aiVersionIdentities(record.Metadata.Manifest)
 	if !ok {
@@ -166,6 +176,153 @@ func aiVersionIdentities(manifest versioningrevision.VersionManifest) ([]aicontr
 		versions = append(versions, aicontract.VersionIdentity{ID: entry.CapabilityID, Version: entry.ImplementationVersion, Hash: aicontract.Hash(hex.EncodeToString(sum[:]))})
 	}
 	return versions, true
+}
+
+func cloneAIAllowedPaths(values []aicontract.AllowedPath) []aicontract.AllowedPath {
+	result := append([]aicontract.AllowedPath(nil), values...)
+	for index := range result {
+		result[index].Operations = append([]aicontract.PatchOperationKind(nil), result[index].Operations...)
+	}
+	return result
+}
+
+func validAIAllowedPaths(registry *domain.Registry, entity domain.Entity, paths []aicontract.AllowedPath) bool {
+	if registry == nil || len(paths) == 0 {
+		return false
+	}
+	seen := map[aicontract.FieldPath]struct{}{}
+	var document any
+	body, err := json.Marshal(entity)
+	if err != nil || json.Unmarshal(body, &document) != nil {
+		return false
+	}
+	for _, allowed := range paths {
+		if !allowed.Valid() || len(allowed.Path) > maxAIAdmissionPathBytes {
+			return false
+		}
+		if _, duplicate := seen[allowed.Path]; duplicate {
+			return false
+		}
+		seen[allowed.Path] = struct{}{}
+		tokens, ok := aiPointerTokens(string(allowed.Path))
+		if !ok || !aiPathExists(document, tokens) || !aiPathInRegisteredSchema(registry, entity.Kind, tokens) {
+			return false
+		}
+	}
+	return true
+}
+
+const maxAIAdmissionPathBytes = 512
+
+func aiPointerTokens(pointer string) ([]string, bool) {
+	if pointer == "" || pointer[0] != '/' {
+		return nil, false
+	}
+	raw := strings.Split(pointer[1:], "/")
+	for index, token := range raw {
+		var builder strings.Builder
+		for cursor := 0; cursor < len(token); cursor++ {
+			if token[cursor] != '~' {
+				builder.WriteByte(token[cursor])
+				continue
+			}
+			if cursor+1 >= len(token) || (token[cursor+1] != '0' && token[cursor+1] != '1') {
+				return nil, false
+			}
+			cursor++
+			if token[cursor] == '0' {
+				builder.WriteByte('~')
+			} else {
+				builder.WriteByte('/')
+			}
+		}
+		raw[index] = builder.String()
+	}
+	return raw, true
+}
+
+func aiPathExists(value any, tokens []string) bool {
+	current := value
+	for _, token := range tokens {
+		switch typed := current.(type) {
+		case map[string]any:
+			var found bool
+			current, found = typed[token]
+			if !found {
+				return false
+			}
+		case []any:
+			index, err := strconv.Atoi(token)
+			if err != nil || index < 0 || index >= len(typed) {
+				return false
+			}
+			current = typed[index]
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func aiPathInRegisteredSchema(registry *domain.Registry, kind domain.EntityKind, tokens []string) bool {
+	if len(tokens) == 0 {
+		return false
+	}
+	switch tokens[0] {
+	case "description", "balance_group":
+		return len(tokens) == 1
+	case "tag_ids":
+		return len(tokens) == 1 || (len(tokens) == 2 && aiArrayIndex(tokens[1]))
+	case "payload":
+		if len(tokens) < 2 {
+			return false
+		}
+		schema, found := registry.Schema(kind)
+		if !found {
+			return false
+		}
+		return aiSchemaContainsPath(registry, schema.Raw, tokens[1:])
+	default:
+		return false
+	}
+}
+
+func aiSchemaContainsPath(registry *domain.Registry, raw json.RawMessage, tokens []string) bool {
+	var schema map[string]any
+	if json.Unmarshal(raw, &schema) != nil {
+		return false
+	}
+	for len(tokens) > 0 {
+		if reference, ok := schema["$ref"].(string); ok {
+			resolved, found := registry.SchemaByID(reference)
+			if !found || json.Unmarshal(resolved.Raw, &schema) != nil {
+				return false
+			}
+			continue
+		}
+		if properties, ok := schema["properties"].(map[string]any); ok {
+			next, found := properties[tokens[0]].(map[string]any)
+			if !found {
+				return false
+			}
+			schema, tokens = next, tokens[1:]
+			continue
+		}
+		if items, ok := schema["items"].(map[string]any); ok && aiArrayIndex(tokens[0]) {
+			schema, tokens = items, tokens[1:]
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func aiArrayIndex(value string) bool {
+	if value == "-" {
+		return true
+	}
+	index, err := strconv.Atoi(value)
+	return err == nil && index >= 0 && strconv.Itoa(index) == value
 }
 
 var _ aiorchestration.AdmissionSnapshotSource = (*Store)(nil)

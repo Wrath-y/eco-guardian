@@ -85,6 +85,17 @@ func (r *Registry) Schema(kind EntityKind) (Schema, bool) {
 	return s, ok
 }
 
+// SchemaByID resolves immutable referenced schema metadata without exposing
+// the registry's mutable maps. Callers use it to walk registered $ref paths.
+func (r *Registry) SchemaByID(id string) (Schema, bool) {
+	if r == nil {
+		return Schema{}, false
+	}
+	schema, ok := r.byID[id]
+	schema.Raw = append(json.RawMessage(nil), schema.Raw...)
+	return schema, ok
+}
+
 func (r *Registry) Kinds() []EntityKind {
 	kinds := make([]EntityKind, 0, len(r.byKind))
 	for k := range r.byKind {

@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -55,7 +56,7 @@ func TestResolveAIAdmissionSnapshotPinsMaterializedRevisionGraphTargetsAndNoBase
 
 	snapshot, err := store.ResolveAIAdmissionSnapshot(context.Background(), aiorchestration.AdmissionSelection{
 		ProjectID: aicontract.ProjectID(store.ProjectID()), BaseRevisionID: aicontract.RevisionID(revision.ID),
-		TargetIDs: []aicontract.EntityID{aicontract.EntityID(entity.ID)},
+		Targets: []aiorchestration.AdmissionTargetSelection{{EntityID: aicontract.EntityID(entity.ID), Paths: []aicontract.AllowedPath{{Path: "/payload/category", Operations: []aicontract.PatchOperationKind{aicontract.OperationReplace}}}}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -66,10 +67,19 @@ func TestResolveAIAdmissionSnapshotPinsMaterializedRevisionGraphTargetsAndNoBase
 	if snapshot.Baseline.Kind != aicontract.BaselineNone {
 		t.Fatalf("baseline=%#v", snapshot.Baseline)
 	}
-	if len(snapshot.Targets) != 1 || snapshot.Targets[0].EntityID != aicontract.EntityID(entity.ID) || snapshot.Targets[0].Kind != string(domain.KindTag) || snapshot.Targets[0].EntityVersion != entity.EntityVersion {
+	if len(snapshot.Targets) != 1 || snapshot.Targets[0].EntityID != aicontract.EntityID(entity.ID) || snapshot.Targets[0].Kind != string(domain.KindTag) || snapshot.Targets[0].EntityVersion != entity.EntityVersion || len(snapshot.Targets[0].Paths) != 1 {
 		t.Fatalf("targets=%#v", snapshot.Targets)
 	}
 	if len(snapshot.RequiredVersions) != 7 || !snapshot.Base.MaterializationHash.Valid() {
 		t.Fatalf("versions=%#v materialization=%q", snapshot.RequiredVersions, snapshot.Base.MaterializationHash)
+	}
+	for _, invalidPath := range []aicontract.FieldPath{"/name", "/payload/missing"} {
+		_, err = store.ResolveAIAdmissionSnapshot(context.Background(), aiorchestration.AdmissionSelection{
+			ProjectID: aicontract.ProjectID(store.ProjectID()), BaseRevisionID: aicontract.RevisionID(revision.ID),
+			Targets: []aiorchestration.AdmissionTargetSelection{{EntityID: aicontract.EntityID(entity.ID), Paths: []aicontract.AllowedPath{{Path: invalidPath, Operations: []aicontract.PatchOperationKind{aicontract.OperationReplace}}}}},
+		})
+		if !errors.Is(err, aiorchestration.ErrAdmissionScopeInvalid) {
+			t.Fatalf("invalid path %q err=%v", invalidPath, err)
+		}
 	}
 }
