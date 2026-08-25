@@ -54,6 +54,9 @@ func (s *Store) CommitAIJobEvent(ctx context.Context, draft aiorchestration.AIJo
 		return aiorchestration.AIJobEvent{}, false, aiorchestration.ErrAIJobEventInvalid
 	}
 	digest := sha256.Sum256(canonical)
+	if err = ensureAIRunCapacity(ctx, tx, draft.JobID, s.projectID, len(canonical)); err != nil {
+		return aiorchestration.AIJobEvent{}, false, err
+	}
 	var resultType, resultID, resultURL any
 	if event.Result != nil {
 		resultType, resultID, resultURL = event.Result.Type, event.Result.ID, event.Result.URL

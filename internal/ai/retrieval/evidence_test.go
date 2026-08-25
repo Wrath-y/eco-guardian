@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	aiaudit "github.com/zouyi/eco-guardian/internal/ai/audit"
 	aicontract "github.com/zouyi/eco-guardian/internal/ai/contract"
 )
 
@@ -88,6 +89,29 @@ func TestEvidenceRejectsCitationAboveProviderBound(t *testing.T) {
 	response.Results[0].CitationText = strings.Repeat("x", MaxProviderCitationBytes+1)
 	if _, err := CanonicalizeEvidence(response); !errors.Is(err, ErrEvidenceInvalid) {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestPinnedEvidenceRedactionRecomputesEveryContentIdentity(t *testing.T) {
+	const secret = "evidence-secret-canary"
+	response := hybridEvidenceResponse(t)
+	response.Results[0].CitationText = "citation " + secret
+	response.Results[0].Node.Text = "node " + secret
+	response.Results[0].Node.Properties = json.RawMessage(`{"api_key":"` + secret + `","analysis":"hidden","safe":true}`)
+	response.Results[0].Evidence.Path.Nodes[0] = response.Results[0].Node
+	pinned, err := CanonicalizeEvidence(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	redacted, err := RedactPinnedEvidence(pinned, aiaudit.NewRedactor([]byte(secret)))
+	if err != nil || !redacted.Valid() {
+		t.Fatalf("redacted=%#v err=%v", redacted, err)
+	}
+	if redacted.ManifestHash == pinned.ManifestHash || redacted.Manifest.Evidence[0].ID == pinned.Manifest.Evidence[0].ID {
+		t.Fatal("redaction did not change content-derived identities")
+	}
+	if bytes.Contains(redacted.Canonical, []byte(secret)) || bytes.Contains(redacted.Canonical, []byte(`"analysis"`)) || !bytes.Contains(redacted.Canonical, []byte(aiaudit.Redacted)) {
+		t.Fatalf("unsafe evidence=%s", redacted.Canonical)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	aiaudit "github.com/zouyi/eco-guardian/internal/ai/audit"
 	aicontract "github.com/zouyi/eco-guardian/internal/ai/contract"
 	aiorchestration "github.com/zouyi/eco-guardian/internal/ai/orchestration"
 	"github.com/zouyi/eco-guardian/internal/ai/retrieval"
@@ -22,14 +23,30 @@ var (
 )
 
 type EvidenceBatch struct {
-	JobID     domain.ID
-	AttemptID aicontract.AttemptID
-	Evidence  retrieval.PinnedEvidence
+	jobID     domain.ID
+	attemptID aicontract.AttemptID
+	evidence  retrieval.PinnedEvidence
+}
+
+func NewEvidenceBatch(jobID domain.ID, attemptID aicontract.AttemptID, evidence retrieval.PinnedEvidence, redactor aiaudit.Redactor) (EvidenceBatch, error) {
+	redacted, err := retrieval.RedactPinnedEvidence(evidence, redactor)
+	if err != nil {
+		return EvidenceBatch{}, ErrInvalid
+	}
+	batch := EvidenceBatch{jobID: jobID, attemptID: attemptID, evidence: redacted}
+	if !batch.Valid() {
+		return EvidenceBatch{}, ErrInvalid
+	}
+	return batch, nil
 }
 
 func (batch EvidenceBatch) Valid() bool {
-	return batch.JobID.Valid() && (batch.AttemptID == "" || batch.AttemptID.Valid()) && batch.Evidence.Valid()
+	return batch.jobID.Valid() && (batch.attemptID == "" || batch.attemptID.Valid()) && batch.evidence.Valid()
 }
+
+func (batch EvidenceBatch) JobID() domain.ID                   { return batch.jobID }
+func (batch EvidenceBatch) AttemptID() aicontract.AttemptID    { return batch.attemptID }
+func (batch EvidenceBatch) Evidence() retrieval.PinnedEvidence { return batch.evidence }
 
 type PatchAcceptability string
 

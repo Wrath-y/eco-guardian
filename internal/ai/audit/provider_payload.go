@@ -25,6 +25,29 @@ type SealedProviderResponse struct {
 	StoredBodyHash   aicontract.Hash            `json:"stored_body_hash"`
 }
 
+// SafeCanonicalInput rejects caller intent that would require redaction. Input
+// hashes are semantic identities, so silently rewriting a goal or constraint
+// would be less safe than refusing to admit it.
+func (r Redactor) SafeCanonicalInput(input aicontract.AIDesignInputV1) ([]byte, error) {
+	canonical, err := aicontract.CanonicalAIDesignInputV1(input)
+	if err != nil {
+		return nil, ErrProviderPayloadInvalid
+	}
+	redacted, err := r.ProviderJSON(canonical, aicontract.V1MaxContextBytes)
+	if err != nil {
+		return nil, ErrProviderPayloadInvalid
+	}
+	var sanitized aicontract.AIDesignInputV1
+	if err = json.Unmarshal(redacted, &sanitized); err != nil {
+		return nil, ErrProviderPayloadInvalid
+	}
+	sanitizedCanonical, err := aicontract.CanonicalAIDesignInputV1(sanitized)
+	if err != nil || !bytes.Equal(sanitizedCanonical, canonical) {
+		return nil, ErrProviderPayloadInvalid
+	}
+	return canonical, nil
+}
+
 // SealProviderResponse retains the structured response shape only after
 // bounded parsing, secret redaction and removal of hidden-reasoning fields.
 func (r Redactor) SealProviderResponse(response aiprovider.StructuredResponse, maximumBytes int) (SealedProviderResponse, error) {

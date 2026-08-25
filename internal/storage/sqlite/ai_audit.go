@@ -26,7 +26,7 @@ func (s *Store) AppendAuditEvent(ctx context.Context, draft aiaudit.EventDraft) 
 	}
 	defer tx.Rollback()
 
-	if existing, found, findErr := findAIAuditEvent(ctx, tx, draft.AttemptID, draft.Ordinal, s.projectID); findErr != nil {
+	if existing, found, findErr := findAIAuditEvent(ctx, tx, draft.AttemptID(), draft.Ordinal(), s.projectID); findErr != nil {
 		return aiaudit.Event{}, false, findErr
 	} else if found {
 		if !auditEventMatchesDraft(existing, draft) {
@@ -34,22 +34,22 @@ func (s *Store) AppendAuditEvent(ctx context.Context, draft aiaudit.EventDraft) 
 		}
 		return existing, true, tx.Commit()
 	}
-	if !aiAttemptExists(ctx, tx, draft.AttemptID, s.projectID) {
+	if !aiAttemptExists(ctx, tx, draft.AttemptID(), s.projectID) {
 		return aiaudit.Event{}, false, aiaudit.ErrAuditEventConflict
 	}
 	var lastOrdinal sql.NullInt64
 	var previous sql.NullString
-	if err = tx.QueryRowContext(ctx, `SELECT max(ordinal) FROM ai_audit_events WHERE attempt_id=?`, draft.AttemptID).Scan(&lastOrdinal); err != nil {
+	if err = tx.QueryRowContext(ctx, `SELECT max(ordinal) FROM ai_audit_events WHERE attempt_id=?`, draft.AttemptID()).Scan(&lastOrdinal); err != nil {
 		return aiaudit.Event{}, false, err
 	}
 	if lastOrdinal.Valid {
-		if draft.Ordinal != int(lastOrdinal.Int64)+1 {
+		if draft.Ordinal() != int(lastOrdinal.Int64)+1 {
 			return aiaudit.Event{}, false, aiaudit.ErrAuditEventConflict
 		}
-		if err = tx.QueryRowContext(ctx, `SELECT event_hash FROM ai_audit_events WHERE attempt_id=? AND ordinal=?`, draft.AttemptID, lastOrdinal.Int64).Scan(&previous); err != nil {
+		if err = tx.QueryRowContext(ctx, `SELECT event_hash FROM ai_audit_events WHERE attempt_id=? AND ordinal=?`, draft.AttemptID(), lastOrdinal.Int64).Scan(&previous); err != nil {
 			return aiaudit.Event{}, false, err
 		}
-	} else if draft.Ordinal != 1 {
+	} else if draft.Ordinal() != 1 {
 		return aiaudit.Event{}, false, aiaudit.ErrAuditEventConflict
 	}
 	event, err := aiaudit.BuildEvent(aicontract.Hash(previous.String), draft)
@@ -60,7 +60,14 @@ func (s *Store) AppendAuditEvent(ctx context.Context, draft aiaudit.EventDraft) 
 	if err != nil {
 		return aiaudit.Event{}, false, err
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO ai_audit_events(attempt_id,ordinal,event_kind,canonical_event,event_hash,created_at) VALUES(?,?,?,?,?,?)`, draft.AttemptID, draft.Ordinal, draft.Kind, canonical, event.ChainHash, formatAIJobTime(s.now().UTC())); err != nil {
+	var jobID domain.ID
+	if err = tx.QueryRowContext(ctx, `SELECT job_id FROM ai_attempts WHERE attempt_id=?`, draft.AttemptID()).Scan(&jobID); err != nil {
+		return aiaudit.Event{}, false, err
+	}
+	if err = ensureAIRunCapacity(ctx, tx, jobID, s.projectID, len(canonical)); err != nil {
+		return aiaudit.Event{}, false, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO ai_audit_events(attempt_id,ordinal,event_kind,canonical_event,event_hash,created_at) VALUES(?,?,?,?,?,?)`, draft.AttemptID(), draft.Ordinal(), draft.Kind(), canonical, event.ChainHash, formatAIJobTime(s.now().UTC())); err != nil {
 		return aiaudit.Event{}, false, err
 	}
 	if err = tx.Commit(); err != nil {
@@ -123,7 +130,7 @@ func findAIAuditEvent(ctx context.Context, tx *sql.Tx, attemptID aicontract.Atte
 }
 
 func auditEventMatchesDraft(event aiaudit.Event, draft aiaudit.EventDraft) bool {
-	return event.Record.Ordinal == draft.Ordinal && event.Record.AttemptID == draft.AttemptID && event.Record.EventType == string(draft.Kind) && bytes.Equal(event.Payload, draft.Payload) && equalAIPersistence(event.Record.Versions, draft.Versions)
+	return event.Record.Ordinal == draft.Ordinal() && event.Record.AttemptID == draft.AttemptID() && event.Record.EventType == string(draft.Kind()) && bytes.Equal(event.Payload, draft.Payload()) && equalAIPersistence(event.Record.Versions, draft.Versions())
 }
 
 func aiAttemptExists(ctx context.Context, tx *sql.Tx, attemptID aicontract.AttemptID, projectID domain.ID) bool {

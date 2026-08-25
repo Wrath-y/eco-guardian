@@ -118,14 +118,21 @@ func TestSQLiteAIPersistenceSealsEvidenceAttemptsEventsAndDraftPatch(t *testing.
 	}
 
 	pinned := sqlitePinnedEvidence(t, input, "alpha")
-	evidenceBatch := aipersistence.EvidenceBatch{JobID: state.Job.ID, Evidence: pinned}
+	evidenceBatch, err := aipersistence.NewEvidenceBatch(state.Job.ID, "", pinned, aiaudit.NewRedactor())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinned = evidenceBatch.Evidence()
 	if replay, err := store.InsertEvidenceBatch(context.Background(), evidenceBatch); err != nil || replay {
 		t.Fatalf("evidence replay=%v err=%v", replay, err)
 	}
 	if replay, err := store.InsertEvidenceBatch(context.Background(), evidenceBatch); err != nil || !replay {
 		t.Fatalf("evidence replay=%v err=%v", replay, err)
 	}
-	changedEvidence := aipersistence.EvidenceBatch{JobID: state.Job.ID, Evidence: sqlitePinnedEvidence(t, input, "changed citation")}
+	changedEvidence, err := aipersistence.NewEvidenceBatch(state.Job.ID, "", sqlitePinnedEvidence(t, input, "changed citation"), aiaudit.NewRedactor())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := store.InsertEvidenceBatch(context.Background(), changedEvidence); !errors.Is(err, aipersistence.ErrConflict) {
 		t.Fatalf("changed evidence err=%v", err)
 	}
@@ -143,7 +150,8 @@ func TestSQLiteAIPersistenceSealsEvidenceAttemptsEventsAndDraftPatch(t *testing.
 		t.Fatalf("attempt replay=%v err=%v", replay, err)
 	}
 	trail := aiaudit.Trail{Repository: store}
-	contextDraft, err := aiaudit.NewAttemptContextEvent(1, attempt.Manifest, aiprovider.ModelParameters{Temperature: "0", TopP: "1"}, input)
+	redactor := aiaudit.NewRedactor()
+	contextDraft, err := aiaudit.NewAttemptContextEvent(redactor, 1, attempt.Manifest, aiprovider.ModelParameters{Temperature: "0", TopP: "1"}, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +246,7 @@ func TestSQLiteAIPersistenceSealsEvidenceAttemptsEventsAndDraftPatch(t *testing.
 		{aiaudit.EventHumanDecision, aicontract.HumanDecision{ID: "pending-review", Kind: aicontract.DecisionDiscarded, Actor: "local-user", RequestHash: inputHash, ResultHash: candidate.Patch.Hash}},
 	}
 	for index, fact := range auditFacts {
-		draft, draftErr := aiaudit.NewEventDraft(index+2, attemptID, fact.kind, fact.payload, nil)
+		draft, draftErr := aiaudit.NewEventDraft(redactor, index+2, attemptID, fact.kind, fact.payload, nil)
 		if draftErr != nil {
 			t.Fatalf("audit kind=%s draft err=%v", fact.kind, draftErr)
 		}
@@ -249,7 +257,7 @@ func TestSQLiteAIPersistenceSealsEvidenceAttemptsEventsAndDraftPatch(t *testing.
 	if events, err := store.ListAuditEvents(context.Background(), attemptID); err != nil || len(events) != len(auditFacts)+1 || events[len(events)-1].Record.EventType != string(aiaudit.EventHumanDecision) {
 		t.Fatalf("audit events=%d err=%v", len(events), err)
 	}
-	conflict, _ := aiaudit.NewEventDraft(1, attemptID, aiaudit.EventAttemptContext, map[string]any{"changed": true}, nil)
+	conflict, _ := aiaudit.NewEventDraft(redactor, 1, attemptID, aiaudit.EventAttemptContext, map[string]any{"changed": true}, nil)
 	if _, _, err := trail.Append(context.Background(), conflict); !errors.Is(err, aiaudit.ErrAuditEventConflict) {
 		t.Fatalf("audit conflict err=%v", err)
 	}

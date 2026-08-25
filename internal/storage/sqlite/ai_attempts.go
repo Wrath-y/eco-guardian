@@ -41,6 +41,9 @@ func (s *Store) InsertAttempt(ctx context.Context, record aiorchestration.Attemp
 	if err = validateAIAttemptLineage(ctx, tx, record, s.projectID); err != nil {
 		return aiorchestration.AttemptRecord{}, false, err
 	}
+	if err = ensureAIRunCapacity(ctx, tx, record.JobID, s.projectID, len(manifest)); err != nil {
+		return aiorchestration.AttemptRecord{}, false, err
+	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO ai_attempts(attempt_id,job_id,ordinal,attempt_kind,repair_round,parent_job_id,parent_attempt_id,canonical_manifest,manifest_hash,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, record.AttemptID, record.JobID, record.Ordinal, record.Kind, record.RepairRound, nullableDomainID(record.ParentJobID), nullableAttemptID(record.ParentID), manifest, record.ManifestHash, formatAIJobTime(s.now().UTC()))
 	if err != nil {
 		return aiorchestration.AttemptRecord{}, false, err
@@ -74,6 +77,9 @@ func (s *Store) InsertTerminalResponse(ctx context.Context, receipt aiorchestrat
 		return aiorchestration.TerminalResponseReceipt{}, false, aiorchestration.ErrAttemptLedgerConflict
 	}
 	response := receipt.Response
+	if err = ensureAIRunCapacity(ctx, tx, receipt.JobID, s.projectID, len(response.StoredBody)); err != nil {
+		return aiorchestration.TerminalResponseReceipt{}, false, err
+	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO ai_attempt_responses(attempt_id,schema_id,schema_version,schema_hash,original_body_hash,stored_body,stored_body_hash,receipt_hash,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, receipt.AttemptID, response.Schema.ID, response.Schema.Version, response.Schema.Hash, response.OriginalBodyHash, response.StoredBody, response.StoredBodyHash, receipt.ReceiptHash, formatAIJobTime(s.now().UTC()))
 	if err != nil {
 		return aiorchestration.TerminalResponseReceipt{}, false, err

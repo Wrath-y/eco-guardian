@@ -33,20 +33,29 @@ func (s *Store) InsertEvidenceBatch(ctx context.Context, batch aipersistence.Evi
 		}
 		return true, tx.Commit()
 	}
-	if !aiRunExists(ctx, tx, batch.JobID, s.projectID) || batch.AttemptID != "" && !aiAttemptBelongsToJob(ctx, tx, batch.AttemptID, batch.JobID, s.projectID) {
+	if !aiRunExists(ctx, tx, batch.JobID(), s.projectID) || batch.AttemptID() != "" && !aiAttemptBelongsToJob(ctx, tx, batch.AttemptID(), batch.JobID(), s.projectID) {
 		return false, aipersistence.ErrConflict
 	}
 	now := formatAIJobTime(s.now().UTC())
-	evidence := batch.Evidence
-	if _, err = tx.ExecContext(ctx, `INSERT INTO ai_evidence_manifests(job_id,attempt_id,manifest_hash,request_hash,response_hash,canonical_manifest,created_at) VALUES(?,?,?,?,?,?,?)`, batch.JobID, nullableAttemptID(batch.AttemptID), evidence.ManifestHash, evidence.Manifest.RequestHash, evidence.Manifest.ResponseHash, evidence.Canonical, now); err != nil {
-		return false, err
-	}
+	evidence := batch.Evidence()
+	canonicalRefs := make([][]byte, len(evidence.Manifest.Evidence))
+	additionalBytes := len(evidence.Canonical)
 	for index, record := range evidence.Manifest.Evidence {
 		canonical, encodeErr := domain.CanonicalJSON(record)
 		if encodeErr != nil || len(canonical) == 0 || len(canonical) > 32768 {
 			return false, aipersistence.ErrInvalid
 		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO ai_evidence_refs(job_id,ordinal,evidence_id,attempt_id,canonical_evidence,evidence_hash,created_at) VALUES(?,?,?,?,?,?,?)`, batch.JobID, index+1, record.ID, nullableAttemptID(batch.AttemptID), canonical, record.RecordHash, now); err != nil {
+		canonicalRefs[index] = canonical
+		additionalBytes += len(canonical)
+	}
+	if err = ensureAIRunCapacity(ctx, tx, batch.JobID(), s.projectID, additionalBytes); err != nil {
+		return false, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO ai_evidence_manifests(job_id,attempt_id,manifest_hash,request_hash,response_hash,canonical_manifest,created_at) VALUES(?,?,?,?,?,?,?)`, batch.JobID(), nullableAttemptID(batch.AttemptID()), evidence.ManifestHash, evidence.Manifest.RequestHash, evidence.Manifest.ResponseHash, evidence.Canonical, now); err != nil {
+		return false, err
+	}
+	for index, record := range evidence.Manifest.Evidence {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO ai_evidence_refs(job_id,ordinal,evidence_id,attempt_id,canonical_evidence,evidence_hash,created_at) VALUES(?,?,?,?,?,?,?)`, batch.JobID(), index+1, record.ID, nullableAttemptID(batch.AttemptID()), canonicalRefs[index], record.RecordHash, now); err != nil {
 			return false, err
 		}
 	}
@@ -83,6 +92,9 @@ func (s *Store) InsertDraftPatch(ctx context.Context, record aipersistence.Draft
 	if err = tx.QueryRowContext(ctx, `SELECT input_hash,base_revision_id FROM ai_design_runs WHERE job_id=? AND project_uuid=?`, record.JobID, s.projectID).Scan(&inputHash, &baseRevision); err != nil || inputHash != string(record.InputHash) || baseRevision != domain.ID(record.Candidate.Patch.Base.ConfigRevisionID) {
 		return false, aipersistence.ErrConflict
 	}
+	if err = ensureAIRunCapacity(ctx, tx, record.JobID, s.projectID, len(record.Candidate.PatchCanonical)+len(record.Candidate.RawAudit.StoredBody)+len(record.Candidate.DiffCanonical)); err != nil {
+		return false, err
+	}
 	now := formatAIJobTime(s.now().UTC())
 	if err = insertAIBlob(ctx, tx, rawBlobHash, "application/vnd.ecoguardian.ai-provider-redacted+json", record.Candidate.RawAudit.StoredBody, now); err != nil {
 		return false, err
@@ -101,18 +113,18 @@ func replayAIEvidenceBatch(ctx context.Context, tx *sql.Tx, batch aipersistence.
 	var attempt sql.NullString
 	var manifestHash, requestHash, responseHash string
 	var canonical []byte
-	err := tx.QueryRowContext(ctx, `SELECT m.attempt_id,m.manifest_hash,m.request_hash,m.response_hash,m.canonical_manifest FROM ai_evidence_manifests m JOIN ai_design_runs r ON r.job_id=m.job_id WHERE m.job_id=? AND r.project_uuid=?`, batch.JobID, projectID).Scan(&attempt, &manifestHash, &requestHash, &responseHash, &canonical)
+	err := tx.QueryRowContext(ctx, `SELECT m.attempt_id,m.manifest_hash,m.request_hash,m.response_hash,m.canonical_manifest FROM ai_evidence_manifests m JOIN ai_design_runs r ON r.job_id=m.job_id WHERE m.job_id=? AND r.project_uuid=?`, batch.JobID(), projectID).Scan(&attempt, &manifestHash, &requestHash, &responseHash, &canonical)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, false, nil
 	}
 	if err != nil {
 		return false, false, err
 	}
-	evidence := batch.Evidence
-	if attempt.String != string(batch.AttemptID) || manifestHash != string(evidence.ManifestHash) || requestHash != string(evidence.Manifest.RequestHash) || responseHash != string(evidence.Manifest.ResponseHash) || !bytes.Equal(canonical, evidence.Canonical) {
+	evidence := batch.Evidence()
+	if attempt.String != string(batch.AttemptID()) || manifestHash != string(evidence.ManifestHash) || requestHash != string(evidence.Manifest.RequestHash) || responseHash != string(evidence.Manifest.ResponseHash) || !bytes.Equal(canonical, evidence.Canonical) {
 		return false, true, nil
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT ordinal,evidence_id,canonical_evidence,evidence_hash FROM ai_evidence_refs WHERE job_id=? ORDER BY ordinal`, batch.JobID)
+	rows, err := tx.QueryContext(ctx, `SELECT ordinal,evidence_id,canonical_evidence,evidence_hash FROM ai_evidence_refs WHERE job_id=? ORDER BY ordinal`, batch.JobID())
 	if err != nil {
 		return false, true, err
 	}

@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	aiaudit "github.com/zouyi/eco-guardian/internal/ai/audit"
 	aicontract "github.com/zouyi/eco-guardian/internal/ai/contract"
 	"github.com/zouyi/eco-guardian/internal/domain"
 	sharedjob "github.com/zouyi/eco-guardian/internal/job"
@@ -133,6 +134,7 @@ type AdmissionResult struct {
 type Admission struct {
 	Snapshots  AdmissionSnapshotSource
 	Registries aicontract.V1RegistrySet
+	Redactor   aiaudit.Redactor
 }
 
 func NewV1Admission(source AdmissionSnapshotSource) (Admission, error) {
@@ -187,7 +189,7 @@ func (a Admission) Admit(ctx context.Context, request AdmissionRequest) (Admitte
 		AllowedTargets: resolveAllowedTargets(request.AllowedTargets, snapshot.Targets), Scenes: append([]string(nil), request.Scenes...),
 		Budget: budget, RequiredVersions: append([]aicontract.VersionIdentity(nil), snapshot.RequiredVersions...),
 	}
-	canonical, err := aicontract.CanonicalAIDesignInputV1(input)
+	canonical, err := a.Redactor.SafeCanonicalInput(input)
 	if err != nil {
 		return AdmittedInput{}, errors.Join(ErrAdmissionInputInvalid, err)
 	}

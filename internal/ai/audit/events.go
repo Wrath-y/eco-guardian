@@ -14,7 +14,10 @@ import (
 	"github.com/zouyi/eco-guardian/internal/domain"
 )
 
-const MaxCanonicalEventBytes = 65_536
+const (
+	MaxCanonicalPayloadBytes = 60_000
+	MaxCanonicalEventBytes   = 65_536
+)
 
 var (
 	ErrAuditEventInvalid  = errors.New("AI audit event is invalid")
@@ -65,14 +68,14 @@ type ProviderEventPayload struct {
 }
 
 type EventDraft struct {
-	Ordinal   int                          `json:"ordinal"`
-	AttemptID aicontract.AttemptID         `json:"attempt_id"`
-	Kind      EventKind                    `json:"kind"`
-	Payload   json.RawMessage              `json:"payload"`
-	Versions  []aicontract.VersionIdentity `json:"versions"`
+	ordinal   int
+	attemptID aicontract.AttemptID
+	kind      EventKind
+	payload   json.RawMessage
+	versions  []aicontract.VersionIdentity
 }
 
-func NewAttemptContextEvent(ordinal int, manifest aiprovider.AttemptManifest, parameters aiprovider.ModelParameters, input aicontract.AIDesignInputV1) (EventDraft, error) {
+func NewAttemptContextEvent(redactor Redactor, ordinal int, manifest aiprovider.AttemptManifest, parameters aiprovider.ModelParameters, input aicontract.AIDesignInputV1) (EventDraft, error) {
 	inputHash, err := aicontract.HashAIDesignInputV1(input)
 	if err != nil || !manifest.Valid() || !parameters.Valid() || inputHash != manifest.InputHash {
 		return EventDraft{}, ErrAuditEventInvalid
@@ -81,13 +84,13 @@ func NewAttemptContextEvent(ordinal int, manifest aiprovider.AttemptManifest, pa
 	if err != nil {
 		return EventDraft{}, err
 	}
-	return NewEventDraft(ordinal, manifest.AttemptID, EventAttemptContext, AttemptContextPayload{Manifest: manifest, Parameters: parameters, Input: input}, versions)
+	return NewEventDraft(redactor, ordinal, manifest.AttemptID, EventAttemptContext, AttemptContextPayload{Manifest: manifest, Parameters: parameters, Input: input}, versions)
 }
 
 // NewProviderEvent records only a previously sanitized transport-neutral
 // Provider event. It retains usage/error metadata and elapsed time without
 // admitting SDK or wire objects into the audit contract.
-func NewProviderEvent(ordinal int, attemptID aicontract.AttemptID, event aiprovider.Event, durationMillis int64, versions []aicontract.VersionIdentity) (EventDraft, error) {
+func NewProviderEvent(redactor Redactor, ordinal int, attemptID aicontract.AttemptID, event aiprovider.Event, durationMillis int64, versions []aicontract.VersionIdentity) (EventDraft, error) {
 	if !event.Valid() || durationMillis < 0 {
 		return EventDraft{}, ErrAuditEventInvalid
 	}
@@ -106,15 +109,23 @@ func NewProviderEvent(ordinal int, attemptID aicontract.AttemptID, event aiprovi
 	default:
 		return EventDraft{}, ErrAuditEventInvalid
 	}
-	return NewEventDraft(ordinal, attemptID, kind, ProviderEventPayload{Event: event, DurationMillis: durationMillis}, versions)
+	return NewEventDraft(redactor, ordinal, attemptID, kind, ProviderEventPayload{Event: event, DurationMillis: durationMillis}, versions)
 }
 
-func NewEventDraft(ordinal int, attemptID aicontract.AttemptID, kind EventKind, payload any, versions []aicontract.VersionIdentity) (EventDraft, error) {
+func NewEventDraft(redactor Redactor, ordinal int, attemptID aicontract.AttemptID, kind EventKind, payload any, versions []aicontract.VersionIdentity) (EventDraft, error) {
 	canonical, err := domain.CanonicalJSON(payload)
-	if err != nil || len(canonical) == 0 || len(canonical) > MaxCanonicalEventBytes {
+	if err != nil || len(canonical) == 0 || len(canonical) > MaxCanonicalPayloadBytes {
 		return EventDraft{}, ErrAuditEventInvalid
 	}
-	draft := EventDraft{Ordinal: ordinal, AttemptID: attemptID, Kind: kind, Payload: canonical, Versions: sortedAuditVersions(versions)}
+	redacted, err := redactor.ProviderJSON(canonical, MaxCanonicalPayloadBytes)
+	if err != nil {
+		return EventDraft{}, ErrAuditEventInvalid
+	}
+	redacted, err = canonicalRawJSON(redacted)
+	if err != nil {
+		return EventDraft{}, ErrAuditEventInvalid
+	}
+	draft := EventDraft{ordinal: ordinal, attemptID: attemptID, kind: kind, payload: redacted, versions: sortedAuditVersions(versions)}
 	if !draft.Valid() {
 		return EventDraft{}, ErrAuditEventInvalid
 	}
@@ -122,16 +133,16 @@ func NewEventDraft(ordinal int, attemptID aicontract.AttemptID, kind EventKind, 
 }
 
 func (draft EventDraft) Valid() bool {
-	if draft.Ordinal < 1 || !draft.AttemptID.Valid() || !draft.Kind.Valid() || len(draft.Payload) == 0 || len(draft.Payload) > MaxCanonicalEventBytes || !json.Valid(draft.Payload) {
+	if draft.ordinal < 1 || !draft.attemptID.Valid() || !draft.kind.Valid() || len(draft.payload) == 0 || len(draft.payload) > MaxCanonicalPayloadBytes || !json.Valid(draft.payload) {
 		return false
 	}
-	canonical, err := canonicalRawJSON(draft.Payload)
-	if err != nil || !bytes.Equal(canonical, draft.Payload) {
+	canonical, err := canonicalRawJSON(draft.payload)
+	if err != nil || !bytes.Equal(canonical, draft.payload) {
 		return false
 	}
 	seen := map[string]struct{}{}
-	for index, version := range draft.Versions {
-		if !version.Valid() || index > 0 && version.ID <= draft.Versions[index-1].ID {
+	for index, version := range draft.versions {
+		if !version.Valid() || index > 0 && version.ID <= draft.versions[index-1].ID {
 			return false
 		}
 		if _, duplicate := seen[version.ID]; duplicate {
@@ -140,6 +151,16 @@ func (draft EventDraft) Valid() bool {
 		seen[version.ID] = struct{}{}
 	}
 	return true
+}
+
+func (draft EventDraft) Ordinal() int                    { return draft.ordinal }
+func (draft EventDraft) AttemptID() aicontract.AttemptID { return draft.attemptID }
+func (draft EventDraft) Kind() EventKind                 { return draft.kind }
+func (draft EventDraft) Payload() json.RawMessage {
+	return append(json.RawMessage(nil), draft.payload...)
+}
+func (draft EventDraft) Versions() []aicontract.VersionIdentity {
+	return append([]aicontract.VersionIdentity(nil), draft.versions...)
 }
 
 type Event struct {
@@ -153,16 +174,16 @@ func BuildEvent(previous aicontract.Hash, draft EventDraft) (Event, error) {
 	if !draft.Valid() {
 		return Event{}, ErrAuditEventInvalid
 	}
-	payloadHash := sha256.Sum256(draft.Payload)
+	payloadHash := sha256.Sum256(draft.payload)
 	record := aicontract.AuditRecord{
-		Ordinal: draft.Ordinal, AttemptID: draft.AttemptID, EventType: string(draft.Kind),
-		PayloadHash: aicontract.Hash(hex.EncodeToString(payloadHash[:])), Versions: append([]aicontract.VersionIdentity(nil), draft.Versions...),
+		Ordinal: draft.ordinal, AttemptID: draft.attemptID, EventType: string(draft.kind),
+		PayloadHash: aicontract.Hash(hex.EncodeToString(payloadHash[:])), Versions: append([]aicontract.VersionIdentity(nil), draft.versions...),
 	}
 	entry, err := aicontract.AppendAuditChain(previous, record)
 	if err != nil {
 		return Event{}, ErrAuditEventInvalid
 	}
-	event := Event{PreviousHash: entry.PreviousHash, Record: entry.Record, Payload: append(json.RawMessage(nil), draft.Payload...), ChainHash: entry.ChainHash}
+	event := Event{PreviousHash: entry.PreviousHash, Record: entry.Record, Payload: append(json.RawMessage(nil), draft.payload...), ChainHash: entry.ChainHash}
 	if !event.Valid() {
 		return Event{}, ErrAuditEventInvalid
 	}
@@ -211,7 +232,7 @@ func (trail Trail) Append(ctx context.Context, draft EventDraft) (Event, bool, e
 	if err != nil {
 		return Event{}, false, err
 	}
-	if !event.Valid() || event.Record.Ordinal != draft.Ordinal || event.Record.AttemptID != draft.AttemptID || event.Record.EventType != string(draft.Kind) || !bytes.Equal(event.Payload, draft.Payload) {
+	if !event.Valid() || event.Record.Ordinal != draft.ordinal || event.Record.AttemptID != draft.attemptID || event.Record.EventType != string(draft.kind) || !bytes.Equal(event.Payload, draft.payload) {
 		return Event{}, false, ErrAuditEventConflict
 	}
 	return event, replay, nil

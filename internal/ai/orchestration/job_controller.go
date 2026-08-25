@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	aiaudit "github.com/zouyi/eco-guardian/internal/ai/audit"
 	aicontract "github.com/zouyi/eco-guardian/internal/ai/contract"
 	"github.com/zouyi/eco-guardian/internal/domain"
 	sharedjob "github.com/zouyi/eco-guardian/internal/job"
@@ -143,7 +144,10 @@ type AIJobRepository interface {
 	TransitionAIJob(context.Context, AIJobTransition) (AIJobState, bool, error)
 }
 
-type AIJobController struct{ Jobs AIJobRepository }
+type AIJobController struct {
+	Jobs     AIJobRepository
+	Redactor aiaudit.Redactor
+}
 
 func (controller AIJobController) Admit(ctx context.Context, input aicontract.AIDesignInputV1, idempotencyKey string) (AIJobState, bool, error) {
 	if ctx == nil || controller.Jobs == nil || !input.Valid() {
@@ -160,7 +164,7 @@ func (controller AIJobController) Admit(ctx context.Context, input aicontract.AI
 	if !request.Valid() {
 		return AIJobState{}, false, ErrAIJobInvalid
 	}
-	canonical, err := aicontract.CanonicalAIDesignInputV1(input)
+	canonical, err := controller.Redactor.SafeCanonicalInput(input)
 	if err != nil {
 		return AIJobState{}, false, ErrAIJobInvalid
 	}

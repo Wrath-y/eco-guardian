@@ -128,6 +128,107 @@ type PinnedEvidence struct {
 	ProviderView []ProviderCitation
 }
 
+type EvidenceRedactor interface {
+	RedactString(string) string
+	ProviderJSON([]byte, int) ([]byte, error)
+}
+
+// RedactPinnedEvidence removes configured secrets and hidden-reasoning fields
+// before the evidence identity is sealed. All content-derived record and
+// manifest hashes are recomputed over the retained representation.
+func RedactPinnedEvidence(pinned PinnedEvidence, redactor EvidenceRedactor) (PinnedEvidence, error) {
+	if !pinned.Valid() || redactor == nil {
+		return PinnedEvidence{}, ErrEvidenceInvalid
+	}
+	body, err := json.Marshal(pinned.Manifest)
+	if err != nil {
+		return PinnedEvidence{}, ErrEvidenceInvalid
+	}
+	var manifest EvidenceManifestV1
+	if err = json.Unmarshal(body, &manifest); err != nil {
+		return PinnedEvidence{}, ErrEvidenceInvalid
+	}
+	redactWarnings := func(values []PinnedWarning) {
+		for index := range values {
+			values[index].Stage = redactor.RedactString(values[index].Stage)
+			values[index].Code = redactor.RedactString(values[index].Code)
+			values[index].Message = redactor.RedactString(values[index].Message)
+		}
+	}
+	redactGenerations := func(values []PinnedGeneration) {
+		for index := range values {
+			values[index].Provider = redactor.RedactString(values[index].Provider)
+			values[index].Model = redactor.RedactString(values[index].Model)
+			values[index].Tokenizer = redactor.RedactString(values[index].Tokenizer)
+		}
+	}
+	redactJSON := func(raw json.RawMessage) (json.RawMessage, error) {
+		if len(raw) == 0 {
+			return raw, nil
+		}
+		value, redactErr := redactor.ProviderJSON(raw, 32_768)
+		return json.RawMessage(value), redactErr
+	}
+	redactNode := func(node *PinnedNode) error {
+		node.Label = redactor.RedactString(node.Label)
+		node.Text = redactor.RedactString(node.Text)
+		var nodeErr error
+		if node.Properties, nodeErr = redactJSON(node.Properties); nodeErr != nil {
+			return nodeErr
+		}
+		node.Provenance, nodeErr = redactJSON(node.Provenance)
+		return nodeErr
+	}
+	redactEdge := func(edge *PinnedEdge) error {
+		var edgeErr error
+		if edge.Properties, edgeErr = redactJSON(edge.Properties); edgeErr != nil {
+			return edgeErr
+		}
+		edge.Provenance, edgeErr = redactJSON(edge.Provenance)
+		return edgeErr
+	}
+	redactWarnings(manifest.Warnings)
+	redactGenerations(manifest.Generations)
+	providerView := make([]ProviderCitation, len(manifest.Evidence))
+	for index := range manifest.Evidence {
+		record := &manifest.Evidence[index]
+		record.Citation = redactor.RedactString(record.Citation)
+		redactWarnings(record.Warnings)
+		redactGenerations(record.Generations)
+		if err = redactNode(&record.Node); err != nil {
+			return PinnedEvidence{}, ErrEvidenceInvalid
+		}
+		for nodeIndex := range record.Path.Nodes {
+			if err = redactNode(&record.Path.Nodes[nodeIndex]); err != nil {
+				return PinnedEvidence{}, ErrEvidenceInvalid
+			}
+		}
+		for _, edges := range [][]PinnedEdge{record.Path.Edges, record.Path.ExplicitEdges, record.Path.InferredEdges} {
+			for edgeIndex := range edges {
+				if err = redactEdge(&edges[edgeIndex]); err != nil {
+					return PinnedEvidence{}, ErrEvidenceInvalid
+				}
+			}
+		}
+		recordBody, marshalErr := json.Marshal(recordPayload(*record))
+		if marshalErr != nil {
+			return PinnedEvidence{}, ErrEvidenceInvalid
+		}
+		recordHash := domainHash("eco-guardian.ai-retrieval-evidence-ref/v1", recordBody)
+		record.ID, record.RecordHash = aicontract.EvidenceID(recordHash), aicontract.Hash(recordHash)
+		providerView[index] = ProviderCitation{EvidenceID: record.ID, Citation: record.Citation}
+	}
+	canonical, err := json.Marshal(manifest)
+	if err != nil || len(canonical) > 262_144 {
+		return PinnedEvidence{}, ErrEvidenceInvalid
+	}
+	result := PinnedEvidence{Manifest: manifest, Canonical: canonical, ManifestHash: aicontract.Hash(domainHash("eco-guardian.ai-retrieval-evidence-manifest/v1", canonical)), ProviderView: providerView}
+	if !result.Valid() {
+		return PinnedEvidence{}, ErrEvidenceInvalid
+	}
+	return result, nil
+}
+
 func (pinned PinnedEvidence) Valid() bool {
 	if pinned.Manifest.Version != EvidenceManifestVersionV1 || !pinned.Manifest.Base.Valid() || !pinned.Manifest.RequestHash.Valid() || !pinned.Manifest.ResponseHash.Valid() || !pinned.ManifestHash.Valid() || len(pinned.Canonical) == 0 || len(pinned.Canonical) > 262_144 || len(pinned.Manifest.Evidence) > 100 || len(pinned.ProviderView) != len(pinned.Manifest.Evidence) {
 		return false

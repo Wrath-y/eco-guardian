@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	aiaudit "github.com/zouyi/eco-guardian/internal/ai/audit"
 	aicontract "github.com/zouyi/eco-guardian/internal/ai/contract"
 	"github.com/zouyi/eco-guardian/internal/domain"
 	sharedjob "github.com/zouyi/eco-guardian/internal/job"
@@ -128,6 +129,20 @@ func TestAIJobStateRequiresCanonicalTerminalPatchLink(t *testing.T) {
 	state.Job.Result = &sharedjob.Result{Type: DraftPatchResultType, ID: "018f9e40-0000-7000-8000-000000000299", URL: "/wrong"}
 	if state.Valid() {
 		t.Fatal("noncanonical terminal result link was accepted")
+	}
+}
+
+func TestAIJobControllerRejectsCredentialCanaryBeforeCanonicalInputPersistence(t *testing.T) {
+	const secret = "input-credential-canary"
+	repository := &aiJobRepositoryFake{}
+	controller := AIJobController{Jobs: repository, Redactor: aiaudit.NewRedactor([]byte(secret))}
+	input := aiJobInput(t)
+	input.Goals[0].Description = "Balance using " + secret
+	if _, _, err := controller.Admit(context.Background(), input, "unsafe-input"); !errors.Is(err, ErrAIJobInvalid) {
+		t.Fatalf("unsafe admission err=%v", err)
+	}
+	if repository.state.Job.ID.Valid() {
+		t.Fatal("unsafe canonical input reached the repository")
 	}
 }
 
