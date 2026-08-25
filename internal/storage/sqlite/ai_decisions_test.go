@@ -258,6 +258,36 @@ func TestSQLiteAcceptDraftPatchCreatesOneRevisionAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestSQLiteAcceptedRevisionSurvivesPostCommitHandoffFailureAndRetry(t *testing.T) {
+	fixture := newAIDecisionFixture(t, "handoff")
+	ctx := context.Background()
+	attempts := 0
+	var completed domain.ID
+	fixture.store.RegisterRevisionObserver(func(_ context.Context, revision domain.RevisionSummary) {
+		attempts++
+		if attempts > 1 {
+			completed = revision.ID
+		}
+	})
+	var before int
+	_ = fixture.store.db.QueryRow(`SELECT count(*) FROM config_revisions`).Scan(&before)
+	decision, replay, err := (aiapplication.DecisionService{Repository: fixture.store}).Accept(ctx, fixture.acceptCommand("handoff-accept"))
+	if err != nil || replay || attempts != 1 || completed != "" {
+		t.Fatalf("decision=%#v replay=%v attempts=%d completed=%s err=%v", decision, replay, attempts, completed, err)
+	}
+	// Downstream handoffs own their retry. Replaying that post-commit seam uses
+	// the immutable accepted revision and must not replay the accept command.
+	fixture.store.notifyRevisionCommitted(ctx, domain.RevisionSummary{ID: decision.AcceptedRevisionID})
+	var after int
+	_ = fixture.store.db.QueryRow(`SELECT count(*) FROM config_revisions`).Scan(&after)
+	if attempts != 2 || completed != decision.AcceptedRevisionID || after != before+1 {
+		t.Fatalf("attempts=%d completed=%s revisions=%d->%d", attempts, completed, before, after)
+	}
+	if _, replay, err = (aiapplication.DecisionService{Repository: fixture.store}).Accept(ctx, fixture.acceptCommand("handoff-accept")); err != nil || !replay || attempts != 2 {
+		t.Fatalf("accept replay=%v attempts=%d err=%v", replay, attempts, err)
+	}
+}
+
 func TestSQLiteDiscardDraftPatchIsTerminalWithoutRevision(t *testing.T) {
 	fixture := newAIDecisionFixture(t, "discard")
 	ctx := context.Background()
