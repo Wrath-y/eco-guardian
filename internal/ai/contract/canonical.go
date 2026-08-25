@@ -24,6 +24,7 @@ const (
 	domainRetrievalEvidence = "eco-guardian.ai-retrieval-evidence/v1"
 	domainToolInput         = "eco-guardian.ai-tool-input/v1"
 	domainToolResult        = "eco-guardian.ai-tool-result/v1"
+	domainToolPayload       = "eco-guardian.ai-tool-payload/v1"
 	domainDraftPatch        = "eco-guardian.ai-draft-patch/v1"
 	domainDraftDiff         = "eco-guardian.ai-draft-diff/v1"
 	domainPreview           = "eco-guardian.ai-preview/v1"
@@ -324,6 +325,27 @@ func CanonicalToolResult(value ToolResultEnvelope) ([]byte, error) {
 func HashToolResult(value ToolResultEnvelope) (Hash, error) {
 	encoded, err := CanonicalToolResult(value)
 	return hashEncoded(domainToolResult, encoded, err)
+}
+
+// CanonicalToolPayload provides the transport-neutral canonical JSON used by
+// tool call/result envelopes. It rejects non-canonical decimal spellings and
+// preserves array order while sorting object members.
+func CanonicalToolPayload(value json.RawMessage) ([]byte, error) {
+	if !validJSONValue(value) {
+		return nil, errInvalidCanonicalValue
+	}
+	var decoded any
+	decoder := json.NewDecoder(bytes.NewReader(value))
+	decoder.UseNumber()
+	if err := decoder.Decode(&decoded); err != nil {
+		return nil, err
+	}
+	return canonicalJSON(decoded)
+}
+
+func HashToolPayload(value json.RawMessage) (Hash, error) {
+	encoded, err := CanonicalToolPayload(value)
+	return hashEncoded(domainToolPayload, encoded, err)
 }
 
 func CanonicalDraftPatch(value DraftPatchV1) ([]byte, error) {
