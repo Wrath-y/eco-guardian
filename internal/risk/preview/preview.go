@@ -86,6 +86,8 @@ type Request struct {
 type MetricResult struct {
 	ID                string                      `json:"id"`
 	Role              riskcontract.PolicyRole     `json:"role"`
+	SceneID           string                      `json:"scene_id"`
+	SceneVersion      string                      `json:"scene_version"`
 	Subject           riskcontract.Subject        `json:"subject"`
 	Candidate         riskcontract.MetricEvidence `json:"candidate"`
 	Baseline          riskcontract.MetricEvidence `json:"baseline"`
@@ -155,7 +157,7 @@ func (service Service) Evaluate(ctx context.Context, request Request) (ResultV1,
 		}
 		rule := riskcontract.Identity{ID: manifest.ID, Version: manifest.Version, Hash: manifest.SourceHash}
 		assessment := riskcomparison.Assess(riskcomparison.AssessmentRequest{Role: item.Role, Candidate: item.Candidate, Baseline: item.Baseline, Threshold: resolution.Entry, StaleReason: item.StaleReason, ContractValid: item.valid()})
-		result := MetricResult{ID: item.ID, Role: item.Role, Subject: cloneSubject(item.Subject), Candidate: cloneMetric(item.Candidate), Baseline: cloneMetric(item.Baseline), CandidateEvidence: item.CandidateEvidence, BaselineEvidence: item.BaselineEvidence, Threshold: resolution, Rule: rule, Assessment: assessment}
+		result := MetricResult{ID: item.ID, Role: item.Role, SceneID: item.SceneID, SceneVersion: item.SceneVersion, Subject: cloneSubject(item.Subject), Candidate: cloneMetric(item.Candidate), Baseline: cloneMetric(item.Baseline), CandidateEvidence: item.CandidateEvidence, BaselineEvidence: item.BaselineEvidence, Threshold: resolution, Rule: rule, Assessment: assessment}
 		result.EvidenceHash, _, err = riskcontract.CanonicalHash("eco-guardian/risk-preview-comparison/v1", result)
 		if err != nil {
 			return ResultV1{}, err
