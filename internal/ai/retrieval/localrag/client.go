@@ -108,6 +108,9 @@ func (c *Client) Retrieve(ctx context.Context, request retrieval.Request) (retri
 		return retrieval.Response{}, ErrResponse
 	}
 	response.Request = cloneRequest(request)
+	if err = retrieval.ValidateResponse(request, response); err != nil {
+		return retrieval.Response{}, err
+	}
 	return response, nil
 }
 

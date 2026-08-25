@@ -76,10 +76,46 @@ func TestClientPreservesStableIndexNotReadyWithoutRebuild(t *testing.T) {
 	}
 }
 
+func TestClientRejectsMixedIdentityFiltersAndGenerationsBeforeExposure(t *testing.T) {
+	original, err := os.ReadFile("../../../../tests/contract/fixtures/local-rag-hybrid-graph-retrieval-v1/hybrid-response.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name   string
+		mutate func(map[string]any)
+		want   error
+	}{
+		{"snapshot", func(value map[string]any) { value["resolved_snapshot_version"] = "active" }, retrieval.ErrSnapshotIdentityMismatch},
+		{"content hash", func(value map[string]any) { value["content_hash"] = strings.Repeat("b", 64) }, retrieval.ErrSnapshotIdentityMismatch},
+		{"node filter", func(value map[string]any) {
+			value["results"].([]any)[0].(map[string]any)["node"].(map[string]any)["type"] = "other"
+		}, retrieval.ErrResponseFilterMismatch},
+		{"generation", func(value map[string]any) { delete(value, "vector_generation") }, retrieval.ErrResponseInvalid},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var value map[string]any
+			if err := json.Unmarshal(original, &value); err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(value)
+			body, _ := json.Marshal(value)
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) { _, _ = writer.Write(body) }))
+			defer server.Close()
+			client, _ := New(server.URL, server.Client())
+			response, err := client.Retrieve(context.Background(), localRAGRequest())
+			if !errors.Is(err, test.want) || len(response.Results) != 0 {
+				t.Fatalf("response=%#v err=%v want=%v", response, err, test.want)
+			}
+		})
+	}
+}
+
 func localRAGRequest() retrieval.Request {
 	hash := aicontract.Hash(strings.Repeat("a", 64))
 	projectID := aicontract.ProjectID("018f9e40-0000-7000-8000-000000000201")
-	revisionID := aicontract.RevisionID("018f9e40-0000-7000-8000-000000000202")
+	revisionID := aicontract.RevisionID("candidate")
 	fixture := aicontract.V1Fixture()
 	budget := aicontract.Budget{Policy: fixture.Budget.Identity, BudgetLimits: fixture.Budget.Limits}
 	return retrieval.Request{
