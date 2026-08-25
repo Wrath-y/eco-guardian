@@ -142,6 +142,17 @@ func TestSQLiteAIPersistenceSealsEvidenceAttemptsEventsAndDraftPatch(t *testing.
 	if _, replay, err := ledger.Create(context.Background(), attempt); err != nil || !replay {
 		t.Fatalf("attempt replay=%v err=%v", replay, err)
 	}
+	trail := aiaudit.Trail{Repository: store}
+	contextDraft, err := aiaudit.NewAttemptContextEvent(1, attempt.Manifest, aiprovider.ModelParameters{Temperature: "0", TopP: "1"}, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, replay, err := trail.Append(context.Background(), contextDraft); err != nil || replay {
+		t.Fatalf("audit context replay=%v err=%v", replay, err)
+	}
+	if _, replay, err := trail.Append(context.Background(), contextDraft); err != nil || !replay {
+		t.Fatalf("audit context replay=%v err=%v", replay, err)
+	}
 
 	state, _, _ = controller.Claim(context.Background(), state, "worker-1")
 	state, _, _ = controller.Advance(context.Background(), state, aiorchestration.PhaseEvidencePinned)
@@ -206,7 +217,44 @@ func TestSQLiteAIPersistenceSealsEvidenceAttemptsEventsAndDraftPatch(t *testing.
 		t.Fatalf("terminal replay=%v err=%v", replay, err)
 	}
 
-	for table, want := range map[string]int{"ai_evidence_manifests": 1, "ai_evidence_refs": 1, "ai_attempts": 1, "ai_attempt_responses": 1, "ai_attempt_outcomes": 1, "ai_draft_patches": 1, "ai_attempt_patch_seals": 1, "ai_blobs": 2, "ai_job_event_details": 3} {
+	auditFacts := []struct {
+		kind    aiaudit.EventKind
+		payload any
+	}{
+		{aiaudit.EventEvidencePinned, pinned.Manifest},
+		{aiaudit.EventProviderUsage, aiprovider.Usage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15}},
+		{aiaudit.EventProviderWarning, aiprovider.Warning{Code: "AI_DEGRADED", Message: "retrieval degraded"}},
+		{aiaudit.EventProviderError, aiprovider.TerminalError{Code: "AI_TIMEOUT", Class: aiprovider.ErrorTimeout, Retryable: true, Message: "bounded timeout"}},
+		{aiaudit.EventStructuredResponse, response.Response},
+		{aiaudit.EventToolCall, map[string]any{"tool": tool, "call_id": "call-1"}},
+		{aiaudit.EventToolResult, map[string]any{"tool": tool, "result_hash": strings.Repeat("e", 64), "duration_millis": 4}},
+		{aiaudit.EventPatch, candidate.Patch},
+		{aiaudit.EventDiff, candidate.Diff},
+		{aiaudit.EventPreview, map[string]any{"validation_hash": patchRecord.ValidationHash, "preview_hash": patchRecord.PreviewHash, "acceptable": true}},
+		{aiaudit.EventExplanation, map[string]any{"rationale": candidate.Patch.Rationale, "assumptions": candidate.Patch.Assumptions}},
+		{aiaudit.EventAttemptOutcome, outcome},
+		{aiaudit.EventCancellation, map[string]any{"cancel_generation": 0, "observed": false}},
+		{aiaudit.EventRetry, map[string]any{"kind": attempt.Kind, "repair_round": attempt.RepairRound, "parent_attempt_id": attempt.ParentID}},
+		{aiaudit.EventHumanDecision, aicontract.HumanDecision{ID: "pending-review", Kind: aicontract.DecisionDiscarded, Actor: "local-user", RequestHash: inputHash, ResultHash: candidate.Patch.Hash}},
+	}
+	for index, fact := range auditFacts {
+		draft, draftErr := aiaudit.NewEventDraft(index+2, attemptID, fact.kind, fact.payload, nil)
+		if draftErr != nil {
+			t.Fatalf("audit kind=%s draft err=%v", fact.kind, draftErr)
+		}
+		if _, replay, appendErr := trail.Append(context.Background(), draft); appendErr != nil || replay {
+			t.Fatalf("audit kind=%s replay=%v err=%v", fact.kind, replay, appendErr)
+		}
+	}
+	if events, err := store.ListAuditEvents(context.Background(), attemptID); err != nil || len(events) != len(auditFacts)+1 || events[len(events)-1].Record.EventType != string(aiaudit.EventHumanDecision) {
+		t.Fatalf("audit events=%d err=%v", len(events), err)
+	}
+	conflict, _ := aiaudit.NewEventDraft(1, attemptID, aiaudit.EventAttemptContext, map[string]any{"changed": true}, nil)
+	if _, _, err := trail.Append(context.Background(), conflict); !errors.Is(err, aiaudit.ErrAuditEventConflict) {
+		t.Fatalf("audit conflict err=%v", err)
+	}
+
+	for table, want := range map[string]int{"ai_evidence_manifests": 1, "ai_evidence_refs": 1, "ai_attempts": 1, "ai_attempt_responses": 1, "ai_attempt_outcomes": 1, "ai_draft_patches": 1, "ai_attempt_patch_seals": 1, "ai_blobs": 2, "ai_job_event_details": 3, "ai_audit_events": 16} {
 		var count int
 		if err := store.db.QueryRow(`SELECT count(*) FROM ` + table).Scan(&count); err != nil || count != want {
 			t.Fatalf("%s count=%d want=%d err=%v", table, count, want, err)
@@ -222,6 +270,7 @@ func TestSQLiteAIPersistenceSealsEvidenceAttemptsEventsAndDraftPatch(t *testing.
 		"blob delete":              `DELETE FROM ai_blobs`,
 		"draft patch update":       `UPDATE ai_draft_patches SET patch_hash=lower(patch_hash)`,
 		"patch seal delete":        `DELETE FROM ai_attempt_patch_seals`,
+		"audit event update":       `UPDATE ai_audit_events SET event_hash=lower(event_hash)`,
 		"event detail update":      `UPDATE ai_job_event_details SET event_hash=lower(event_hash)`,
 		"shared event delete":      `DELETE FROM job_events WHERE job_id='` + string(state.Job.ID) + `'`,
 	} {
