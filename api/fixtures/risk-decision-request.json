@@ -1,0 +1,12 @@
+{
+  "command": "record_numeric_decision",
+  "source_report_id": "01948c1e-0000-7000-8000-000000000010",
+  "source_calculation_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "eligible_items": [
+    {
+      "item_id": "metric-resource:resource-balance:character-alpha",
+      "item_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "reason": "Accepted for this release after reviewing the exact numeric evidence."
+}

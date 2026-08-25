@@ -8,17 +8,22 @@ import ReleaseConfirmationForm from '@/components/ReleaseConfirmationForm.vue'
 import ReleaseJobProgress from '@/components/ReleaseJobProgress.vue'
 import GraphStatusPanel from '@/components/GraphStatusPanel.vue'
 import GraphRuntimeBanner from '@/components/GraphRuntimeBanner.vue'
+import { useRiskReview } from '@/features/risk-reviews/api'
 
 const route = useRoute(); const router = useRouter(); const project = useProjectStore()
 const projectID = computed(() => project.current?.id ?? '')
 const targetID = computed(() => String(route.params.id ?? ''))
+const riskReportID = computed(() => typeof route.query.risk_review === 'string' ? route.query.risk_review : '')
 const baseID = computed(() => typeof route.query.base === 'string' ? route.query.base : '')
 const baseDraft = ref(baseID.value); watch(baseID, value => { baseDraft.value = value })
 const detail = useRevisionDetail(() => projectID.value, () => targetID.value)
 const diff = useRevisionDiff(() => projectID.value, () => baseID.value, () => targetID.value)
 const policies = usePolicyHistory(() => projectID.value); const capabilities = useRuntimeCapabilities(() => projectID.value)
 const releases = useReleaseHistory(() => projectID.value)
+const riskReview = useRiskReview(() => projectID.value, () => riskReportID.value)
 const policy = computed(() => policies.data.value?.items?.[0])
+const riskWarningRequired = computed(() => riskReview.data.value?.read_time.gate_state === 'WARNING')
+const riskDecisionReady = computed(() => riskReview.data.value?.report_kind === 'decision' && Boolean(riskReview.data.value.decision_reason) && riskReview.data.value.decision_item_ids.length > 0)
 const suggestedBaseline = computed(() => releases.data.value?.items?.[0]?.id ?? '')
 const gateChecklist = ref<{ focus: () => void } | null>(null)
 const errorSummary = ref<HTMLElement | null>(null)
@@ -53,12 +58,18 @@ watch(() => [detail.isError.value, diff.isError.value, policies.isError.value, c
           <details><summary :aria-label="`展开 ${change.kind} ${change.path} 的前后值`">查看前后值</summary><p>旧值</p><pre>{{ formatValue(change.old_value) }}</pre><p>新值</p><pre>{{ formatValue(change.new_value) }}</pre></details>
         </li>
       </ul>
+      <section v-if="riskReportID" aria-labelledby="risk-summary-heading">
+        <h2 id="risk-summary-heading">服务器风险摘要</h2>
+        <p v-if="riskReview.isPending.value" role="status">正在读取同一 immutable risk report…</p>
+        <p v-else-if="riskReview.isError.value" role="alert">风险报告不可读取：{{ riskReview.error.value?.message }}</p>
+        <template v-else-if="riskReview.data.value"><p>Gate：<strong>{{ riskReview.data.value.read_time.gate_state }}</strong> · freshness：{{ riskReview.data.value.read_time.freshness }} · BLOCK {{ riskReview.data.value.items.filter(item => item.severity === 'BLOCK').length }} / WARNING {{ riskReview.data.value.items.filter(item => item.severity === 'WARNING').length }}</p><p>该摘要直接来自报告投影，版本页不重算风险或发布结论。</p><RouterLink :to="{ path: '/risk-reviews', query: { report: riskReview.data.value.id } }">打开完整风险报告 {{ riskReview.data.value.id }}</RouterLink></template>
+      </section>
       <section aria-labelledby="release-heading">
         <h2 id="release-heading">发布检查</h2>
         <p v-if="policies.isPending.value || capabilities.isPending.value" role="status">正在加载发布策略与 Gate 能力…</p>
         <p v-else-if="policies.isError.value || capabilities.isError.value" ref="errorSummary" tabindex="-1" role="alert">无法加载发布 Gate；请刷新后重试。</p>
         <p v-else-if="!policy">没有可用发布策略，无法发布当前候选。</p>
-        <template v-else><ReleaseGateChecklist ref="gateChecklist" :policy="policy" :capability="capabilities.data.value?.release" /><ReleaseConfirmationForm :candidate="detail.data.value" :policy="policy" :enabled="Boolean(capabilities.data.value?.release.enabled)" :suggested-baseline="suggestedBaseline" @queued="queuedLocation = $event" @baseline-conflict="releases.refetch()" @focus-checklist="gateChecklist?.focus()" /><ReleaseJobProgress v-if="queuedJobID" :project-i-d="projectID" :job-i-d="queuedJobID" @release-committed="activeReleaseID = $event.id" /><p v-if="activeReleaseID">当前正式版本：{{ activeReleaseID }}（已确认指针提交）</p><p v-if="!capabilities.data.value?.release.enabled">发布按钮由服务端 Gate 状态禁用；客户端不会自行判定 PASS。</p></template>
+        <template v-else><ReleaseGateChecklist ref="gateChecklist" :policy="policy" :capability="capabilities.data.value?.release" /><ReleaseConfirmationForm :candidate="detail.data.value" :policy="policy" :enabled="Boolean(capabilities.data.value?.release.enabled)" :suggested-baseline="suggestedBaseline" :warning-required="riskWarningRequired" :allow-numeric-override="riskDecisionReady" :initial-numeric-reason="riskReview.data.value?.decision_reason ?? ''" @queued="queuedLocation = $event" @baseline-conflict="releases.refetch()" @focus-checklist="gateChecklist?.focus()" /><ReleaseJobProgress v-if="queuedJobID" :project-i-d="projectID" :job-i-d="queuedJobID" @release-committed="activeReleaseID = $event.id" /><p v-if="activeReleaseID">当前正式版本：{{ activeReleaseID }}（已确认指针提交）</p><p v-if="!capabilities.data.value?.release.enabled">发布按钮由服务端 Gate 状态禁用；客户端不会自行判定 PASS。</p></template>
       </section>
     </template>
   </section>

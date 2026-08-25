@@ -2,8 +2,10 @@ package httpapi
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/zouyi/eco-guardian/internal/domain"
 	"github.com/zouyi/eco-guardian/internal/formula"
 )
@@ -21,13 +23,25 @@ type Problem struct {
 }
 
 func problemDetails(c *gin.Context, status int, code, title string, details any, fieldPath string) {
-	c.Header("Content-Type", "application/problem+json")
-	c.JSON(status, Problem{Type: "urn:eco:problem:" + code, Title: title, Status: status, Code: code, Retryable: false, RequestID: c.GetHeader("X-Request-ID"), FieldPath: fieldPath, Details: details})
+	writeProblem(c, Problem{Type: "urn:eco:problem:" + code, Title: title, Status: status, Code: code, Retryable: false, RequestID: requestID(c), FieldPath: fieldPath, Details: details})
 }
 
 func problem(c *gin.Context, status int, code, title string) {
+	writeProblem(c, Problem{Type: "urn:eco:problem:" + code, Title: title, Status: status, Code: code, Retryable: false, RequestID: requestID(c)})
+}
+
+func writeProblem(c *gin.Context, value Problem) {
 	c.Header("Content-Type", "application/problem+json")
-	c.JSON(status, Problem{Type: "urn:eco:problem:" + code, Title: title, Status: status, Code: code, Retryable: false, RequestID: c.GetHeader("X-Request-ID")})
+	c.Header("X-Request-ID", value.RequestID)
+	c.JSON(value.Status, value)
+}
+
+func requestID(c *gin.Context) string {
+	value := strings.TrimSpace(c.GetHeader("X-Request-ID"))
+	if value == "" || len(value) > 128 || strings.ContainsAny(value, "\r\n") {
+		value = uuid.NewString()
+	}
+	return value
 }
 
 type SchemaHandler struct{ registry *domain.Registry }

@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import type { components } from '@/api/generated'
 import { submitRelease, VersioningApiError } from '@/api/versions'
 
 type Detail = components['schemas']['RevisionDetail']; type Policy = components['schemas']['ReleasePolicy']
-const props = withDefaults(defineProps<{ candidate: Detail; policy: Policy; enabled: boolean; warningRequired?: boolean; allowNumericOverride?: boolean; suggestedBaseline?: string }>(), { warningRequired: false, allowNumericOverride: false, suggestedBaseline: '' })
+const props = withDefaults(defineProps<{ candidate: Detail; policy: Policy; enabled: boolean; warningRequired?: boolean; allowNumericOverride?: boolean; initialNumericReason?: string; suggestedBaseline?: string }>(), { warningRequired: false, allowNumericOverride: false, initialNumericReason: '', suggestedBaseline: '' })
 const emit = defineEmits<{ queued: [location: string]; 'baseline-conflict': []; 'focus-checklist': [] }>()
-const baseline = ref(''); const notes = ref(''); const establish = ref(false); const acknowledgeWarning = ref(false); const overrideReason = ref(''); const overrideConfirmed = ref(false); const loading = ref(false); const error = ref(''); const baselineConflict = ref(false); const copied = ref(''); const errorSummary = ref<HTMLElement | null>(null)
+const baseline = ref(''); const notes = ref(''); const establish = ref(false); const acknowledgeWarning = ref(false); const overrideReason = ref(props.initialNumericReason); const overrideConfirmed = ref(false); const loading = ref(false); const error = ref(''); const baselineConflict = ref(false); const copied = ref(''); const errorSummary = ref<HTMLElement | null>(null)
 const firstBaseline = computed(() => !baseline.value.trim())
-const canSubmit = computed(() => props.enabled && (!firstBaseline.value || establish.value) && (!props.warningRequired || acknowledgeWarning.value) && (!props.allowNumericOverride || (!overrideReason.value.trim() && !overrideConfirmed.value) || (overrideReason.value.trim() && overrideConfirmed.value)))
+const canSubmit = computed(() => props.enabled && (!firstBaseline.value || establish.value) && (!props.warningRequired || acknowledgeWarning.value) && (!props.allowNumericOverride || (Boolean(overrideReason.value.trim()) && overrideConfirmed.value)))
+watch(() => props.initialNumericReason, value => { if (!overrideConfirmed.value) overrideReason.value = value })
 async function submit() {
   if (!canSubmit.value) return
   loading.value = true; error.value = ''; baselineConflict.value = false; copied.value = ''

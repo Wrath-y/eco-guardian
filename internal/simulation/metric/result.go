@@ -12,18 +12,26 @@ const resultDomainSeparatorV1 = "eco-guardian/simulation-result/v1\x00"
 
 var ErrResultInvalid = errors.New("simulation result is invalid")
 
+type CanonicalValueRange struct {
+	Lower  string      `json:"lower"`
+	Upper  string      `json:"upper"`
+	Bounds RangeBounds `json:"bounds"`
+}
+
 type CanonicalMetric struct {
-	ID             string             `json:"id"`
-	Version        string             `json:"version"`
-	Status         Status             `json:"status"`
-	Unit           string             `json:"unit"`
-	Direction      Direction          `json:"direction"`
-	Value          string             `json:"value,omitempty"`
-	ConfidenceLow  string             `json:"confidence_low,omitempty"`
-	ConfidenceHigh string             `json:"confidence_high,omitempty"`
-	SampleCount    int                `json:"sample_count"`
-	Assumptions    []string           `json:"assumptions"`
-	Unavailable    *UnavailableReason `json:"unavailable,omitempty"`
+	ID                string               `json:"id"`
+	Version           string               `json:"version"`
+	Status            Status               `json:"status"`
+	Unit              string               `json:"unit"`
+	Direction         Direction            `json:"direction"`
+	TargetRange       *CanonicalValueRange `json:"target_range"`
+	AbsoluteThreshold *string              `json:"absolute_threshold"`
+	Value             string               `json:"value,omitempty"`
+	ConfidenceLow     string               `json:"confidence_low,omitempty"`
+	ConfidenceHigh    string               `json:"confidence_high,omitempty"`
+	SampleCount       int                  `json:"sample_count"`
+	Assumptions       []string             `json:"assumptions"`
+	Unavailable       *UnavailableReason   `json:"unavailable,omitempty"`
 }
 
 type CanonicalResultV1 struct {
@@ -44,6 +52,13 @@ func NewCanonicalResult(inputHash, fingerprintHash string, aggregates []Aggregat
 			return CanonicalResultV1{}, ErrResultInvalid
 		}
 		metric := CanonicalMetric{ID: aggregate.Descriptor.ID, Version: aggregate.Descriptor.Version, Status: aggregate.Status, Unit: aggregate.Descriptor.Unit, Direction: aggregate.Descriptor.Direction, SampleCount: aggregate.SampleCount, Assumptions: append([]string(nil), aggregate.Descriptor.Assumptions...)}
+		if aggregate.Descriptor.TargetRange != nil {
+			metric.TargetRange = &CanonicalValueRange{Lower: aggregate.Descriptor.TargetRange.Lower.String(), Upper: aggregate.Descriptor.TargetRange.Upper.String(), Bounds: aggregate.Descriptor.TargetRange.Bounds}
+		}
+		if aggregate.Descriptor.AbsoluteThreshold != nil {
+			value := aggregate.Descriptor.AbsoluteThreshold.String()
+			metric.AbsoluteThreshold = &value
+		}
 		if aggregate.Status == Available {
 			metric.Value, metric.ConfidenceLow, metric.ConfidenceHigh = aggregate.Value.String(), aggregate.ConfidenceLow.String(), aggregate.ConfidenceHigh.String()
 		} else {

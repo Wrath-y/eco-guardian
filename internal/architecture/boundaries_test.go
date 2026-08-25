@@ -117,6 +117,19 @@ func TestSimulationCoreDoesNotIntroduceFloatingPointOrGlobalRandomness(t *testin
 	}
 }
 
+func TestRiskPurePackagesDoNotDependOnAdaptersOrOptionalImplementations(t *testing.T) {
+	for _, dir := range []string{"../risk/contract", "../risk/threshold", "../risk/cohort", "../risk/comparison", "../risk/structure"} {
+		assertImports(t, dir, func(importPath string) bool {
+			for _, forbidden := range []string{"gin-gonic", "modernc.org/sqlite", "/httpapi", "/storage/sqlite", "/graph", "/localrag", "/local-rag", "/impact", "/ai", "provider", "/versioning/release"} {
+				if strings.Contains(importPath, forbidden) {
+					return true
+				}
+			}
+			return false
+		}, "risk pure packages must remain transport-neutral and provider-independent")
+	}
+}
+
 func assertImports(t *testing.T, dir string, forbidden func(string) bool, message string) {
 	t.Helper()
 	err := filepath.WalkDir(dir, func(name string, entry fs.DirEntry, walkErr error) error {

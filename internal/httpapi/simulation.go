@@ -236,7 +236,7 @@ func simulationMetricJSON(stored store.SimulationMetricResult) (gin.H, error) {
 	if value.Status == metric.Unavailable && (value.Unavailable == nil || !value.Unavailable.Valid()) {
 		return nil, errors.New("invalid unavailable simulation metric")
 	}
-	return gin.H{"id": value.ID, "version": value.Version, "status": value.Status, "unit": value.Unit, "direction": value.Direction, "value": nullable(value.Value), "confidence_low": nullable(value.ConfidenceLow), "confidence_high": nullable(value.ConfidenceHigh), "sample_count": value.SampleCount, "assumptions": value.Assumptions, "unavailable": value.Unavailable, "canonical_result": stored.CanonicalResult}, nil
+	return gin.H{"id": value.ID, "version": value.Version, "status": value.Status, "unit": value.Unit, "direction": value.Direction, "target_range": value.TargetRange, "absolute_threshold": value.AbsoluteThreshold, "value": nullable(value.Value), "confidence_low": nullable(value.ConfidenceLow), "confidence_high": nullable(value.ConfidenceHigh), "sample_count": value.SampleCount, "assumptions": value.Assumptions, "unavailable": value.Unavailable, "canonical_result": stored.CanonicalResult}, nil
 }
 
 func simulationJobJSON(job sharedjob.Record) gin.H {

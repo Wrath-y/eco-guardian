@@ -257,6 +257,28 @@ paths:
       responses:
         '200': { description: Immutable simulation result with read-time reproducibility projection., content: { application/json: { schema: { $ref: '#/components/schemas/SimulationRun' } } } }
         default: { $ref: '#/components/responses/Problem' }
+  /risk-reviews:
+    post:
+      operationId: createRiskReview
+      description: Admits either a deterministic evaluation or a new immutable numeric decision report. Severity, Gate state and override outcomes are always server-derived.
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RiskReviewCommand' } } }
+      responses:
+        '202':
+          description: Existing or newly admitted durable risk Job.
+          headers: { Location: { required: true, schema: { type: string, format: uri-reference } } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/RiskJobAccepted' } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /risk-reviews/{id}:
+    get:
+      operationId: getRiskReview
+      description: Reads one immutable calculation or decision report plus read-time freshness, Gate and release-audit links. Read-time projections never alter stored calculation hashes.
+      parameters: [ { $ref: '#/components/parameters/RiskReviewID' } ]
+      responses:
+        '200': { description: Immutable risk review detail., content: { application/json: { schema: { $ref: '#/components/schemas/RiskReview' } } } }
+        default: { $ref: '#/components/responses/Problem' }
   /runtime/capabilities:
     get:
       operationId: getRuntimeCapabilities
@@ -273,6 +295,7 @@ components:
     ReleaseID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     JobID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     SimulationRunID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
+    RiskReviewID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 256 }, description: Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. }
     GraphRetryIdempotencyKey: { name: Idempotency-Key, in: header, required: false, schema: { type: string, minLength: 1, maxLength: 256 }, description: Required when graph-sync intent is retry; reuse returns the original retry Job and changed retry input conflicts. It is ignored for ensure. }
     LastEventID: { name: Last-Event-ID, in: header, schema: { type: integer, minimum: 0 }, description: Resume SSE delivery strictly after this persisted event ordinal. }
@@ -827,7 +850,7 @@ components:
       properties:
         job_id: { $ref: '#/components/schemas/UUIDv7' }
         ordinal: { type: integer, minimum: 1 }
-        phase: { type: string, minLength: 1 }
+        phase: { type: string, minLength: 1, description: Registered feature phase; risk Jobs use MATERIALIZED, COMPARING, STRUCTURE_CHECKING and SEALING. }
         progress: { type: integer, minimum: 0, maximum: 100 }
         warning: { type: [string, 'null'] }
         error: { type: [string, 'null'] }
@@ -893,13 +916,26 @@ components:
         location: { type: string, format: uri-reference }
     SimulationMetricResult:
       type: object
-      required: [id, version, status, unit, direction, value, confidence_low, confidence_high, sample_count, assumptions, unavailable, canonical_result]
+      required: [id, version, status, unit, direction, target_range, absolute_threshold, value, confidence_low, confidence_high, sample_count, assumptions, unavailable, canonical_result]
       properties:
         id: { type: string, minLength: 1 }
         version: { type: string, minLength: 1 }
         status: { type: string, enum: [available, unavailable] }
         unit: { type: string, minLength: 1 }
         direction: { type: string, enum: [higher_is_risk, lower_is_risk, target_range] }
+        target_range:
+          oneOf:
+            - type: object
+              required: [lower, upper, bounds]
+              properties:
+                lower: { type: string, description: Canonical decimal inclusive lower target bound. }
+                upper: { type: string, description: Canonical decimal inclusive upper target bound. }
+                bounds: { type: string, const: inclusive }
+            - type: 'null'
+          description: Required immutable comparison metadata when direction is target_range; null otherwise.
+        absolute_threshold:
+          type: [string, 'null']
+          description: Optional canonical decimal absolute threshold declared by the Metric Module; null when not configured.
         value: { type: [string, 'null'], description: Canonical decimal value; null when unavailable. }
         confidence_low: { type: [string, 'null'], description: Canonical decimal lower confidence bound; null when unavailable. }
         confidence_high: { type: [string, 'null'], description: Canonical decimal upper confidence bound; null when unavailable. }
@@ -965,6 +1001,291 @@ components:
         verification_refs: { type: array, items: { $ref: '#/components/schemas/SimulationVerificationRef' } }
         reproducible: { type: boolean }
         reasons: { type: array, items: { type: string } }
+        created_at: { type: string, format: date-time }
+    RiskIdentity:
+      type: object
+      additionalProperties: false
+      required: [id, version, hash]
+      properties:
+        id: { type: string, minLength: 1 }
+        version: { type: string, minLength: 1 }
+        hash: { $ref: '#/components/schemas/Hash' }
+    RiskRevisionIdentity:
+      type: object
+      additionalProperties: false
+      required: [revision_id, config_hash, version_manifest_hash]
+      properties:
+        revision_id: { $ref: '#/components/schemas/UUIDv7' }
+        config_hash: { $ref: '#/components/schemas/Hash' }
+        version_manifest_hash: { $ref: '#/components/schemas/Hash' }
+    RiskBaseline:
+      oneOf:
+        - $ref: '#/components/schemas/RiskCurrentBaseline'
+        - $ref: '#/components/schemas/RiskNoBaseline'
+      discriminator: { propertyName: type, mapping: { BASELINE: '#/components/schemas/RiskCurrentBaseline', NO_BASELINE: '#/components/schemas/RiskNoBaseline' } }
+    RiskCurrentBaseline:
+      type: object
+      additionalProperties: false
+      required: [type, release_id, revision]
+      properties:
+        type: { type: string, const: BASELINE }
+        release_id: { $ref: '#/components/schemas/UUIDv7' }
+        revision: { $ref: '#/components/schemas/RiskRevisionIdentity' }
+    RiskNoBaseline:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type: { type: string, const: NO_BASELINE }
+    RiskExistingThresholdSelection:
+      type: object
+      additionalProperties: false
+      required: [type, threshold]
+      properties:
+        type: { type: string, const: EXISTING }
+        threshold: { $ref: '#/components/schemas/RiskIdentity' }
+    RiskStarterThresholdSelection:
+      type: object
+      additionalProperties: false
+      required: [type, confirmed]
+      properties:
+        type: { type: string, const: STARTER }
+        confirmed: { type: boolean, const: true }
+    RiskModifiedStarterThresholdSelection:
+      type: object
+      additionalProperties: false
+      required: [type, confirmed, body]
+      properties:
+        type: { type: string, const: MODIFIED_STARTER }
+        confirmed: { type: boolean, const: true }
+        body: { $ref: '#/components/schemas/RiskThresholdBody' }
+    RiskThresholdSelection:
+      oneOf:
+        - $ref: '#/components/schemas/RiskExistingThresholdSelection'
+        - $ref: '#/components/schemas/RiskStarterThresholdSelection'
+        - $ref: '#/components/schemas/RiskModifiedStarterThresholdSelection'
+      discriminator: { propertyName: type, mapping: { EXISTING: '#/components/schemas/RiskExistingThresholdSelection', STARTER: '#/components/schemas/RiskStarterThresholdSelection', MODIFIED_STARTER: '#/components/schemas/RiskModifiedStarterThresholdSelection' } }
+    RiskThresholdEntry:
+      type: object
+      additionalProperties: false
+      required: [scene_id, scene_version, metric_id, metric_version, balance_group, unit, direction, relative_warning, relative_block, absolute_warning, absolute_block]
+      properties:
+        scene_id: { type: string, minLength: 1 }
+        scene_version: { type: string, minLength: 1 }
+        metric_id: { type: string, minLength: 1 }
+        metric_version: { type: string, minLength: 1 }
+        balance_group: { type: [string, 'null'], minLength: 1 }
+        unit: { type: string, minLength: 1 }
+        direction: { type: string, enum: [higher_is_risk, lower_is_risk, target_range] }
+        relative_warning: { $ref: '#/components/schemas/DecimalString' }
+        relative_block: { $ref: '#/components/schemas/DecimalString' }
+        absolute_warning: { oneOf: [{ $ref: '#/components/schemas/DecimalString' }, { type: 'null' }] }
+        absolute_block: { oneOf: [{ $ref: '#/components/schemas/DecimalString' }, { type: 'null' }] }
+    RiskThresholdBody:
+      type: object
+      additionalProperties: false
+      required: [schema_version, source, assumptions, entries, structural_rule_versions]
+      properties:
+        schema_version: { type: string, const: v1 }
+        source: { type: string, minLength: 1, maxLength: 512 }
+        assumptions: { type: array, maxItems: 100, items: { type: string, minLength: 1, maxLength: 512 } }
+        entries: { type: array, minItems: 1, maxItems: 500, items: { $ref: '#/components/schemas/RiskThresholdEntry' } }
+        structural_rule_versions: { type: array, minItems: 1, maxItems: 100, items: { $ref: '#/components/schemas/RiskIdentity' } }
+    RiskPolicyRequirement:
+      type: object
+      additionalProperties: false
+      required: [scene_id, scene_version, metric_id, metric_version, role]
+      properties:
+        scene_id: { type: string, minLength: 1 }
+        scene_version: { type: string, minLength: 1 }
+        metric_id: { type: string, minLength: 1 }
+        metric_version: { type: string, minLength: 1 }
+        role: { type: string, enum: [required, optional] }
+    RiskSimulationRef:
+      type: object
+      additionalProperties: false
+      required: [run_id, result_hash]
+      properties:
+        run_id: { $ref: '#/components/schemas/UUIDv7' }
+        result_hash: { $ref: '#/components/schemas/Hash' }
+    EvaluateRiskReviewCommand:
+      type: object
+      additionalProperties: false
+      required: [command, candidate, baseline, policy, policy_requirements, threshold, simulation_runs]
+      properties:
+        command: { type: string, const: evaluate }
+        candidate: { $ref: '#/components/schemas/RiskRevisionIdentity' }
+        baseline: { $ref: '#/components/schemas/RiskBaseline' }
+        policy: { $ref: '#/components/schemas/RiskIdentity' }
+        policy_requirements: { type: array, minItems: 1, maxItems: 500, items: { $ref: '#/components/schemas/RiskPolicyRequirement' } }
+        threshold: { $ref: '#/components/schemas/RiskThresholdSelection' }
+        simulation_runs: { type: array, minItems: 1, maxItems: 500, items: { $ref: '#/components/schemas/RiskSimulationRef' }, description: Ordered immutable candidate refs followed by exact baseline refs required by the policy. }
+    RiskDecisionItemRef:
+      type: object
+      additionalProperties: false
+      required: [item_id, item_hash]
+      properties:
+        item_id: { type: string, minLength: 1 }
+        item_hash: { $ref: '#/components/schemas/Hash' }
+    RecordNumericDecisionCommand:
+      type: object
+      additionalProperties: false
+      required: [command, source_report_id, source_calculation_hash, eligible_items, reason]
+      properties:
+        command: { type: string, const: record_numeric_decision }
+        source_report_id: { $ref: '#/components/schemas/UUIDv7' }
+        source_calculation_hash: { $ref: '#/components/schemas/Hash' }
+        eligible_items: { type: array, minItems: 1, maxItems: 500, items: { $ref: '#/components/schemas/RiskDecisionItemRef' } }
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+    RiskReviewCommand:
+      oneOf:
+        - $ref: '#/components/schemas/EvaluateRiskReviewCommand'
+        - $ref: '#/components/schemas/RecordNumericDecisionCommand'
+      discriminator: { propertyName: command, mapping: { evaluate: '#/components/schemas/EvaluateRiskReviewCommand', record_numeric_decision: '#/components/schemas/RecordNumericDecisionCommand' } }
+    RiskJobAccepted:
+      type: object
+      additionalProperties: false
+      required: [job, location]
+      properties:
+        job: { $ref: '#/components/schemas/Job' }
+        location: { type: string, format: uri-reference }
+    RiskSubject:
+      type: object
+      additionalProperties: false
+      required: [type, entity_kind, balance_group, stable_id, members]
+      properties:
+        type: { type: string, enum: [cohort, singleton] }
+        entity_kind: { type: string, minLength: 1 }
+        balance_group: { type: [string, 'null'] }
+        stable_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        members: { type: array, minItems: 1, items: { $ref: '#/components/schemas/UUIDv7' } }
+    RiskMetricUnavailableReason:
+      type: object
+      additionalProperties: false
+      required: [code, missing, message]
+      properties:
+        code: { type: string, minLength: 1 }
+        missing: { type: array, items: { type: string, minLength: 1 } }
+        message: { type: string, minLength: 1 }
+    RiskMetricValue:
+      type: object
+      additionalProperties: false
+      required: [status, value, confidence_low, confidence_high, unavailable, run_id, result_hash]
+      properties:
+        status: { type: string, enum: [AVAILABLE, UNAVAILABLE] }
+        value: { oneOf: [{ $ref: '#/components/schemas/DecimalString' }, { type: 'null' }] }
+        confidence_low: { oneOf: [{ $ref: '#/components/schemas/DecimalString' }, { type: 'null' }] }
+        confidence_high: { oneOf: [{ $ref: '#/components/schemas/DecimalString' }, { type: 'null' }] }
+        unavailable: { oneOf: [{ $ref: '#/components/schemas/RiskMetricUnavailableReason' }, { type: 'null' }] }
+        run_id: { $ref: '#/components/schemas/UUIDv7' }
+        result_hash: { $ref: '#/components/schemas/Hash' }
+    RiskMetricEvidence:
+      type: object
+      additionalProperties: false
+      required: [scene_id, scene_version, metric_id, metric_version, unit, direction, target_range, absolute_threshold, subject, candidate, baseline, signed_delta, risk_delta, relative_risk, assumptions]
+      properties:
+        scene_id: { type: string, minLength: 1 }
+        scene_version: { type: string, minLength: 1 }
+        metric_id: { type: string, minLength: 1 }
+        metric_version: { type: string, minLength: 1 }
+        unit: { type: string, minLength: 1 }
+        direction: { type: string, enum: [higher_is_risk, lower_is_risk, target_range] }
+        target_range:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [lower, upper, bounds]
+              properties:
+                lower: { $ref: '#/components/schemas/DecimalString' }
+                upper: { $ref: '#/components/schemas/DecimalString' }
+                bounds: { type: string, const: inclusive }
+            - type: 'null'
+        absolute_threshold: { oneOf: [{ $ref: '#/components/schemas/DecimalString' }, { type: 'null' }] }
+        subject: { $ref: '#/components/schemas/RiskSubject' }
+        candidate: { $ref: '#/components/schemas/RiskMetricValue' }
+        baseline: { oneOf: [{ $ref: '#/components/schemas/RiskMetricValue' }, { type: 'null' }] }
+        signed_delta: { oneOf: [{ $ref: '#/components/schemas/DecimalString' }, { type: 'null' }] }
+        risk_delta: { oneOf: [{ $ref: '#/components/schemas/DecimalString' }, { type: 'null' }] }
+        relative_risk: { oneOf: [{ $ref: '#/components/schemas/DecimalString' }, { type: 'null' }], description: Null for NO_BASELINE, zero baseline or non-comparable evidence. }
+        assumptions: { type: array, items: { type: string } }
+    RiskStructuralEvidence:
+      type: object
+      additionalProperties: false
+      required: [type, rule, entity_id, field_path, ordinal, fingerprint]
+      properties:
+        type: { type: string, enum: [VALIDATION_ISSUE, NEW_MULTIPLIER, REPEATED_MULTIPLIER] }
+        rule: { $ref: '#/components/schemas/RiskIdentity' }
+        entity_id: { $ref: '#/components/schemas/UUIDv7' }
+        field_path: { type: string, pattern: '^/' }
+        ordinal: { type: integer, minimum: 0 }
+        fingerprint: { $ref: '#/components/schemas/Hash' }
+    RiskReviewItem:
+      type: object
+      additionalProperties: false
+      required: [id, ordinal, kind, role, comparison_status, severity, reason, rule, override_classification, overridable, evidence_hash, metric_evidence, structural_evidence, item_hash]
+      properties:
+        id: { type: string, minLength: 1 }
+        ordinal: { type: integer, minimum: 0 }
+        kind: { type: string, enum: [metric, structural] }
+        role: { type: string, enum: [required, optional] }
+        comparison_status: { type: string, enum: [COMPARABLE, NOT_COMPARABLE, UNAVAILABLE, STALE] }
+        severity: { type: [string, 'null'], enum: [BLOCK, WARNING, INFO, null] }
+        reason: { type: [string, 'null'] }
+        rule: { $ref: '#/components/schemas/RiskIdentity' }
+        override_classification: { type: string, enum: [NUMERIC_ELIGIBLE, NON_OVERRIDABLE] }
+        overridable: { type: boolean, description: True only for a stored numeric BLOCK eligible for a separate immutable decision report. }
+        evidence_hash: { $ref: '#/components/schemas/Hash' }
+        metric_evidence: { oneOf: [{ $ref: '#/components/schemas/RiskMetricEvidence' }, { type: 'null' }] }
+        structural_evidence: { oneOf: [{ $ref: '#/components/schemas/RiskStructuralEvidence' }, { type: 'null' }] }
+        item_hash: { $ref: '#/components/schemas/Hash' }
+    RiskThresholdProjection:
+      type: object
+      additionalProperties: false
+      required: [identity, enabled, body_hash, source, assumptions, entries]
+      properties:
+        identity: { $ref: '#/components/schemas/RiskIdentity' }
+        enabled: { type: boolean }
+        body_hash: { $ref: '#/components/schemas/Hash' }
+        source: { type: string, minLength: 1 }
+        assumptions: { type: array, items: { type: string } }
+        entries: { type: array, items: { $ref: '#/components/schemas/RiskThresholdEntry' } }
+    RiskReadTimeProjection:
+      type: object
+      additionalProperties: false
+      required: [freshness, freshness_reasons, gate_state, gate_item_ids, active_baseline_release_id, release_audit_url, impact_evidence_refs]
+      properties:
+        freshness: { type: string, enum: [FRESH, STALE, UNAVAILABLE] }
+        freshness_reasons: { type: array, items: { type: string, minLength: 1 } }
+        gate_state: { type: string, enum: [PASS, WARNING, BLOCK, UNAVAILABLE, STALE] }
+        gate_item_ids: { type: array, items: { type: string, minLength: 1 } }
+        active_baseline_release_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        release_audit_url: { type: [string, 'null'], format: uri-reference }
+        impact_evidence_refs: { type: array, items: { $ref: '#/components/schemas/RiskIdentity' }, description: Optional exact impact-evidence references excluded from calculation and severity hashes. }
+    RiskReview:
+      type: object
+      additionalProperties: false
+      required: [id, report_kind, schema_version, project_id, candidate, baseline, policy, threshold, validation, implementations, simulation_run_ids, input_hash, calculation_hash, explanation_evidence_hash, report_hash, source_report_id, decision_item_ids, decision_reason, items, read_time, created_at]
+      properties:
+        id: { $ref: '#/components/schemas/UUIDv7' }
+        report_kind: { type: string, enum: [calculation, decision] }
+        schema_version: { type: string, const: v1 }
+        project_id: { $ref: '#/components/schemas/UUIDv7' }
+        candidate: { $ref: '#/components/schemas/RiskRevisionIdentity' }
+        baseline: { $ref: '#/components/schemas/RiskBaseline' }
+        policy: { $ref: '#/components/schemas/RiskIdentity' }
+        threshold: { $ref: '#/components/schemas/RiskThresholdProjection' }
+        validation: { $ref: '#/components/schemas/RiskIdentity' }
+        implementations: { type: array, minItems: 1, items: { $ref: '#/components/schemas/RiskIdentity' } }
+        simulation_run_ids: { type: array, minItems: 1, items: { $ref: '#/components/schemas/UUIDv7' } }
+        input_hash: { $ref: '#/components/schemas/Hash' }
+        calculation_hash: { $ref: '#/components/schemas/Hash' }
+        explanation_evidence_hash: { $ref: '#/components/schemas/Hash' }
+        report_hash: { $ref: '#/components/schemas/Hash' }
+        source_report_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        decision_item_ids: { type: array, items: { type: string, minLength: 1 } }
+        decision_reason: { type: [string, 'null'] }
+        items: { type: array, items: { $ref: '#/components/schemas/RiskReviewItem' } }
+        read_time: { $ref: '#/components/schemas/RiskReadTimeProjection' }
         created_at: { type: string, format: date-time }
     ReleaseDisabledReason:
       type: object
@@ -1106,7 +1427,7 @@ components:
         status: { type: integer }
         detail: { type: string }
         instance: { type: string }
-        code: { type: string, enum: [INVALID_SELECTION, PROJECT_LOCKED, ACTIVE_PROJECT_CONFLICT, CLOSE_BLOCKED, UNSUPPORTED_KIND, UNSUPPORTED_SCHEMA, DUPLICATE_KEY, PRECONDITION_REQUIRED, REVISION_CONFLICT, ENTITY_REFERENCED, VALIDATION_FAILED, PROJECT_NOT_OPEN, INVALID_VALIDATION_REQUEST, INVALID_VALIDATION_SOURCE, INVALID_VALIDATION_SCOPE, INVALID_VALIDATION_TARGET, VALIDATION_SOURCE_NOT_FOUND, VALIDATION_RUN_NOT_FOUND, VALIDATION_STORAGE_FAILURE, REVISION_NOT_FOUND, REVISION_IMMUTABLE, DIFF_BASE_INVALID, RELEASE_POLICY_INVALID, RELEASE_CAPABILITY_DISABLED, RELEASE_PREFLIGHT_FAILED, RELEASE_BASE_CONFLICT, IDEMPOTENCY_CONFLICT, MANDATORY_BACKUP_FAILED, MIGRATION_BACKUP_REQUIRED, INVALID_CONFIRMATION, HISTORY_NOT_FOUND, STORAGE_FAILURE, EXTERNAL_SERVICE_FAILURE, GRAPH_VALIDATION_REQUIRED, GRAPH_VALIDATION_BLOCKED, PROJECTOR_VERSION_UNAVAILABLE, GRAPH_CAPABILITY_UNAVAILABLE, BASE_SNAPSHOT_NOT_FOUND, BASE_SNAPSHOT_NOT_READY, CONTENT_HASH_MISMATCH, CONTENT_HASH_CONFLICT, PROVIDER_TASK_FAILED, GRAPH_RETRY_EXHAUSTED, GRAPH_RETRY_NOT_SAFE, GRAPH_STATUS_UNAVAILABLE, SIMULATION_CAPABILITY_UNAVAILABLE, SIMULATION_IDEMPOTENCY_REQUIRED, SIMULATION_INPUT_INVALID, SIMULATION_SEED_INVALID, SIMULATION_VALIDATION_REQUIRED, SIMULATION_SOURCE_INVALID, SIMULATION_SCENE_INVALID, SIMULATION_PARAMETER_INVALID, SIMULATION_METRIC_INVALID, SIMULATION_SAMPLE_INVALID, SIMULATION_BUDGET_INVALID, SIMULATION_IMPLEMENTATION_UNAVAILABLE, SIMULATION_VERIFICATION_TARGET_INVALID, SIMULATION_RUN_NOT_FOUND, SIMULATION_RUN_UNAVAILABLE, BUDGET_EXCEEDED, TIMEOUT, RECOVERY_MISMATCH, RECOVERY_UNAVAILABLE] }
+        code: { type: string, enum: [INVALID_SELECTION, PROJECT_LOCKED, ACTIVE_PROJECT_CONFLICT, CLOSE_BLOCKED, UNSUPPORTED_KIND, UNSUPPORTED_SCHEMA, DUPLICATE_KEY, PRECONDITION_REQUIRED, REVISION_CONFLICT, ENTITY_REFERENCED, VALIDATION_FAILED, PROJECT_NOT_OPEN, INVALID_VALIDATION_REQUEST, INVALID_VALIDATION_SOURCE, INVALID_VALIDATION_SCOPE, INVALID_VALIDATION_TARGET, VALIDATION_SOURCE_NOT_FOUND, VALIDATION_RUN_NOT_FOUND, VALIDATION_STORAGE_FAILURE, REVISION_NOT_FOUND, REVISION_IMMUTABLE, DIFF_BASE_INVALID, RELEASE_POLICY_INVALID, RELEASE_CAPABILITY_DISABLED, RELEASE_PREFLIGHT_FAILED, RELEASE_BASE_CONFLICT, IDEMPOTENCY_CONFLICT, MANDATORY_BACKUP_FAILED, MIGRATION_BACKUP_REQUIRED, INVALID_CONFIRMATION, HISTORY_NOT_FOUND, STORAGE_FAILURE, EXTERNAL_SERVICE_FAILURE, GRAPH_VALIDATION_REQUIRED, GRAPH_VALIDATION_BLOCKED, PROJECTOR_VERSION_UNAVAILABLE, GRAPH_CAPABILITY_UNAVAILABLE, BASE_SNAPSHOT_NOT_FOUND, BASE_SNAPSHOT_NOT_READY, CONTENT_HASH_MISMATCH, CONTENT_HASH_CONFLICT, PROVIDER_TASK_FAILED, GRAPH_RETRY_EXHAUSTED, GRAPH_RETRY_NOT_SAFE, GRAPH_STATUS_UNAVAILABLE, SIMULATION_CAPABILITY_UNAVAILABLE, SIMULATION_IDEMPOTENCY_REQUIRED, SIMULATION_INPUT_INVALID, SIMULATION_SEED_INVALID, SIMULATION_VALIDATION_REQUIRED, SIMULATION_SOURCE_INVALID, SIMULATION_SCENE_INVALID, SIMULATION_PARAMETER_INVALID, SIMULATION_METRIC_INVALID, SIMULATION_SAMPLE_INVALID, SIMULATION_BUDGET_INVALID, SIMULATION_IMPLEMENTATION_UNAVAILABLE, SIMULATION_VERIFICATION_TARGET_INVALID, SIMULATION_RUN_NOT_FOUND, SIMULATION_RUN_UNAVAILABLE, BUDGET_EXCEEDED, TIMEOUT, RECOVERY_MISMATCH, RECOVERY_UNAVAILABLE, RISK_IDEMPOTENCY_REQUIRED, RISK_COMMAND_INVALID, RISK_REVISION_INVALID, RISK_BASELINE_INVALID, RISK_POLICY_INVALID, THRESHOLD_NOT_CONFIGURED, THRESHOLD_INVALID, RISK_VALIDATION_INVALID, RISK_SIMULATION_INVALID, RISK_COHORT_INVALID, RISK_REQUIRED_METRIC_UNAVAILABLE, RISK_STALE_IDENTITY, RISK_REGISTRY_INCOMPATIBLE, RISK_RULE_CONTRACT_INVALID, RISK_DECISION_INVALID, RISK_REVIEW_NOT_FOUND, RISK_CANCELED, RISK_INTERRUPTED] }
         retryable: { type: boolean }
         request_id: { type: string }
         entity_id: { $ref: '#/components/schemas/UUIDv7' }

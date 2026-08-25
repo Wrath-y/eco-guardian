@@ -24,12 +24,30 @@ const (
 	Unavailable Status = "unavailable"
 )
 
+type RangeBounds string
+
+const Inclusive RangeBounds = "inclusive"
+
+// ValueRange is versioned Metric comparison metadata. A target-range Metric
+// must carry the exact canonical decimal interval that gives its direction
+// meaning; consumers must not infer it from display text or current UI state.
+type ValueRange struct {
+	Lower  formula.Decimal
+	Upper  formula.Decimal
+	Bounds RangeBounds
+}
+
+func (value ValueRange) Valid() bool {
+	return value.Bounds == Inclusive && value.Lower.Compare(value.Upper) <= 0
+}
+
 type Descriptor struct {
 	ID                   string
 	Version              string
 	RequiredObservations []string
 	Unit                 string
 	Direction            Direction
+	TargetRange          *ValueRange
 	AbsoluteThreshold    *formula.Decimal
 	AggregationVersion   string
 	ConfidenceVersion    string
@@ -41,6 +59,9 @@ func (descriptor Descriptor) Valid() bool {
 		return false
 	}
 	if descriptor.Direction != HigherIsRisk && descriptor.Direction != LowerIsRisk && descriptor.Direction != TargetRange {
+		return false
+	}
+	if (descriptor.Direction == TargetRange) != (descriptor.TargetRange != nil) || (descriptor.TargetRange != nil && !descriptor.TargetRange.Valid()) {
 		return false
 	}
 	seen := map[string]struct{}{}

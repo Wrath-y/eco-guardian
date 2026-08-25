@@ -390,6 +390,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/risk-reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Admits either a deterministic evaluation or a new immutable numeric decision report. Severity, Gate state and override outcomes are always server-derived. */
+        post: operations["createRiskReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/risk-reviews/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Reads one immutable calculation or decision report plus read-time freshness, Gate and release-audit links. Read-time projections never alter stored calculation hashes. */
+        get: operations["getRiskReview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runtime/capabilities": {
         parameters: {
             query?: never;
@@ -904,6 +938,7 @@ export interface components {
         JobEvent: {
             job_id: components["schemas"]["UUIDv7"];
             ordinal: number;
+            /** @description Registered feature phase; risk Jobs use MATERIALIZED */
             phase: string;
             progress: number;
             warning?: string | null;
@@ -984,6 +1019,17 @@ export interface components {
             unit: string;
             /** @enum {string} */
             direction: "higher_is_risk" | "lower_is_risk" | "target_range";
+            /** @description Required immutable comparison metadata when direction is target_range; null otherwise. */
+            target_range: {
+                /** @description Canonical decimal inclusive lower target bound. */
+                lower: string;
+                /** @description Canonical decimal inclusive upper target bound. */
+                upper: string;
+                /** @constant */
+                bounds: "inclusive";
+            } | null;
+            /** @description Optional canonical decimal absolute threshold declared by the Metric Module; null when not configured. */
+            absolute_threshold: string | null;
             /** @description Canonical decimal value; null when unavailable. */
             value: string | null;
             /** @description Canonical decimal lower confidence bound; null when unavailable. */
@@ -1051,6 +1097,255 @@ export interface components {
             verification_refs: components["schemas"]["SimulationVerificationRef"][];
             reproducible: boolean;
             reasons: string[];
+            /** Format: date-time */
+            created_at: string;
+        };
+        RiskIdentity: {
+            id: string;
+            version: string;
+            hash: components["schemas"]["Hash"];
+        };
+        RiskRevisionIdentity: {
+            revision_id: components["schemas"]["UUIDv7"];
+            config_hash: components["schemas"]["Hash"];
+            version_manifest_hash: components["schemas"]["Hash"];
+        };
+        RiskBaseline: components["schemas"]["RiskCurrentBaseline"] | components["schemas"]["RiskNoBaseline"];
+        RiskCurrentBaseline: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "BASELINE";
+            release_id: components["schemas"]["UUIDv7"];
+            revision: components["schemas"]["RiskRevisionIdentity"];
+        };
+        RiskNoBaseline: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "NO_BASELINE";
+        };
+        RiskExistingThresholdSelection: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "EXISTING";
+            threshold: components["schemas"]["RiskIdentity"];
+        };
+        RiskStarterThresholdSelection: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "STARTER";
+            /** @constant */
+            confirmed: true;
+        };
+        RiskModifiedStarterThresholdSelection: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "MODIFIED_STARTER";
+            /** @constant */
+            confirmed: true;
+            body: components["schemas"]["RiskThresholdBody"];
+        };
+        RiskThresholdSelection: components["schemas"]["RiskExistingThresholdSelection"] | components["schemas"]["RiskStarterThresholdSelection"] | components["schemas"]["RiskModifiedStarterThresholdSelection"];
+        RiskThresholdEntry: {
+            scene_id: string;
+            scene_version: string;
+            metric_id: string;
+            metric_version: string;
+            balance_group: string | null;
+            unit: string;
+            /** @enum {string} */
+            direction: "higher_is_risk" | "lower_is_risk" | "target_range";
+            relative_warning: components["schemas"]["DecimalString"];
+            relative_block: components["schemas"]["DecimalString"];
+            absolute_warning: components["schemas"]["DecimalString"] | null;
+            absolute_block: components["schemas"]["DecimalString"] | null;
+        };
+        RiskThresholdBody: {
+            /** @constant */
+            schema_version: "v1";
+            source: string;
+            assumptions: string[];
+            entries: components["schemas"]["RiskThresholdEntry"][];
+            structural_rule_versions: components["schemas"]["RiskIdentity"][];
+        };
+        RiskPolicyRequirement: {
+            scene_id: string;
+            scene_version: string;
+            metric_id: string;
+            metric_version: string;
+            /** @enum {string} */
+            role: "required" | "optional";
+        };
+        RiskSimulationRef: {
+            run_id: components["schemas"]["UUIDv7"];
+            result_hash: components["schemas"]["Hash"];
+        };
+        EvaluateRiskReviewCommand: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            command: "evaluate";
+            candidate: components["schemas"]["RiskRevisionIdentity"];
+            baseline: components["schemas"]["RiskBaseline"];
+            policy: components["schemas"]["RiskIdentity"];
+            policy_requirements: components["schemas"]["RiskPolicyRequirement"][];
+            threshold: components["schemas"]["RiskThresholdSelection"];
+            /** @description Ordered immutable candidate refs followed by exact baseline refs required by the policy. */
+            simulation_runs: components["schemas"]["RiskSimulationRef"][];
+        };
+        RiskDecisionItemRef: {
+            item_id: string;
+            item_hash: components["schemas"]["Hash"];
+        };
+        RecordNumericDecisionCommand: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            command: "record_numeric_decision";
+            source_report_id: components["schemas"]["UUIDv7"];
+            source_calculation_hash: components["schemas"]["Hash"];
+            eligible_items: components["schemas"]["RiskDecisionItemRef"][];
+            reason: string;
+        };
+        RiskReviewCommand: components["schemas"]["EvaluateRiskReviewCommand"] | components["schemas"]["RecordNumericDecisionCommand"];
+        RiskJobAccepted: {
+            job: components["schemas"]["Job"];
+            /** Format: uri-reference */
+            location: string;
+        };
+        RiskSubject: {
+            /** @enum {string} */
+            type: "cohort" | "singleton";
+            entity_kind: string;
+            balance_group: string | null;
+            stable_id: components["schemas"]["UUIDv7"] | null;
+            members: components["schemas"]["UUIDv7"][];
+        };
+        RiskMetricUnavailableReason: {
+            code: string;
+            missing: string[];
+            message: string;
+        };
+        RiskMetricValue: {
+            /** @enum {string} */
+            status: "AVAILABLE" | "UNAVAILABLE";
+            value: components["schemas"]["DecimalString"] | null;
+            confidence_low: components["schemas"]["DecimalString"] | null;
+            confidence_high: components["schemas"]["DecimalString"] | null;
+            unavailable: components["schemas"]["RiskMetricUnavailableReason"] | null;
+            run_id: components["schemas"]["UUIDv7"];
+            result_hash: components["schemas"]["Hash"];
+        };
+        RiskMetricEvidence: {
+            scene_id: string;
+            scene_version: string;
+            metric_id: string;
+            metric_version: string;
+            unit: string;
+            /** @enum {string} */
+            direction: "higher_is_risk" | "lower_is_risk" | "target_range";
+            target_range: {
+                lower: components["schemas"]["DecimalString"];
+                upper: components["schemas"]["DecimalString"];
+                /** @constant */
+                bounds: "inclusive";
+            } | null;
+            absolute_threshold: components["schemas"]["DecimalString"] | null;
+            subject: components["schemas"]["RiskSubject"];
+            candidate: components["schemas"]["RiskMetricValue"];
+            baseline: components["schemas"]["RiskMetricValue"] | null;
+            signed_delta: components["schemas"]["DecimalString"] | null;
+            risk_delta: components["schemas"]["DecimalString"] | null;
+            /** @description Null for NO_BASELINE */
+            relative_risk: components["schemas"]["DecimalString"] | null;
+            assumptions: string[];
+        };
+        RiskStructuralEvidence: {
+            /** @enum {string} */
+            type: "VALIDATION_ISSUE" | "NEW_MULTIPLIER" | "REPEATED_MULTIPLIER";
+            rule: components["schemas"]["RiskIdentity"];
+            entity_id: components["schemas"]["UUIDv7"];
+            field_path: string;
+            ordinal: number;
+            fingerprint: components["schemas"]["Hash"];
+        };
+        RiskReviewItem: {
+            id: string;
+            ordinal: number;
+            /** @enum {string} */
+            kind: "metric" | "structural";
+            /** @enum {string} */
+            role: "required" | "optional";
+            /** @enum {string} */
+            comparison_status: "COMPARABLE" | "NOT_COMPARABLE" | "UNAVAILABLE" | "STALE";
+            /** @enum {string|null} */
+            severity: "BLOCK" | "WARNING" | "INFO" | null;
+            reason: string | null;
+            rule: components["schemas"]["RiskIdentity"];
+            /** @enum {string} */
+            override_classification: "NUMERIC_ELIGIBLE" | "NON_OVERRIDABLE";
+            /** @description True only for a stored numeric BLOCK eligible for a separate immutable decision report. */
+            overridable: boolean;
+            evidence_hash: components["schemas"]["Hash"];
+            metric_evidence: components["schemas"]["RiskMetricEvidence"] | null;
+            structural_evidence: components["schemas"]["RiskStructuralEvidence"] | null;
+            item_hash: components["schemas"]["Hash"];
+        };
+        RiskThresholdProjection: {
+            identity: components["schemas"]["RiskIdentity"];
+            enabled: boolean;
+            body_hash: components["schemas"]["Hash"];
+            source: string;
+            assumptions: string[];
+            entries: components["schemas"]["RiskThresholdEntry"][];
+        };
+        RiskReadTimeProjection: {
+            /** @enum {string} */
+            freshness: "FRESH" | "STALE" | "UNAVAILABLE";
+            freshness_reasons: string[];
+            /** @enum {string} */
+            gate_state: "PASS" | "WARNING" | "BLOCK" | "UNAVAILABLE" | "STALE";
+            gate_item_ids: string[];
+            active_baseline_release_id: components["schemas"]["UUIDv7"] | null;
+            /** Format: uri-reference */
+            release_audit_url: string | null;
+            /** @description Optional exact impact-evidence references excluded from calculation and severity hashes. */
+            impact_evidence_refs: components["schemas"]["RiskIdentity"][];
+        };
+        RiskReview: {
+            id: components["schemas"]["UUIDv7"];
+            /** @enum {string} */
+            report_kind: "calculation" | "decision";
+            /** @constant */
+            schema_version: "v1";
+            project_id: components["schemas"]["UUIDv7"];
+            candidate: components["schemas"]["RiskRevisionIdentity"];
+            baseline: components["schemas"]["RiskBaseline"];
+            policy: components["schemas"]["RiskIdentity"];
+            threshold: components["schemas"]["RiskThresholdProjection"];
+            validation: components["schemas"]["RiskIdentity"];
+            implementations: components["schemas"]["RiskIdentity"][];
+            simulation_run_ids: components["schemas"]["UUIDv7"][];
+            input_hash: components["schemas"]["Hash"];
+            calculation_hash: components["schemas"]["Hash"];
+            explanation_evidence_hash: components["schemas"]["Hash"];
+            report_hash: components["schemas"]["Hash"];
+            source_report_id: components["schemas"]["UUIDv7"] | null;
+            decision_item_ids: string[];
+            decision_reason: string | null;
+            items: components["schemas"]["RiskReviewItem"][];
+            read_time: components["schemas"]["RiskReadTimeProjection"];
             /** Format: date-time */
             created_at: string;
         };
@@ -1190,7 +1485,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "INVALID_SELECTION" | "PROJECT_LOCKED" | "ACTIVE_PROJECT_CONFLICT" | "CLOSE_BLOCKED" | "UNSUPPORTED_KIND" | "UNSUPPORTED_SCHEMA" | "DUPLICATE_KEY" | "PRECONDITION_REQUIRED" | "REVISION_CONFLICT" | "ENTITY_REFERENCED" | "VALIDATION_FAILED" | "PROJECT_NOT_OPEN" | "INVALID_VALIDATION_REQUEST" | "INVALID_VALIDATION_SOURCE" | "INVALID_VALIDATION_SCOPE" | "INVALID_VALIDATION_TARGET" | "VALIDATION_SOURCE_NOT_FOUND" | "VALIDATION_RUN_NOT_FOUND" | "VALIDATION_STORAGE_FAILURE" | "REVISION_NOT_FOUND" | "REVISION_IMMUTABLE" | "DIFF_BASE_INVALID" | "RELEASE_POLICY_INVALID" | "RELEASE_CAPABILITY_DISABLED" | "RELEASE_PREFLIGHT_FAILED" | "RELEASE_BASE_CONFLICT" | "IDEMPOTENCY_CONFLICT" | "MANDATORY_BACKUP_FAILED" | "MIGRATION_BACKUP_REQUIRED" | "INVALID_CONFIRMATION" | "HISTORY_NOT_FOUND" | "STORAGE_FAILURE" | "EXTERNAL_SERVICE_FAILURE" | "GRAPH_VALIDATION_REQUIRED" | "GRAPH_VALIDATION_BLOCKED" | "PROJECTOR_VERSION_UNAVAILABLE" | "GRAPH_CAPABILITY_UNAVAILABLE" | "BASE_SNAPSHOT_NOT_FOUND" | "BASE_SNAPSHOT_NOT_READY" | "CONTENT_HASH_MISMATCH" | "CONTENT_HASH_CONFLICT" | "PROVIDER_TASK_FAILED" | "GRAPH_RETRY_EXHAUSTED" | "GRAPH_RETRY_NOT_SAFE" | "GRAPH_STATUS_UNAVAILABLE" | "SIMULATION_CAPABILITY_UNAVAILABLE" | "SIMULATION_IDEMPOTENCY_REQUIRED" | "SIMULATION_INPUT_INVALID" | "SIMULATION_SEED_INVALID" | "SIMULATION_VALIDATION_REQUIRED" | "SIMULATION_SOURCE_INVALID" | "SIMULATION_SCENE_INVALID" | "SIMULATION_PARAMETER_INVALID" | "SIMULATION_METRIC_INVALID" | "SIMULATION_SAMPLE_INVALID" | "SIMULATION_BUDGET_INVALID" | "SIMULATION_IMPLEMENTATION_UNAVAILABLE" | "SIMULATION_VERIFICATION_TARGET_INVALID" | "SIMULATION_RUN_NOT_FOUND" | "SIMULATION_RUN_UNAVAILABLE" | "BUDGET_EXCEEDED" | "TIMEOUT" | "RECOVERY_MISMATCH" | "RECOVERY_UNAVAILABLE";
+            code: "INVALID_SELECTION" | "PROJECT_LOCKED" | "ACTIVE_PROJECT_CONFLICT" | "CLOSE_BLOCKED" | "UNSUPPORTED_KIND" | "UNSUPPORTED_SCHEMA" | "DUPLICATE_KEY" | "PRECONDITION_REQUIRED" | "REVISION_CONFLICT" | "ENTITY_REFERENCED" | "VALIDATION_FAILED" | "PROJECT_NOT_OPEN" | "INVALID_VALIDATION_REQUEST" | "INVALID_VALIDATION_SOURCE" | "INVALID_VALIDATION_SCOPE" | "INVALID_VALIDATION_TARGET" | "VALIDATION_SOURCE_NOT_FOUND" | "VALIDATION_RUN_NOT_FOUND" | "VALIDATION_STORAGE_FAILURE" | "REVISION_NOT_FOUND" | "REVISION_IMMUTABLE" | "DIFF_BASE_INVALID" | "RELEASE_POLICY_INVALID" | "RELEASE_CAPABILITY_DISABLED" | "RELEASE_PREFLIGHT_FAILED" | "RELEASE_BASE_CONFLICT" | "IDEMPOTENCY_CONFLICT" | "MANDATORY_BACKUP_FAILED" | "MIGRATION_BACKUP_REQUIRED" | "INVALID_CONFIRMATION" | "HISTORY_NOT_FOUND" | "STORAGE_FAILURE" | "EXTERNAL_SERVICE_FAILURE" | "GRAPH_VALIDATION_REQUIRED" | "GRAPH_VALIDATION_BLOCKED" | "PROJECTOR_VERSION_UNAVAILABLE" | "GRAPH_CAPABILITY_UNAVAILABLE" | "BASE_SNAPSHOT_NOT_FOUND" | "BASE_SNAPSHOT_NOT_READY" | "CONTENT_HASH_MISMATCH" | "CONTENT_HASH_CONFLICT" | "PROVIDER_TASK_FAILED" | "GRAPH_RETRY_EXHAUSTED" | "GRAPH_RETRY_NOT_SAFE" | "GRAPH_STATUS_UNAVAILABLE" | "SIMULATION_CAPABILITY_UNAVAILABLE" | "SIMULATION_IDEMPOTENCY_REQUIRED" | "SIMULATION_INPUT_INVALID" | "SIMULATION_SEED_INVALID" | "SIMULATION_VALIDATION_REQUIRED" | "SIMULATION_SOURCE_INVALID" | "SIMULATION_SCENE_INVALID" | "SIMULATION_PARAMETER_INVALID" | "SIMULATION_METRIC_INVALID" | "SIMULATION_SAMPLE_INVALID" | "SIMULATION_BUDGET_INVALID" | "SIMULATION_IMPLEMENTATION_UNAVAILABLE" | "SIMULATION_VERIFICATION_TARGET_INVALID" | "SIMULATION_RUN_NOT_FOUND" | "SIMULATION_RUN_UNAVAILABLE" | "BUDGET_EXCEEDED" | "TIMEOUT" | "RECOVERY_MISMATCH" | "RECOVERY_UNAVAILABLE" | "RISK_IDEMPOTENCY_REQUIRED" | "RISK_COMMAND_INVALID" | "RISK_REVISION_INVALID" | "RISK_BASELINE_INVALID" | "RISK_POLICY_INVALID" | "THRESHOLD_NOT_CONFIGURED" | "THRESHOLD_INVALID" | "RISK_VALIDATION_INVALID" | "RISK_SIMULATION_INVALID" | "RISK_COHORT_INVALID" | "RISK_REQUIRED_METRIC_UNAVAILABLE" | "RISK_STALE_IDENTITY" | "RISK_REGISTRY_INCOMPATIBLE" | "RISK_RULE_CONTRACT_INVALID" | "RISK_DECISION_INVALID" | "RISK_REVIEW_NOT_FOUND" | "RISK_CANCELED" | "RISK_INTERRUPTED";
             retryable: boolean;
             request_id: string;
             entity_id?: components["schemas"]["UUIDv7"];
@@ -1220,6 +1515,7 @@ export interface components {
         ReleaseID: components["schemas"]["UUIDv7"];
         JobID: components["schemas"]["UUIDv7"];
         SimulationRunID: components["schemas"]["UUIDv7"];
+        RiskReviewID: components["schemas"]["UUIDv7"];
         /** @description Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. */
         IdempotencyKey: string;
         /** @description Required when graph-sync intent is retry; reuse returns the original retry Job and changed retry input conflicts. It is ignored for ensure. */
@@ -1986,6 +2282,58 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SimulationRun"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createRiskReview: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RiskReviewCommand"];
+            };
+        };
+        responses: {
+            /** @description Existing or newly admitted durable risk Job. */
+            202: {
+                headers: {
+                    Location: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RiskJobAccepted"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getRiskReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["RiskReviewID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable risk review detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RiskReview"];
                 };
             };
             default: components["responses"]["Problem"];

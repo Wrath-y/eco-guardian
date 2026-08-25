@@ -15,6 +15,7 @@ import (
 	"github.com/zouyi/eco-guardian/internal/domain"
 	graphsync "github.com/zouyi/eco-guardian/internal/graph/sync"
 	"github.com/zouyi/eco-guardian/internal/project"
+	"github.com/zouyi/eco-guardian/internal/risk/orchestration"
 	store "github.com/zouyi/eco-guardian/internal/storage/sqlite"
 	versioningpolicy "github.com/zouyi/eco-guardian/internal/versioning/policy"
 	versioningrelease "github.com/zouyi/eco-guardian/internal/versioning/release"
@@ -489,8 +490,17 @@ func (h *VersionHandler) cancel(c *gin.Context) {
 		return
 	}
 	for _, resolver := range h.resolvers {
-		if job, found, canceled, err := resolver.CancelJob(c.Request.Context(), id); err == nil && found {
+		job, found, canceled, err := resolver.CancelJob(c.Request.Context(), id)
+		if err != nil && found {
+			writeRiskServiceError(c, err)
+			return
+		}
+		if err == nil && found {
 			if !canceled {
+				if fmt.Sprint(job["kind"]) == orchestration.RiskReviewJobKind {
+					writeRiskError(c, NewRiskAPIError(http.StatusConflict, "RISK_CANCELED", "Risk job is already terminal", false))
+					return
+				}
 				problem(c, http.StatusConflict, "RELEASE_PREFLIGHT_FAILED", "Job is already terminal")
 				return
 			}

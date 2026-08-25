@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/zouyi/eco-guardian/internal/httpapi/riskdto"
 )
 
 func TestOpenAPIContainsAllHandlerOperations(t *testing.T) {
@@ -16,7 +18,7 @@ func TestOpenAPIContainsAllHandlerOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	contract := string(raw)
-	for _, id := range []string{"selectProjectDirectory", "openProject", "listRecentProjects", "openRecentProject", "getCurrentProject", "closeProject", "getEntitySchema", "listEntities", "createEntity", "getEntity", "patchEntity", "deleteEntity", "createValidationRun", "getValidationRun", "listRevisions", "createRevision", "getRevision", "getRevisionDiff", "ensureGraphSync", "getGraphStatus", "listReleasePolicies", "createReleasePolicy", "listReleases", "createRelease", "getRelease", "getJob", "streamJobEvents", "cancelJob", "createSimulationJob", "getSimulationRun", "getRuntimeCapabilities"} {
+	for _, id := range []string{"selectProjectDirectory", "openProject", "listRecentProjects", "openRecentProject", "getCurrentProject", "closeProject", "getEntitySchema", "listEntities", "createEntity", "getEntity", "patchEntity", "deleteEntity", "createValidationRun", "getValidationRun", "listRevisions", "createRevision", "getRevision", "getRevisionDiff", "ensureGraphSync", "getGraphStatus", "listReleasePolicies", "createReleasePolicy", "listReleases", "createRelease", "getRelease", "getJob", "streamJobEvents", "cancelJob", "createSimulationJob", "getSimulationRun", "createRiskReview", "getRiskReview", "getRuntimeCapabilities"} {
 		if !strings.Contains(contract, "operationId: "+id) {
 			t.Errorf("OpenAPI missing handler operation %s", id)
 		}
@@ -89,7 +91,7 @@ func TestVersioningDTOsAreGeneratedRatherThanHandwritten(t *testing.T) {
 			if walkErr != nil {
 				return walkErr
 			}
-			if entry.IsDir() || path == "contract_test.go" {
+			if entry.IsDir() || path == "contract_test.go" || strings.Contains(path, "riskdto/risk.gen.go") {
 				return nil
 			}
 			contents, readErr := os.ReadFile(path)
@@ -158,6 +160,12 @@ func TestVersioningProblemFixturesHaveStableStatusMappings(t *testing.T) {
 		"SIMULATION_VERIFICATION_TARGET_INVALID": 400, "SIMULATION_CAPABILITY_UNAVAILABLE": 503,
 		"SIMULATION_RUN_NOT_FOUND": 404, "SIMULATION_RUN_UNAVAILABLE": 503,
 		"BUDGET_EXCEEDED": 422, "TIMEOUT": 504, "RECOVERY_MISMATCH": 409, "RECOVERY_UNAVAILABLE": 409,
+		"RISK_IDEMPOTENCY_REQUIRED": 400, "RISK_COMMAND_INVALID": 400,
+		"RISK_REVISION_INVALID": 409, "RISK_BASELINE_INVALID": 409, "RISK_POLICY_INVALID": 409,
+		"THRESHOLD_NOT_CONFIGURED": 409, "THRESHOLD_INVALID": 422, "RISK_VALIDATION_INVALID": 409,
+		"RISK_SIMULATION_INVALID": 409, "RISK_COHORT_INVALID": 422, "RISK_REQUIRED_METRIC_UNAVAILABLE": 422,
+		"RISK_STALE_IDENTITY": 409, "RISK_REGISTRY_INCOMPATIBLE": 409, "RISK_RULE_CONTRACT_INVALID": 409,
+		"RISK_DECISION_INVALID": 400, "RISK_REVIEW_NOT_FOUND": 404, "RISK_CANCELED": 409, "RISK_INTERRUPTED": 409,
 	}
 	got := map[string]int{}
 	for _, fixture := range fixtures {
@@ -167,6 +175,78 @@ func TestVersioningProblemFixturesHaveStableStatusMappings(t *testing.T) {
 		if got[code] != status {
 			t.Errorf("%s status=%d, want %d", code, got[code], status)
 		}
+	}
+}
+
+func TestOpenAPIContainsRiskReviewContractsAndFrozenErrors(t *testing.T) {
+	raw, err := os.ReadFile("../../api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract := string(raw)
+	for _, schema := range []string{
+		"RiskReviewCommand", "EvaluateRiskReviewCommand", "RecordNumericDecisionCommand", "RiskJobAccepted",
+		"RiskReview", "RiskReviewItem", "RiskMetricEvidence", "RiskStructuralEvidence", "RiskReadTimeProjection",
+	} {
+		if !strings.Contains(contract, "    "+schema+":") {
+			t.Errorf("OpenAPI missing risk schema %s", schema)
+		}
+	}
+	for _, fragment := range []string{
+		"command: { type: string, const: evaluate }", "command: { type: string, const: record_numeric_decision }",
+		"MATERIALIZED, COMPARING, STRUCTURE_CHECKING and SEALING", "additionalProperties: false",
+		"Severity, Gate state and override outcomes are always server-derived",
+	} {
+		if !strings.Contains(contract, fragment) {
+			t.Errorf("OpenAPI missing risk contract fragment %q", fragment)
+		}
+	}
+}
+
+func TestGeneratedRiskDTOsDecodeFrozenRequestAndResponseFixtures(t *testing.T) {
+	for _, fixture := range []string{"risk-evaluate-request.json", "risk-decision-request.json"} {
+		raw, err := os.ReadFile(filepath.Join("../../api/fixtures", fixture))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var command riskdto.RiskReviewCommand
+		if err = json.Unmarshal(raw, &command); err != nil {
+			t.Fatalf("%s: %v", fixture, err)
+		}
+		if _, err = command.ValueByDiscriminator(); err != nil {
+			t.Fatalf("%s discriminator: %v", fixture, err)
+		}
+	}
+	raw, err := os.ReadFile("../../api/fixtures/risk-job-accepted.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var accepted riskdto.RiskJobAccepted
+	if err = json.Unmarshal(raw, &accepted); err != nil || accepted.Job.Kind != "risk" || accepted.Location == "" {
+		t.Fatalf("accepted=%#v err=%v", accepted, err)
+	}
+}
+
+func TestRiskHTTPDTOsAreGeneratedRatherThanHandwritten(t *testing.T) {
+	duplicate := regexp.MustCompile(`(?m)^type\s+(?:RiskReview|EvaluateRisk|RecordNumericDecision|RiskMetricEvidence)\w*\s`)
+	err := filepath.WalkDir(".", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || strings.Contains(path, "riskdto/risk.gen.go") || path == "contract_test.go" {
+			return nil
+		}
+		contents, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		if duplicate.Match(contents) {
+			t.Errorf("handwritten risk HTTP DTO in %s; use generated bindings", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

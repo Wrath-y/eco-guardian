@@ -14,6 +14,7 @@ import (
 	"github.com/zouyi/eco-guardian/internal/domain"
 	sharedjob "github.com/zouyi/eco-guardian/internal/job"
 	"github.com/zouyi/eco-guardian/internal/simulation/contract"
+	"github.com/zouyi/eco-guardian/internal/simulation/metric"
 	"github.com/zouyi/eco-guardian/internal/simulation/orchestration"
 	store "github.com/zouyi/eco-guardian/internal/storage/sqlite"
 )
@@ -108,6 +109,18 @@ func TestSimulationHandlerReadsImmutableRunWithoutMutation(t *testing.T) {
 	engine.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/simulation-runs/"+string(id), nil))
 	if response.Code != http.StatusOK || reader.readCalls != 1 || !strings.Contains(response.Body.String(), `"scenario_definition_id":"`+string(sceneID)+`"`) || !strings.Contains(response.Body.String(), `"metric-dps"`) || !strings.Contains(response.Body.String(), `"confidence_low":"9"`) || !strings.Contains(response.Body.String(), `"verification_refs"`) || !strings.Contains(response.Body.String(), `"reproducible":true`) {
 		t.Fatalf("status=%d reads=%d body=%s", response.Code, reader.readCalls, response.Body.String())
+	}
+}
+
+func TestSimulationMetricJSONProjectsImmutableTargetRange(t *testing.T) {
+	stored := store.SimulationMetricResult{MetricID: "metric-resource", MetricVersion: "v1", Status: "available", CanonicalResult: `{"id":"metric-resource","version":"v1","status":"available","unit":"ratio","direction":"target_range","target_range":{"lower":"0.8","upper":"1.2","bounds":"inclusive"},"absolute_threshold":null,"value":"1","confidence_low":"0.9","confidence_high":"1.1","sample_count":1000,"assumptions":["independent_samples"]}`}
+	value, err := simulationMetricJSON(stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, ok := value["target_range"].(*metric.CanonicalValueRange)
+	if !ok || target.Lower != "0.8" || target.Upper != "1.2" || target.Bounds != metric.Inclusive || value["absolute_threshold"] != (*string)(nil) {
+		t.Fatalf("projection=%#v", value)
 	}
 }
 

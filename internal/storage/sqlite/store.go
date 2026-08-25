@@ -16,6 +16,7 @@ import (
 
 	root "github.com/zouyi/eco-guardian"
 	"github.com/zouyi/eco-guardian/internal/domain"
+	riskthreshold "github.com/zouyi/eco-guardian/internal/risk/threshold"
 	"github.com/zouyi/eco-guardian/internal/validation"
 	versioning "github.com/zouyi/eco-guardian/internal/versioning"
 	versioningpolicy "github.com/zouyi/eco-guardian/internal/versioning/policy"
@@ -24,7 +25,7 @@ import (
 )
 
 const databaseName = "project.db"
-const currentSchemaVersion = 15
+const currentSchemaVersion = 16
 
 func DBSchemaVersion() int { return currentSchemaVersion }
 
@@ -88,6 +89,7 @@ type Store struct {
 	projectID         domain.ID
 	graphVersion      versioningrevision.VersionEntry
 	simulationVersion versioningrevision.VersionEntry
+	riskVersion       versioningrevision.VersionEntry
 	afterRevision     func(context.Context, domain.RevisionSummary)
 	failStage         func(string) error // test-only transaction fault injector
 }
@@ -123,6 +125,23 @@ func (s *Store) RegisterSimulationVersionContributor(contributor versioningrevis
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	s.simulationVersion = entry
+	return nil
+}
+
+// RegisterRiskVersionContributor pins the installed risk contract into future
+// revisions. The unregistered default is preserved explicitly when risk is
+// absent, so release capability checks can disable rather than guess.
+func (s *Store) RegisterRiskVersionContributor(contributor versioningrevision.VersionContributor) error {
+	if contributor == nil || contributor.CapabilityID() != "risk" {
+		return errors.New("invalid risk version contributor")
+	}
+	entry := versioningrevision.VersionEntry{CapabilityID: contributor.CapabilityID(), ContractVersion: contributor.ContractVersion(), ImplementationVersion: contributor.ImplementationVersion(), State: contributor.RegistrationState()}
+	if !entry.Valid() {
+		return errors.New("invalid risk version contributor")
+	}
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	s.riskVersion = entry
 	return nil
 }
 
@@ -372,6 +391,12 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 		}
 		version = 15
 	}
+	if version == 15 {
+		if err := applyMigrationV16(ctx, tx); err != nil {
+			return err
+		}
+		version = 16
+	}
 	if version != currentSchemaVersion {
 		return fmt.Errorf("unsupported schema version %d", version)
 	}
@@ -516,6 +541,34 @@ func applyMigrationV15(ctx context.Context, tx *sql.Tx) error {
 	return recordMigrationChecksums(ctx, tx)
 }
 
+func applyMigrationV16(ctx context.Context, tx *sql.Tx) error {
+	body, err := root.Assets.ReadFile("migrations/0016_balance_risk_assessment.sql")
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, string(body)); err != nil {
+		return err
+	}
+	if err = seedRiskStarterThreshold(ctx, tx); err != nil {
+		return err
+	}
+	return recordMigrationChecksums(ctx, tx)
+}
+
+func seedRiskStarterThreshold(ctx context.Context, tx *sql.Tx) error {
+	starter := riskthreshold.StarterFixtureV1()
+	body, err := starter.Body.CanonicalJSON()
+	if err != nil {
+		return err
+	}
+	var projectID, createdAt string
+	if err = tx.QueryRowContext(ctx, `SELECT id,created_at FROM project_meta`).Scan(&projectID, &createdAt); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO threshold_versions(id,project_uuid,display_version,origin,enabled,schema_version,canonical_body,body_hash,created_by,created_at) VALUES(?,?,0,'starter_template',0,?,?,?,?,?)`, starter.ID, projectID, riskthreshold.SchemaVersionV1, string(body), starter.BodyHash, "system", createdAt)
+	return err
+}
+
 func recordMigrationChecksums(ctx context.Context, tx *sql.Tx) error {
 	checksums, err := migrationStepChecksums()
 	if err != nil {
@@ -551,6 +604,7 @@ func migrationStepChecksums() (map[string]string, error) {
 		"simulation-job-materializations-v13": "migrations/0013_simulation_job_materializations.sql",
 		"simulation-run-implementations-v14":  "migrations/0014_simulation_run_implementations.sql",
 		"simulation-verification-intents-v15": "migrations/0015_simulation_verification_intents.sql",
+		"balance-risk-assessment-v16":         "migrations/0016_balance_risk_assessment.sql",
 	}
 	checksums := make(map[string]string, len(files))
 	for stepID, path := range files {
@@ -674,7 +728,7 @@ func historicalVersionManifest(ctx context.Context, tx *sql.Tx, revisionID domai
 }
 
 func versionManifestFromValidation(versions validation.VersionManifest) (versioningrevision.VersionManifest, error) {
-	return versionManifestFromValidationWithCapabilities(versions, defaultGraphVersionEntry(), defaultSimulationVersionEntry())
+	return versionManifestFromValidationWithCapabilities(versions, defaultGraphVersionEntry(), defaultSimulationVersionEntry(), defaultRiskVersionEntry())
 }
 func defaultGraphVersionEntry() versioningrevision.VersionEntry {
 	return versioningrevision.VersionEntry{CapabilityID: "graph-projector", ContractVersion: "unavailable", State: versioningrevision.Unregistered}
@@ -682,10 +736,13 @@ func defaultGraphVersionEntry() versioningrevision.VersionEntry {
 func defaultSimulationVersionEntry() versioningrevision.VersionEntry {
 	return versioningrevision.VersionEntry{CapabilityID: "simulation-engine", ContractVersion: "unavailable", State: versioningrevision.Unregistered}
 }
-func versionManifestFromValidationWithGraph(versions validation.VersionManifest, graph versioningrevision.VersionEntry) (versioningrevision.VersionManifest, error) {
-	return versionManifestFromValidationWithCapabilities(versions, graph, defaultSimulationVersionEntry())
+func defaultRiskVersionEntry() versioningrevision.VersionEntry {
+	return versioningrevision.VersionEntry{CapabilityID: "risk", ContractVersion: "unavailable", State: versioningrevision.Unregistered}
 }
-func versionManifestFromValidationWithCapabilities(versions validation.VersionManifest, graph, simulation versioningrevision.VersionEntry) (versioningrevision.VersionManifest, error) {
+func versionManifestFromValidationWithGraph(versions validation.VersionManifest, graph versioningrevision.VersionEntry) (versioningrevision.VersionManifest, error) {
+	return versionManifestFromValidationWithCapabilities(versions, graph, defaultSimulationVersionEntry(), defaultRiskVersionEntry())
+}
+func versionManifestFromValidationWithCapabilities(versions validation.VersionManifest, graph, simulation, risk versioningrevision.VersionEntry) (versioningrevision.VersionManifest, error) {
 	if !versions.Valid() {
 		return versioningrevision.VersionManifest{}, errors.New("incomplete validation version manifest")
 	}
@@ -696,6 +753,7 @@ func versionManifestFromValidationWithCapabilities(versions validation.VersionMa
 		{CapabilityID: "numeric-policy", ContractVersion: "validation-v1", ImplementationVersion: versions.NumericPolicy, State: versioningrevision.Registered},
 		graph,
 		simulation,
+		risk,
 	}}
 	if !manifest.Valid() {
 		return versioningrevision.VersionManifest{}, errors.New("invalid revision version manifest")
@@ -710,7 +768,7 @@ type revisionMetadataFields struct {
 }
 
 func (s *Store) writeRevisionMetadata(ctx context.Context, tx *sql.Tx, revision domain.RevisionSummary, versions validation.VersionManifest, fields revisionMetadataFields) error {
-	manifest, err := versionManifestFromValidationWithCapabilities(versions, s.graphVersion, s.simulationVersion)
+	manifest, err := versionManifestFromValidationWithCapabilities(versions, s.graphVersion, s.simulationVersion, s.riskVersion)
 	if err != nil {
 		return err
 	}
@@ -728,7 +786,7 @@ func (s *Store) writeRevisionMetadata(ctx context.Context, tx *sql.Tx, revision 
 
 func unresolvedHistoricalManifest() versioningrevision.VersionManifest {
 	entries := []versioningrevision.VersionEntry{}
-	for _, capability := range []string{"schema", "dsl", "validator-registry", "numeric-policy", "graph-projector", "simulation-engine"} {
+	for _, capability := range []string{"schema", "dsl", "validator-registry", "numeric-policy", "graph-projector", "simulation-engine", "risk"} {
 		entries = append(entries, versioningrevision.VersionEntry{CapabilityID: capability, ContractVersion: "unavailable", State: versioningrevision.Unregistered})
 	}
 	return versioningrevision.VersionManifest{Entries: entries}
@@ -749,7 +807,7 @@ func open(path string, registry *domain.Registry) (*Store, error) {
 			return nil, err
 		}
 	}
-	return &Store{db: db, path: path, registry: registry, now: time.Now, graphVersion: defaultGraphVersionEntry(), simulationVersion: defaultSimulationVersionEntry()}, nil
+	return &Store{db: db, path: path, registry: registry, now: time.Now, graphVersion: defaultGraphVersionEntry(), simulationVersion: defaultSimulationVersionEntry(), riskVersion: defaultRiskVersionEntry()}, nil
 }
 func (s *Store) Close() error         { return s.db.Close() }
 func (s *Store) ProjectID() domain.ID { return s.projectID }

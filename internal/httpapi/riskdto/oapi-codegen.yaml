@@ -1,0 +1,6 @@
+package: riskdto
+generate:
+  models: true
+output: risk.gen.go
+output-options:
+  skip-prune: false

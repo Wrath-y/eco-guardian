@@ -1,0 +1,37 @@
+{
+  "command": "evaluate",
+  "candidate": {
+    "revision_id": "01948c1e-0000-7000-8000-000000000001",
+    "config_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "version_manifest_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "baseline": { "type": "NO_BASELINE" },
+  "policy": {
+    "id": "starter-release-policy",
+    "version": "v1",
+    "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "policy_requirements": [
+    {
+      "scene_id": "resource-balance",
+      "scene_version": "v1",
+      "metric_id": "metric-resource",
+      "metric_version": "v1",
+      "role": "required"
+    }
+  ],
+  "threshold": {
+    "type": "EXISTING",
+    "threshold": {
+      "id": "01948c1e-0000-7000-8000-000000000002",
+      "version": "1",
+      "hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    }
+  },
+  "simulation_runs": [
+    {
+      "run_id": "01948c1e-0000-7000-8000-000000000003",
+      "result_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  ]
+}

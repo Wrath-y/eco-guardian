@@ -69,4 +69,35 @@ func TestV1ModulesAreIndependentAndUseExactDecimalObservations(t *testing.T) {
 	if err != nil || unavailable.Status != Unavailable || unavailable.Value != nil {
 		t.Fatalf("unavailable=%#v err=%v", unavailable, err)
 	}
+	resource, found := registry.Module("metric-resource")
+	if !found {
+		t.Fatal("resource module missing")
+	}
+	target := resource.Descriptor().TargetRange
+	if target == nil || target.Lower.String() != "0.8" || target.Upper.String() != "1.2" || target.Bounds != Inclusive {
+		t.Fatalf("resource target range=%#v", target)
+	}
+}
+
+func TestTargetRangeDescriptorRequiresOneOrderedInclusiveRange(t *testing.T) {
+	descriptor := metricDescriptor("metric-resource")
+	descriptor.Direction = TargetRange
+	if descriptor.Valid() {
+		t.Fatal("target-range descriptor accepted without bounds")
+	}
+	lower, _ := formula.ParseDecimal("0.8")
+	upper, _ := formula.ParseDecimal("1.2")
+	descriptor.TargetRange = &ValueRange{Lower: lower, Upper: upper, Bounds: Inclusive}
+	if !descriptor.Valid() {
+		t.Fatal("ordered inclusive target range rejected")
+	}
+	descriptor.TargetRange = &ValueRange{Lower: upper, Upper: lower, Bounds: Inclusive}
+	if descriptor.Valid() {
+		t.Fatal("reversed target range accepted")
+	}
+	descriptor.Direction = HigherIsRisk
+	descriptor.TargetRange = &ValueRange{Lower: lower, Upper: upper, Bounds: Inclusive}
+	if descriptor.Valid() {
+		t.Fatal("non-target direction accepted target range metadata")
+	}
 }
