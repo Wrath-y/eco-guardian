@@ -27,6 +27,7 @@ const (
 	ErrorNumericViolation    ErrorCode = "DRAFT_PATCH_NUMERIC_VIOLATION"
 	ErrorUnitViolation       ErrorCode = "DRAFT_PATCH_UNIT_VIOLATION"
 	ErrorArrayAmbiguous      ErrorCode = "DRAFT_PATCH_ARRAY_AMBIGUOUS"
+	ErrorNoChange            ErrorCode = "DRAFT_PATCH_NO_CHANGE"
 )
 
 var ErrInvalid = errors.New("DraftPatchV1 is invalid")
