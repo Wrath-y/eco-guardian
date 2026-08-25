@@ -3,11 +3,9 @@
 package credential
 
 import (
-	"context"
 	"errors"
 	"unsafe"
 
-	aiprovider "github.com/zouyi/eco-guardian/internal/ai/provider"
 	"golang.org/x/sys/windows"
 )
 
@@ -39,26 +37,20 @@ type nativeCredential struct {
 	UserName           *uint16
 }
 
-type WindowsStore struct{}
+type windowsNativeAPI struct{}
 
-func NewWindowsStore() *WindowsStore { return &WindowsStore{} }
+func NewWindowsStore() *WindowsStore { return newWindowsStore(windowsNativeAPI{}) }
 
-func (*WindowsStore) Put(_ context.Context, provider string, value []byte) error {
-	target, err := targetName(provider)
-	if err != nil || len(value) == 0 || len(value) > aiprovider.MaxCredentialBytes {
-		return aiprovider.ErrCredentialInvalid
-	}
+func (windowsNativeAPI) Put(target string, value []byte) error {
 	targetUTF16, err := windows.UTF16PtrFromString(target)
 	if err != nil {
-		return aiprovider.ErrCredentialInvalid
+		return err
 	}
-	copyValue := append([]byte(nil), value...)
-	defer clear(copyValue)
 	credential := nativeCredential{
 		Type:               credentialTypeGeneric,
 		TargetName:         targetUTF16,
-		CredentialBlobSize: uint32(len(copyValue)),
-		CredentialBlob:     &copyValue[0],
+		CredentialBlobSize: uint32(len(value)),
+		CredentialBlob:     &value[0],
 		Persist:            credentialPersistLocalMachine,
 	}
 	result, _, callErr := procCredWrite.Call(uintptr(unsafe.Pointer(&credential)), 0)
@@ -68,44 +60,36 @@ func (*WindowsStore) Put(_ context.Context, provider string, value []byte) error
 	return nil
 }
 
-func (*WindowsStore) Get(_ context.Context, provider string) ([]byte, error) {
-	target, err := targetName(provider)
-	if err != nil {
-		return nil, aiprovider.ErrCredentialInvalid
-	}
+func (windowsNativeAPI) Get(target string) ([]byte, error) {
 	targetUTF16, err := windows.UTF16PtrFromString(target)
 	if err != nil {
-		return nil, aiprovider.ErrCredentialInvalid
+		return nil, err
 	}
 	var credential *nativeCredential
 	result, _, callErr := procCredRead.Call(uintptr(unsafe.Pointer(targetUTF16)), credentialTypeGeneric, 0, uintptr(unsafe.Pointer(&credential)))
 	if result == 0 {
 		if errors.Is(callErr, windows.ERROR_NOT_FOUND) {
-			return nil, aiprovider.ErrCredentialNotFound
+			return nil, errWindowsCredentialNotFound
 		}
 		return nil, callErr
 	}
 	defer procCredFree.Call(uintptr(unsafe.Pointer(credential)))
 	if credential == nil || credential.CredentialBlobSize == 0 || credential.CredentialBlob == nil {
-		return nil, aiprovider.ErrCredentialNotFound
+		return nil, errWindowsCredentialNotFound
 	}
 	value := append([]byte(nil), unsafe.Slice(credential.CredentialBlob, int(credential.CredentialBlobSize))...)
 	return value, nil
 }
 
-func (*WindowsStore) Delete(_ context.Context, provider string) error {
-	target, err := targetName(provider)
-	if err != nil {
-		return aiprovider.ErrCredentialInvalid
-	}
+func (windowsNativeAPI) Delete(target string) error {
 	targetUTF16, err := windows.UTF16PtrFromString(target)
 	if err != nil {
-		return aiprovider.ErrCredentialInvalid
+		return err
 	}
 	result, _, callErr := procCredDelete.Call(uintptr(unsafe.Pointer(targetUTF16)), credentialTypeGeneric, 0)
 	if result == 0 {
 		if errors.Is(callErr, windows.ERROR_NOT_FOUND) {
-			return aiprovider.ErrCredentialNotFound
+			return errWindowsCredentialNotFound
 		}
 		return callErr
 	}

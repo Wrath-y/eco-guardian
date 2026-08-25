@@ -62,11 +62,14 @@ go test ./internal/ai/tools -run '^$' -fuzz FuzzPolicyGuardNeverAuthorizesUnregi
 go test ./internal/ai/tools -run '^$' -fuzz FuzzPromptInjectionRemainsInertToolData -fuzztime 3s
 openspec validate ai-balance-design-workflow --strict --no-interactive
 go test ./internal/platform/credential ./internal/ai/provider ./internal/httpapi -run 'Credential'
-                                                                    # 8 passed / 3 packages
+                                                                    # 11 passed / 3 packages
+go test -race ./internal/platform/credential                        # 4 passed, no race
 GOOS=windows GOARCH=amd64 go test -c ./internal/platform/credential -o /tmp/eco-guardian-credential-windows-amd64.test.exe
 GOOS=windows GOARCH=amd64 go test -c ./internal/ai/provider -o /tmp/eco-guardian-ai-provider-windows-amd64.test.exe
                                                                     # Windows implementations/tests compile
 git diff --check                                                    # passed
 ```
 
-The ordinary (non-race) suite includes all capacity timing fixtures. Running those timing assertions under race instrumentation produced no race report, but the 2,000-entity local-save timing rose to 9.26 seconds versus its normal-build 5-second threshold; the passing race command therefore excludes tests named `Capacity`. No Wine or Windows runner was present on the macOS host, so Windows Credential Manager native API execution must remain part of the Windows 10/11 packaging smoke test; both Windows test binaries cross-compile successfully and all platform-neutral credential behavior tests pass here.
+The ordinary (non-race) suite includes all capacity timing fixtures. Running those timing assertions under race instrumentation produced no race report, but the 2,000-entity local-save timing rose to 9.26 seconds versus its normal-build 5-second threshold; the passing race command therefore excludes tests named `Capacity`.
+
+Windows Credential Manager policy is exercised through a deterministic native-API seam: Put/Get/Delete, target validation, NOT_FOUND/native error mapping, cancellation, defensive copying and temporary-buffer clearing all run on this host, including under `-race`. The production `advapi32` binding and the same tests cross-compile into the Windows test binary. No Wine or Windows runner was present, so an actual Windows vault round-trip remains a packaging smoke test rather than a unit-test dependency.
