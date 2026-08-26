@@ -114,7 +114,7 @@ async function mockAI(page: Page, state: AIState) {
     if (path.endsWith('/projects/recent')) return json([])
     if (path.endsWith('/runtime/status')) return json({ ai: capability(state) })
     if (path.endsWith('/settings') && request.method() === 'GET') return json(settings())
-    if (path.endsWith('/settings') && request.method() === 'PATCH') { state.settingsPosts.push(request.postDataJSON() as Record<string, unknown>); return json(settings()) }
+    if (path.endsWith('/settings') && request.method() === 'PATCH') { state.settingsPosts.push(request.postDataJSON() as Record<string, unknown>); return json({ settings: settings(), effects: [{ field: 'ai', disposition: 'reconnect_required' }] }) }
     if (path.endsWith('/settings/credentials/openai-compatible') && request.method() === 'PUT') { state.credentialBodies.push(request.postData() || ''); return json({ provider: 'openai-compatible', credential_present: true, source: 'credential_manager' }) }
     if (path.endsWith('/revisions') && request.method() === 'GET') return json({ items: state.accepted ? [revision(acceptedRevisionID, 8), revision(baseRevisionID, 7)] : [revision(baseRevisionID, 7)] })
     if (path.endsWith('/entities/skill')) return json({ items: [{ id: skillID, name: 'Opening Strike', key: 'opening_strike', entity_version: 7 }] })

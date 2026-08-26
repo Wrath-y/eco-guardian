@@ -148,6 +148,14 @@ type Store interface {
 	RequestCancellation(context.Context, domain.ID) (Record, bool, error)
 }
 
+// RecoverableStore extends the shared repository only with a bounded scan of
+// the three nonterminal states eligible for startup/project-open recovery.
+// Feature-specific immutable facts remain in their owning module tables.
+type RecoverableStore interface {
+	Store
+	ListRecoverableJobs(context.Context, int) ([]Record, error)
+}
+
 type EventStore interface {
 	Append(context.Context, Event) (Event, bool, error)
 	ListEvents(context.Context, domain.ID, int64) ([]Event, error)

@@ -1,0 +1,48 @@
+[
+  {
+    "schema_version": 1,
+    "generation": 10,
+    "build": { "version": "1.0.0", "build": "fixture", "commit": "fixture-commit", "package_mode": "complete" },
+    "listener": { "url": "http://127.0.0.1:43123" },
+    "phase": "ready",
+    "project": { "state": "active", "project_id": "01948c1e-0000-7000-8000-000000000101", "recent_count": 1, "recovery_required": false },
+    "process": { "ownership": "bundled", "state": "ready", "launch_generation": 2, "endpoint": "http://127.0.0.1:43124", "restart_attempt": 0, "reason": null },
+    "dependencies": [{ "id": "graph.core", "state": "healthy", "generation": 2, "observed_at": "2026-08-25T00:00:00Z", "expires_at": "2026-08-25T00:00:30Z", "reasons": [] }],
+    "capabilities": [{ "id": "local.editing", "version": "1", "state": "available", "observation_generation": 10, "reasons": [], "actions": [] }],
+    "recovery": [],
+    "log_location": "<local-app-data>/EcoGuardian/logs",
+    "updated_at": "2026-08-25T00:00:01Z"
+  },
+  {
+    "schema_version": 1,
+    "generation": 11,
+    "build": { "version": "1.0.0", "build": "fixture", "commit": "fixture-commit", "package_mode": "lightweight" },
+    "listener": { "url": "http://127.0.0.1:43123" },
+    "phase": "degraded",
+    "project": { "state": "recovery_required", "project_id": null, "recent_count": 1, "recovery_required": true },
+    "process": { "ownership": "external", "state": "backoff", "launch_generation": 4, "endpoint": "http://127.0.0.1:43124", "restart_attempt": 2, "reason": "HEALTH_TIMEOUT" },
+    "dependencies": [{ "id": "retrieval.vector", "state": "degraded", "generation": 4, "observed_at": "2026-08-25T00:00:00Z", "expires_at": "2026-08-25T00:00:30Z", "reasons": [{ "code": "VECTOR_UNAVAILABLE", "component": "retrieval.vector", "observation_generation": 4 }] }],
+    "capabilities": [
+      { "id": "local.editing", "version": "1", "state": "available", "observation_generation": 11, "reasons": [], "actions": [] },
+      { "id": "retrieval", "version": "1", "state": "degraded", "observation_generation": 11, "reasons": [{ "code": "VECTOR_UNAVAILABLE", "component": "retrieval.vector", "observation_generation": 4 }], "actions": [{ "id": "runtime.reprobe", "method": "POST", "uri": "/api/v1/runtime/reprobe", "idempotency_required": true }] },
+      { "id": "ai.design", "version": "1", "state": "unavailable", "observation_generation": 11, "reasons": [{ "code": "AI_PROVIDER_UNAVAILABLE", "component": "ai.provider", "observation_generation": 8 }], "actions": [{ "id": "provider.settings", "method": "PATCH", "uri": "/api/v1/settings", "idempotency_required": false }] }
+    ],
+    "recovery": [{ "job_kind": "graph_sync", "state": "reconciling", "count": 1 }, { "job_kind": "ai_design", "state": "recovery_required", "count": 1 }],
+    "log_location": "<local-app-data>/EcoGuardian/logs",
+    "updated_at": "2026-08-25T00:00:02Z"
+  },
+  {
+    "schema_version": 1,
+    "generation": 12,
+    "build": { "version": "1.0.0", "build": "fixture", "commit": "fixture-commit", "package_mode": "development" },
+    "listener": { "url": "http://127.0.0.1:43123" },
+    "phase": "degraded",
+    "project": { "state": "none", "project_id": null, "recent_count": 0, "recovery_required": false },
+    "process": { "ownership": "not_selected", "state": "not_selected", "launch_generation": 0, "endpoint": null, "restart_attempt": 0, "reason": "PACKAGE_COMPONENT_MISSING" },
+    "dependencies": [{ "id": "graph.core", "state": "unavailable", "generation": 0, "observed_at": null, "expires_at": null, "reasons": [{ "code": "PACKAGE_COMPONENT_MISSING", "component": "local-rag", "observation_generation": 0 }] }],
+    "capabilities": [{ "id": "graph.sync", "version": "1", "state": "unavailable", "observation_generation": 12, "reasons": [{ "code": "GRAPH_CORE_UNAVAILABLE", "component": "graph.core", "observation_generation": 0 }], "actions": [] }],
+    "recovery": [],
+    "log_location": "<local-app-data>/EcoGuardian/logs",
+    "updated_at": "2026-08-25T00:00:03Z"
+  }
+]

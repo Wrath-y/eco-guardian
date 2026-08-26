@@ -60,7 +60,7 @@ func TestEmbeddedAssetDigestsAreStableSHA256(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(first) != len(second) || first["api/openapi.yaml"] == "" || first["migrations/0001_initial.sql"] == "" {
+	if len(first) != len(second) || first["api/openapi.yaml"] == "" || first["migrations/0001_initial.sql"] == "" || first["compiled/templates/dsl/dsl-v1.ebnf"] == "" || first["compiled/templates/scenario/single-target-30s@v1.json"] == "" || first["compiled/templates/risk/risk-threshold-starter-v1.json"] == "" {
 		t.Fatalf("unexpected embedded digest set: %#v", first)
 	}
 	sha256 := regexp.MustCompile(`^[a-f0-9]{64}$`)

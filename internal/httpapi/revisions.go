@@ -178,7 +178,6 @@ func (h *VersionHandler) Register(r *gin.Engine) {
 	r.GET("/api/v1/jobs/:id/events", h.events)
 	r.POST("/api/v1/jobs/:id/cancel", h.cancel)
 	r.GET("/api/v1/runtime/capabilities", h.capability)
-	r.GET("/api/v1/runtime/status", h.capability)
 }
 func (h *VersionHandler) current(c *gin.Context) app.VersioningService {
 	s := h.service()

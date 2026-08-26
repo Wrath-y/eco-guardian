@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "local_rag": {
+    "version": "0.0.0-dev",
+    "source_commit": "cfbf6106a38bc46730217b987ca54c6b1b302f20",
+    "health_path": "tests/contract/fixtures/local-rag-graph-service-operability-v1/health.json",
+    "health_sha256": "938ad6f9fc8c8478c02bfcfd9a4af95f70b5678ab894d18dba067cef488875ec"
+  },
+  "openapi": {
+    "version": "1.0.0",
+    "path": "tests/contract/fixtures/local-rag-graph-snapshot-v1/openapi.yaml",
+    "sha256": "fd39c71846e49f0f6a7b4b1dc69a089634006af002d36af58c61444611df9369"
+  },
+  "consumer_fixtures": [
+    {
+      "id": "graph-service-operability-v1",
+      "version": "1.0",
+      "path": "tests/contract/fixtures/local-rag-graph-service-operability-v1/manifest.json",
+      "sha256": "ce2abebc58ede8d9dfb01bd99233822a5c75c320582a8473f65d390551e9318f"
+    },
+    {
+      "id": "graph-snapshot-v1",
+      "version": "1.0",
+      "path": "tests/contract/fixtures/local-rag-graph-snapshot-v1/manifest.json",
+      "sha256": "6e865e5c309158771c01918441a6519af8862c6f7bd5825c2440e2cca7ecf5f3"
+    },
+    {
+      "id": "hybrid-graph-retrieval-v1",
+      "version": "1.0",
+      "path": "tests/contract/fixtures/local-rag-hybrid-graph-retrieval-v1/manifest.json",
+      "sha256": "c4d6a5e8f8dbc2ac0faf76272580cab680a701db27eb3dbbd20e14f688a068d8"
+    }
+  ]
+}

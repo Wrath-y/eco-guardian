@@ -1,4 +1,4 @@
-.PHONY: test check-contract web-build build
+.PHONY: test check-contract web-build build assemble-complete assemble-lightweight
 
 test:
 	rtk go test ./...
@@ -20,3 +20,9 @@ build-macos:
 
 build-windows:
 	rtk env GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o dist/eco-guardian.exe ./cmd/eco-guardian
+
+assemble-complete:
+	rtk ./scripts/assemble-complete.sh $(ARGS)
+
+assemble-lightweight:
+	rtk ./scripts/assemble-lightweight.sh $(ARGS)

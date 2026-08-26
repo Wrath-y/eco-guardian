@@ -1,0 +1,4 @@
+[
+  { "type": "urn:eco:problem:SETTINGS_VALIDATION_FAILED", "title": "Runtime setting is invalid", "status": 400, "code": "SETTINGS_VALIDATION_FAILED", "retryable": false, "request_id": "fixture-request-1", "field_path": "graph.endpoint" },
+  { "type": "urn:eco:problem:SETTINGS_APPLY_FAILED", "title": "Runtime settings could not be applied", "status": 503, "code": "SETTINGS_APPLY_FAILED", "retryable": false, "request_id": "fixture-request-2", "field_path": "logs.max_files" }
+]

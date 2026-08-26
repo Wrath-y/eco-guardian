@@ -1,15 +1,18 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	runtimeconfig "github.com/zouyi/eco-guardian/internal/app/runtime/config"
+	"github.com/zouyi/eco-guardian/internal/httpapi/riskdto"
 )
 
 func TestSettingsHandlerReturnsOnlyNonSensitiveProviderMetadata(t *testing.T) {
@@ -35,7 +38,7 @@ func TestSettingsHandlerStrictlyUpdatesBoundedAIReference(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	engine.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"endpoint_classification":"loopback"`) {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"endpoint_classification":"loopback"`) || !strings.Contains(response.Body.String(), `"disposition":"reconnect_required"`) {
 		t.Fatalf("settings patch response=%d body=%s", response.Code, response.Body.String())
 	}
 	settings, _, err := store.Load()
@@ -57,6 +60,62 @@ func TestSettingsHandlerStrictlyUpdatesBoundedAIReference(t *testing.T) {
 	engine.ServeHTTP(foreignResponse, foreign)
 	if foreignResponse.Code != http.StatusForbidden {
 		t.Fatalf("foreign origin response=%d body=%s", foreignResponse.Code, foreignResponse.Body.String())
+	}
+}
+
+func TestSettingsHandlerAtomicallyUpdatesRuntimeSettingsAndReportsEffects(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := runtimeconfig.NewStore(filepath.Join(t.TempDir(), "settings.json"))
+	engine := gin.New()
+	NewSettingsHandler(store, nil).Register(engine)
+	body := `{"browser":{"auto_open":false},"graph":{"mode":"external","endpoint":"http://127.0.0.1:9300","health_timeout_seconds":8,"startup_timeout_seconds":45,"restart_limit":2},"logs":{"max_bytes":8388608,"max_files":4},"backup":{"retention_days":60}}`
+	request := httptest.NewRequest(http.MethodPatch, "/api/v1/settings", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("settings patch response=%d body=%s", response.Code, response.Body.String())
+	}
+	var result riskdto.SettingsUpdateResult
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	wantEffects := []riskdto.SettingsApplyEffect{
+		{Field: "browser", Disposition: riskdto.Applied},
+		{Field: "graph", Disposition: riskdto.ReconnectRequired},
+		{Field: "logs", Disposition: riskdto.RestartRequired},
+		{Field: "backup", Disposition: riskdto.Applied},
+	}
+	if !reflect.DeepEqual(result.Effects, wantEffects) {
+		t.Errorf("settings effects=%#v want=%#v", result.Effects, wantEffects)
+	}
+	persisted, _, err := store.Load()
+	if err != nil || persisted.Browser.AutoOpen || persisted.Graph.Endpoint != "http://127.0.0.1:9300" || persisted.Logs.MaxFiles != 4 || persisted.Backup.RetentionDays != 60 {
+		t.Fatalf("persisted settings=%#v err=%v", persisted, err)
+	}
+}
+
+func TestSettingsHandlerReturnsFieldProblemAndPreservesPriorDocument(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := runtimeconfig.NewStore(filepath.Join(t.TempDir(), "settings.json"))
+	before := runtimeconfig.Default()
+	before.Browser.AutoOpen = false
+	if err := store.Save(before); err != nil {
+		t.Fatal(err)
+	}
+	engine := gin.New()
+	NewSettingsHandler(store, nil).Register(engine)
+	body := `{"graph":{"mode":"external","endpoint":"http://example.test:9300","health_timeout_seconds":8,"startup_timeout_seconds":45,"restart_limit":2}}`
+	request := httptest.NewRequest(http.MethodPatch, "/api/v1/settings", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"SETTINGS_INVALID"`) || !strings.Contains(response.Body.String(), `"field_path":"graph.endpoint"`) || strings.Contains(response.Body.String(), "example.test") {
+		t.Fatalf("settings error response=%d body=%s", response.Code, response.Body.String())
+	}
+	after, _, err := store.Load()
+	if err != nil || !reflect.DeepEqual(after, before) {
+		t.Fatalf("prior settings changed: before=%#v after=%#v err=%v", before, after, err)
 	}
 }
 

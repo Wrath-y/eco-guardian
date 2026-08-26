@@ -21,6 +21,7 @@ var (
 )
 
 var _ sharedjob.Store = (*Store)(nil)
+var _ sharedjob.RecoverableStore = (*Store)(nil)
 var _ sharedjob.EventStore = (*Store)(nil)
 
 func (s *Store) CreateOrGet(ctx context.Context, request sharedjob.Request) (sharedjob.Record, bool, error) {
@@ -73,6 +74,26 @@ func (s *Store) GetJob(ctx context.Context, id domain.ID) (sharedjob.Record, err
 		return sharedjob.Record{}, ErrJobNotFound
 	}
 	return record, err
+}
+
+func (s *Store) ListRecoverableJobs(ctx context.Context, limit int) ([]sharedjob.Record, error) {
+	if limit < 1 || limit > 1000 {
+		return nil, ErrJobInvalid
+	}
+	rows, err := s.db.QueryContext(ctx, sharedJobSelect+` WHERE project_uuid=? AND status IN ('queued','running','interrupted') ORDER BY created_at,id LIMIT ?`, s.projectID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]sharedjob.Record, 0)
+	for rows.Next() {
+		record, scanErr := scanSharedJob(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		result = append(result, record)
+	}
+	return result, rows.Err()
 }
 
 func (s *Store) Transition(ctx context.Context, id domain.ID, expected, next sharedjob.Status, result *sharedjob.Result, observedCancelGeneration int64) (sharedjob.Record, bool, error) {

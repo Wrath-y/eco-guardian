@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/zouyi/eco-guardian/internal/domain"
+	graphsync "github.com/zouyi/eco-guardian/internal/graph/sync"
 )
 
 var ErrGraphImpactHandoffInvalid = errors.New("graph impact handoff is invalid")
@@ -44,6 +45,29 @@ func (s *Store) GraphImpactHandoffStatus(ctx context.Context, revisionID domain.
 		return "", false, err
 	}
 	return status, true, nil
+}
+
+func (s *Store) ListQueuedImpactHandoffs(ctx context.Context, limit int) ([]graphsync.ImpactHandoff, error) {
+	if limit < 1 || limit > 1000 {
+		return nil, ErrGraphImpactHandoffInvalid
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT revision_id,graph_manifest_hash,stage FROM graph_impact_handoffs WHERE status='queued' ORDER BY created_at,revision_id LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]graphsync.ImpactHandoff, 0)
+	for rows.Next() {
+		var handoff graphsync.ImpactHandoff
+		if err = rows.Scan(&handoff.RevisionID, &handoff.GraphHash, &handoff.Stage); err != nil || !handoff.Valid() {
+			if err != nil {
+				return nil, err
+			}
+			return nil, ErrGraphImpactHandoffInvalid
+		}
+		result = append(result, handoff)
+	}
+	return result, rows.Err()
 }
 
 func hash64(value string) bool {

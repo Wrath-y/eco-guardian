@@ -1,0 +1,9 @@
+{
+  "fixture_version": "1.0",
+  "runtime_status_schema_version": 1,
+  "files": {
+    "runtime-consumer-contract.json": "f64c0e7273826a765b876995e62103ff8946d36f12554b0d29de8fefd41d648f",
+    "runtime-status-matrix.json": "48d4a85a8501e7f4a3acb93d0793cf732aff5abe51a7a2b1ca5af2c8aa4bc51e",
+    "settings-validation-problems.json": "915290cb452419e90ff1581bebd1254000b98f64486d143df8bfc67ba9d27ea2"
+  }
+}

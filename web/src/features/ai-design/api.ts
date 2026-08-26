@@ -5,6 +5,7 @@ import type { components } from '@/api/generated'
 export type AICapability = components['schemas']['AIProviderCapability']
 export type AISettings = components['schemas']['SettingsResource']
 export type PatchAISettings = components['schemas']['PatchSettingsRequest']
+export type SettingsUpdate = components['schemas']['SettingsUpdateResult']
 export type AIDesignRequest = components['schemas']['CreateAIDesignJobRequest']
 export type AIDesignAccepted = components['schemas']['AIDesignJobAccepted']
 export type DraftPatch = components['schemas']['DraftPatchResource']
@@ -46,8 +47,8 @@ export const aiKeys = {
 }
 
 export function getAISettings() { return response<AISettings>(fetch('/api/v1/settings')) }
-export function patchAISettings(value: PatchAISettings) { return response<AISettings>(fetch('/api/v1/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) })) }
-export function getAICapability() { return response<components['schemas']['RuntimeCapabilities']>(fetch('/api/v1/runtime/status')).then(value => value.ai) }
+export function patchAISettings(value: PatchAISettings) { return response<SettingsUpdate>(fetch('/api/v1/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) })) }
+export function getAICapability() { return response<components['schemas']['RuntimeCapabilities']>(fetch('/api/v1/runtime/capabilities')).then(value => value.ai) }
 export function setProviderCredential(credential: string) { return response<components['schemas']['ProviderCredentialStatus']>(fetch('/api/v1/settings/credentials/openai-compatible', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential }) })) }
 export function clearProviderCredential() { return response<components['schemas']['ProviderCredentialStatus']>(fetch('/api/v1/settings/credentials/openai-compatible', { method: 'DELETE' })) }
 export function createAIDesignJob(value: AIDesignRequest, key: string) { return response<AIDesignAccepted>(fetch('/api/v1/ai-design-jobs', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(value) })) }

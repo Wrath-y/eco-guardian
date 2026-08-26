@@ -19,6 +19,22 @@ type fingerprintResolverFake struct {
 	err         error
 }
 
+type batchRecoveryStoreFake struct {
+	jobs     []sharedjob.Record
+	requests map[domain.ID]RecoveryRequest
+	err      error
+}
+
+func (store batchRecoveryStoreFake) ListRecoverableSimulationJobs(context.Context) ([]sharedjob.Record, error) {
+	return append([]sharedjob.Record(nil), store.jobs...), nil
+}
+func (store batchRecoveryStoreFake) LoadSimulationRecoveryRequest(_ context.Context, job sharedjob.Record) (RecoveryRequest, error) {
+	if store.err != nil {
+		return RecoveryRequest{}, store.err
+	}
+	return store.requests[job.ID], nil
+}
+
 func (fake fingerprintResolverFake) ResolveSimulationFingerprint(context.Context, []byte) (string, error) {
 	return fake.fingerprint, fake.err
 }
@@ -84,5 +100,30 @@ func TestPlanRecoveryRejectsImplementationDriftAndCorruptCheckpoint(t *testing.T
 	request.Checkpoints[0].AccumulatorHash = strings.Repeat("d", 64)
 	if _, err := PlanRecovery(context.Background(), resolver, request); !errors.Is(err, ErrRecoveryCorrupt) {
 		t.Fatalf("expected corrupt checkpoint, got %v", err)
+	}
+}
+
+func TestRecoveryManagerPreservesOriginalJobAndPersistsFingerprintRefusal(t *testing.T) {
+	request, resolver := recoveryRequest(t)
+	store := batchRecoveryStoreFake{jobs: []sharedjob.Record{request.Job}, requests: map[domain.ID]RecoveryRequest{request.Job.ID: request}}
+	failures := &failureStoreFake{record: request.Job}
+	runs := 0
+	manager := RecoveryManager{Requests: store, Resolver: resolver, Failures: failures, Runner: func(_ context.Context, job sharedjob.Record, _ RecoveryMaterialization, _ uint64) error {
+		if job.ID != request.Job.ID {
+			t.Fatal("recovery changed Job identity")
+		}
+		runs++
+		return nil
+	}}
+	results, err := manager.RecoverAll(context.Background())
+	if err != nil || len(results) != 1 || results[0].RecoveryRequired || results[0].ReusableSamples != 1 || results[0].RecomputedSamples != 2 || runs != 2 {
+		t.Fatalf("results=%#v runs=%d err=%v", results, runs, err)
+	}
+
+	resolver.fingerprint = strings.Repeat("f", 64)
+	manager.Resolver = resolver
+	results, err = manager.RecoverAll(context.Background())
+	if err != nil || !results[0].RecoveryRequired || results[0].Reason != FailureRecoveryUnavailable || failures.code != FailureRecoveryUnavailable || runs != 2 {
+		t.Fatalf("drift results=%#v code=%s runs=%d err=%v", results, failures.code, runs, err)
 	}
 }

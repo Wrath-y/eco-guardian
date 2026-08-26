@@ -22,8 +22,9 @@ async function saveSettings() {
   busy.value = 'settings'; error.value = ''; message.value = ''
   try {
     const value = await patchAISettings({ ai: { ...form } })
-    client.setQueryData(aiKeys.settings(props.projectID), value)
-    message.value = '非敏感 Provider 设置已保存。请测试结构化输出、工具调用与流式能力。'
+    client.setQueryData(aiKeys.settings(props.projectID), value.settings)
+    const reconnect = value.effects.some(effect => effect.disposition === 'reconnect_required')
+    message.value = reconnect ? '非敏感 Provider 设置已保存；请重新连接并测试能力。' : '非敏感 Provider 设置已保存。请测试结构化输出、工具调用与流式能力。'
     await capability.refetch()
   } catch (cause) { error.value = cause instanceof Error ? cause.message : '无法保存 Provider 设置' } finally { busy.value = '' }
 }

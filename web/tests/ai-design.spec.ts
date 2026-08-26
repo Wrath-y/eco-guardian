@@ -17,7 +17,7 @@ const capability = { state: 'available', enabled: true, endpoint_classification:
 describe('AI design admission', () => {
   it('selects frozen scope from server resources and preserves it on authoritative error', async () => {
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
-      if (url.endsWith('/runtime/status')) return Promise.resolve(new Response(JSON.stringify({ ai: capability }), { status: 200 }))
+      if (url.endsWith('/runtime/capabilities')) return Promise.resolve(new Response(JSON.stringify({ ai: capability }), { status: 200 }))
       if (url.endsWith('/settings')) return Promise.resolve(new Response(JSON.stringify({ schema_version: 1, ai: { enabled: true, endpoint: 'http://127.0.0.1/v1', model: 'fixture', request_timeout_seconds: 60, allow_cloud: false, endpoint_classification: 'loopback', credential_present: true } }), { status: 200 }))
       if (url.endsWith('/revisions')) return Promise.resolve(new Response(JSON.stringify({ items: [{ id: revisionID, display_revision: 7, config_hash: hash, metadata: { name: 'candidate' }, status: ['history'] }] }), { status: 200 }))
       if (url.includes('/entities/skill?')) return Promise.resolve(new Response(JSON.stringify({ items: [{ id: entityID, name: 'Opening Strike', key: 'opening_strike', entity_version: 9 }] }), { status: 200 }))

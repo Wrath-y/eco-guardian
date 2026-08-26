@@ -15,6 +15,7 @@ import (
 	sharedjob "github.com/zouyi/eco-guardian/internal/job"
 	"github.com/zouyi/eco-guardian/internal/simulation/contract"
 	simulationgate "github.com/zouyi/eco-guardian/internal/simulation/gate"
+	simulationorchestration "github.com/zouyi/eco-guardian/internal/simulation/orchestration"
 )
 
 var (
@@ -236,6 +237,33 @@ func (s *Store) ListRecoverableSimulationJobs(ctx context.Context) ([]sharedjob.
 		jobs = append(jobs, job)
 	}
 	return jobs, rows.Err()
+}
+
+func (s *Store) LoadSimulationRecoveryRequest(ctx context.Context, job sharedjob.Record) (simulationorchestration.RecoveryRequest, error) {
+	if !job.Valid() || job.Kind != "simulation" {
+		return simulationorchestration.RecoveryRequest{}, ErrSimulationRunInvalid
+	}
+	materialized, err := s.GetSimulationJobMaterialization(ctx, job.ID)
+	if err != nil {
+		return simulationorchestration.RecoveryRequest{}, err
+	}
+	var input contract.SimulationInputV1
+	if err = json.Unmarshal(materialized.CanonicalInput, &input); err != nil || input.SampleCount < 1 {
+		return simulationorchestration.RecoveryRequest{}, ErrSimulationRunInvalid
+	}
+	checkpoints, err := s.ListSimulationCheckpoints(ctx, job.ID, materialized.InputHash, materialized.FingerprintHash, materialized.CancelGeneration)
+	if err != nil {
+		return simulationorchestration.RecoveryRequest{}, err
+	}
+	result := simulationorchestration.RecoveryRequest{
+		Job: job, SampleCount: input.SampleCount,
+		Materialization: simulationorchestration.RecoveryMaterialization{JobID: materialized.JobID, ProjectID: materialized.ProjectID, RevisionID: materialized.RevisionID, ScenarioDefinitionID: materialized.ScenarioDefinitionID, CanonicalInput: append([]byte(nil), materialized.CanonicalInput...), InputHash: materialized.InputHash, FingerprintHash: materialized.FingerprintHash, CancelGeneration: materialized.CancelGeneration},
+		Checkpoints:     make([]simulationorchestration.RecoveryCheckpoint, 0, len(checkpoints)),
+	}
+	for _, checkpoint := range checkpoints {
+		result.Checkpoints = append(result.Checkpoints, simulationorchestration.RecoveryCheckpoint{Ordinal: checkpoint.SampleOrdinal, InputHash: checkpoint.InputHash, FingerprintHash: checkpoint.FingerprintHash, CancelGeneration: checkpoint.CancelGeneration, Accumulator: checkpoint.Accumulator, AccumulatorHash: checkpoint.AccumulatorHash})
+	}
+	return result, nil
 }
 
 func (s *Store) InsertSimulationRun(ctx context.Context, run SimulationRun, metrics []SimulationMetricResult) error {

@@ -83,3 +83,59 @@ func TestSharedJobEventsAreOrdinalAndResumable(t *testing.T) {
 		t.Fatalf("events=%#v err=%v", events, err)
 	}
 }
+
+func TestSharedJobRecoveryScanIsBoundedOrderedAndNonterminal(t *testing.T) {
+	store := newStore(t)
+	first, _, err := store.CreateOrGet(context.Background(), sharedRequest(t, store, "r1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := store.CreateOrGet(context.Background(), sharedRequest(t, store, "r2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminal, _, err := store.CreateOrGet(context.Background(), sharedRequest(t, store, "r3"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, changed, err := store.Transition(context.Background(), terminal.ID, sharedjob.Queued, sharedjob.Failed, nil, 0); err != nil || !changed {
+		t.Fatalf("terminal transition changed=%v err=%v", changed, err)
+	}
+	recoverable, err := store.ListRecoverableJobs(context.Background(), 2)
+	if err != nil || len(recoverable) != 2 || recoverable[0].ID != first.ID || recoverable[1].ID != second.ID {
+		t.Fatalf("recoverable=%#v err=%v", recoverable, err)
+	}
+	if _, err = store.ListRecoverableJobs(context.Background(), 0); !errors.Is(err, ErrJobInvalid) {
+		t.Fatalf("limit err=%v", err)
+	}
+}
+
+func TestSharedJobTerminalResultIdentitySurvivesRepeatedCancelAndRecoveryScans(t *testing.T) {
+	store := newStore(t)
+	record, _, err := store.CreateOrGet(context.Background(), sharedRequest(t, store, "terminal"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	running, changed, err := store.Transition(context.Background(), record.ID, sharedjob.Queued, sharedjob.Running, nil, 0)
+	if err != nil || !changed {
+		t.Fatalf("running=%#v changed=%v err=%v", running, changed, err)
+	}
+	result := &sharedjob.Result{Type: "simulation_run", ID: record.RevisionID, URL: "/api/v1/simulation-runs/" + string(record.RevisionID)}
+	terminal, changed, err := store.Transition(context.Background(), record.ID, sharedjob.Running, sharedjob.Succeeded, result, 0)
+	if err != nil || !changed || terminal.Result == nil {
+		t.Fatalf("terminal=%#v changed=%v err=%v", terminal, changed, err)
+	}
+	afterCancel, replay, err := store.RequestCancellation(context.Background(), record.ID)
+	if err != nil || !replay || afterCancel.Status != sharedjob.Succeeded || afterCancel.Result == nil || *afterCancel.Result != *result {
+		t.Fatalf("afterCancel=%#v replay=%v err=%v", afterCancel, replay, err)
+	}
+	recoverable, err := store.ListRecoverableJobs(context.Background(), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range recoverable {
+		if candidate.ID == record.ID {
+			t.Fatalf("terminal Job returned by recovery scan: %#v", candidate)
+		}
+	}
+}

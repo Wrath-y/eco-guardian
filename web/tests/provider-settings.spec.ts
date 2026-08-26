@@ -14,7 +14,7 @@ describe('Provider settings', () => {
   it('writes credentials once and clears the secret from client state', async () => {
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
       if (url.endsWith('/settings/credentials/openai-compatible') && init?.method === 'PUT') return Promise.resolve(new Response(JSON.stringify({ provider: 'openai-compatible', credential_present: true, source: 'credential_manager' }), { status: 200 }))
-      if (url.endsWith('/runtime/status')) return Promise.resolve(new Response(JSON.stringify({ ai: capability }), { status: 200 }))
+      if (url.endsWith('/runtime/capabilities')) return Promise.resolve(new Response(JSON.stringify({ ai: capability }), { status: 200 }))
       if (url.endsWith('/settings')) return Promise.resolve(new Response(JSON.stringify(settings), { status: 200 }))
       return Promise.resolve(new Response('', { status: 404 }))
     })
@@ -30,7 +30,7 @@ describe('Provider settings', () => {
   })
 
   it('shows explicit cloud disclosure context', async () => {
-    vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve(new Response(JSON.stringify(url.endsWith('/runtime/status') ? { ai: capability } : settings), { status: 200 }))))
+    vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve(new Response(JSON.stringify(url.endsWith('/runtime/capabilities') ? { ai: capability } : settings), { status: 200 }))))
     render(ProviderSettingsPanel, { props: { projectID }, global: { plugins: [VueQueryPlugin] } })
     await fireEvent.click(await screen.findByLabelText('明确允许 cloud endpoint'))
     expect(screen.getByText(/冻结目标、目标\/约束及有界证据 citation/)).toBeTruthy()

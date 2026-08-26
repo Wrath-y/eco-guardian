@@ -42,3 +42,45 @@ func (s ImpactHandoffService) Dispatch(ctx context.Context, handoff ImpactHandof
 	}
 	return true, nil
 }
+
+type RecoverableImpactStore interface {
+	ListQueuedImpactHandoffs(context.Context, int) ([]ImpactHandoff, error)
+}
+
+type ImpactRecoveryResult struct {
+	Handoff    ImpactHandoff
+	Dispatched bool
+}
+
+type ImpactRecoveryService struct {
+	Store     RecoverableImpactStore
+	Scheduler ImpactScheduler
+	Limit     int
+}
+
+func (service ImpactRecoveryService) Recover(ctx context.Context) ([]ImpactRecoveryResult, error) {
+	if service.Store == nil {
+		return nil, ErrImpactHandoffInvalid
+	}
+	limit := service.Limit
+	if limit == 0 {
+		limit = 100
+	}
+	if limit < 1 || limit > 1000 {
+		return nil, ErrImpactHandoffInvalid
+	}
+	handoffs, err := service.Store.ListQueuedImpactHandoffs(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]ImpactRecoveryResult, 0, len(handoffs))
+	dispatcher := ImpactHandoffService{Scheduler: service.Scheduler}
+	for _, handoff := range handoffs {
+		dispatched, dispatchErr := dispatcher.Dispatch(ctx, handoff)
+		if dispatchErr != nil {
+			return results, dispatchErr
+		}
+		results = append(results, ImpactRecoveryResult{Handoff: handoff, Dispatched: dispatched})
+	}
+	return results, nil
+}

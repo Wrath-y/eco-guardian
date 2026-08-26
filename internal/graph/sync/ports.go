@@ -65,6 +65,11 @@ type Task struct {
 	Error                                                              *ProviderError
 	Result                                                             json.RawMessage
 }
+
+func (task Task) HasContractState() bool {
+	return task.State == "queued" || task.State == "running" || task.State == "succeeded" || task.State == "failed"
+}
+
 type Activation struct {
 	Namespace, ActiveVersion string
 	Changed                  bool
@@ -79,6 +84,7 @@ type Limit struct {
 }
 type Health struct {
 	SchemaVersion, Status, Service, ServiceVersion string
+	HTTPStatus                                     int
 	APIVersions, SupportedSchemaVersions           []string
 	Capabilities, Dependencies                     []HealthState
 	Limits                                         []Limit

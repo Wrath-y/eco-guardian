@@ -7,5 +7,5 @@ import "embed"
 // Assets contains the OpenAPI contract, database migration, compiled v1
 // schemas, and the web distribution that is produced by `make build`.
 //
-//go:embed api/openapi.yaml migrations/*.sql internal/domain/assets/*.json web/dist/*
+//go:embed api/*.yaml api/*.json migrations/*.sql internal/domain/assets/*.json web/dist/*
 var Assets embed.FS

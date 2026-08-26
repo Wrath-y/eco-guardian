@@ -46,6 +46,65 @@ type RecoveryPlan struct {
 }
 type RecoverySampleRunner func(context.Context, sharedjob.Record, RecoveryMaterialization, uint64) error
 
+type RecoveryRequestStore interface {
+	ListRecoverableSimulationJobs(context.Context) ([]sharedjob.Record, error)
+	LoadSimulationRecoveryRequest(context.Context, sharedjob.Record) (RecoveryRequest, error)
+}
+
+type BatchRecoveryResult struct {
+	JobID             domain.ID
+	ReusableSamples   int
+	RecomputedSamples int
+	RecoveryRequired  bool
+	Reason            string
+}
+
+type RecoveryManager struct {
+	Requests RecoveryRequestStore
+	Resolver RecoveryFingerprintResolver
+	Runner   RecoverySampleRunner
+	Failures FailureStore
+}
+
+func (manager RecoveryManager) RecoverAll(ctx context.Context) ([]BatchRecoveryResult, error) {
+	if manager.Requests == nil || manager.Resolver == nil || manager.Runner == nil || manager.Failures == nil {
+		return nil, ErrRecoveryInvalid
+	}
+	jobs, err := manager.Requests.ListRecoverableSimulationJobs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]BatchRecoveryResult, 0, len(jobs))
+	for _, job := range jobs {
+		result := BatchRecoveryResult{JobID: job.ID}
+		request, loadErr := manager.Requests.LoadSimulationRecoveryRequest(ctx, job)
+		if loadErr != nil {
+			if _, _, err = PersistRecoveryRefusal(ctx, manager.Failures, job.ID, job.CancelGeneration, ErrRecoveryCorrupt); err != nil {
+				return results, err
+			}
+			result.RecoveryRequired, result.Reason = true, FailureRecoveryMismatch
+			results = append(results, result)
+			continue
+		}
+		plan, recoverErr := Recover(ctx, manager.Resolver, request, manager.Runner)
+		if recoverErr != nil {
+			if _, _, err = PersistRecoveryRefusal(ctx, manager.Failures, job.ID, job.CancelGeneration, recoverErr); err != nil {
+				return results, err
+			}
+			result.RecoveryRequired = true
+			result.Reason = FailureRecoveryMismatch
+			if errors.Is(recoverErr, ErrRecoveryUnavailable) {
+				result.Reason = FailureRecoveryUnavailable
+			}
+			results = append(results, result)
+			continue
+		}
+		result.ReusableSamples, result.RecomputedSamples = len(plan.ReusableOrdinals), len(plan.MissingOrdinals)
+		results = append(results, result)
+	}
+	return results, nil
+}
+
 // PlanRecovery re-resolves the exact implementation before any checkpoint is
 // reused. Missing ordinals must be recomputed under the original Job identity.
 func PlanRecovery(ctx context.Context, resolver RecoveryFingerprintResolver, request RecoveryRequest) (RecoveryPlan, error) {

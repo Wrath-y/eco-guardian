@@ -4,6 +4,7 @@ package buildinfo
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"regexp"
@@ -11,6 +12,9 @@ import (
 	"strings"
 
 	ecoguardian "github.com/zouyi/eco-guardian"
+	"github.com/zouyi/eco-guardian/internal/formula"
+	riskthreshold "github.com/zouyi/eco-guardian/internal/risk/threshold"
+	"github.com/zouyi/eco-guardian/internal/simulation/scenario"
 )
 
 const RuntimeStatusSchemaVersion = "1.0"
@@ -79,8 +83,29 @@ func (m PackageMode) Valid() bool {
 // EmbeddedAssetDigests returns one SHA-256 digest for every file embedded in
 // the executable. Map keys are slash-separated embedded paths.
 func EmbeddedAssetDigests() (map[string]string, error) {
+	digests, err := FileDigests(ecoguardian.Assets)
+	if err != nil {
+		return nil, err
+	}
+	grammar := sha256.Sum256([]byte(formula.DSLGrammar))
+	digests["compiled/templates/dsl/dsl-v1.ebnf"] = hex.EncodeToString(grammar[:])
+	for _, template := range scenario.BuiltinTemplates() {
+		digests["compiled/templates/scenario/"+template.Definition.ID+"@"+template.Definition.Version+".json"] = template.BodyHash
+	}
+	starter := riskthreshold.StarterFixtureV1()
+	digests["compiled/templates/risk/"+starter.ID+".json"] = starter.BodyHash
+	return digests, nil
+}
+
+// FileDigests computes stable identities for a supplied asset filesystem. It
+// is also used by packaged startup to compare the serving filesystem with the
+// exact files compiled into the executable.
+func FileDigests(source fs.FS) (map[string]string, error) {
+	if source == nil {
+		return nil, errors.New("embedded asset filesystem is unavailable")
+	}
 	var names []string
-	if err := fs.WalkDir(ecoguardian.Assets, ".", func(name string, entry fs.DirEntry, err error) error {
+	if err := fs.WalkDir(source, ".", func(name string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -94,7 +119,7 @@ func EmbeddedAssetDigests() (map[string]string, error) {
 	sort.Strings(names)
 	digests := make(map[string]string, len(names))
 	for _, name := range names {
-		contents, err := ecoguardian.Assets.ReadFile(name)
+		contents, err := fs.ReadFile(source, name)
 		if err != nil {
 			return nil, fmt.Errorf("read embedded asset %q: %w", name, err)
 		}

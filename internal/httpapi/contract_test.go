@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io/fs"
 	"os"
@@ -11,6 +13,72 @@ import (
 
 	"github.com/zouyi/eco-guardian/internal/httpapi/riskdto"
 )
+
+func TestRuntimeV1GeneratedDTOFixturesAndDigestManifest(t *testing.T) {
+	root := "../../api/fixtures/runtime-v1"
+	manifestBody, err := os.ReadFile(filepath.Join(root, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		FixtureVersion string            `json:"fixture_version"`
+		SchemaVersion  int               `json:"runtime_status_schema_version"`
+		Files          map[string]string `json:"files"`
+	}
+	if err = json.Unmarshal(manifestBody, &manifest); err != nil || manifest.FixtureVersion != "1.0" || manifest.SchemaVersion != 1 || len(manifest.Files) != 3 {
+		t.Fatalf("runtime fixture manifest=%#v err=%v", manifest, err)
+	}
+	for name, expected := range manifest.Files {
+		body, readErr := os.ReadFile(filepath.Join(root, name))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		digest := sha256.Sum256(body)
+		if actual := hex.EncodeToString(digest[:]); actual != expected {
+			t.Fatalf("fixture %s digest=%s want=%s", name, actual, expected)
+		}
+	}
+	matrixBody, err := os.ReadFile(filepath.Join(root, "runtime-status-matrix.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var matrix []riskdto.RuntimeStatusResource
+	if err = json.Unmarshal(matrixBody, &matrix); err != nil || len(matrix) != 3 {
+		t.Fatalf("runtime matrix entries=%d err=%v", len(matrix), err)
+	}
+	seenPhases, seenModes := map[string]bool{}, map[string]bool{}
+	for _, status := range matrix {
+		seenPhases[string(status.Phase)] = true
+		seenModes[string(status.Build.PackageMode)] = true
+		encoded, encodeErr := json.Marshal(status)
+		if encodeErr != nil {
+			t.Fatal(encodeErr)
+		}
+		for _, forbidden := range []string{"fixture-secret", "business-payload", "embedding", "SELECT ", "/Users/", `C:\\Users\\`} {
+			if strings.Contains(string(encoded), forbidden) {
+				t.Fatalf("runtime fixture leaked %q: %s", forbidden, encoded)
+			}
+		}
+	}
+	for _, phase := range []string{"ready", "degraded"} {
+		if !seenPhases[phase] {
+			t.Errorf("runtime fixture omitted phase %s", phase)
+		}
+	}
+	for _, mode := range []string{"complete", "lightweight", "development"} {
+		if !seenModes[mode] {
+			t.Errorf("runtime fixture omitted package mode %s", mode)
+		}
+	}
+	problemsBody, err := os.ReadFile(filepath.Join(root, "settings-validation-problems.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var problems []riskdto.Problem
+	if err = json.Unmarshal(problemsBody, &problems); err != nil || len(problems) != 2 || problems[0].FieldPath == nil {
+		t.Fatalf("settings problem fixtures=%#v err=%v", problems, err)
+	}
+}
 
 func TestOpenAPIContainsAllHandlerOperations(t *testing.T) {
 	raw, err := os.ReadFile("../../api/openapi.yaml")

@@ -74,11 +74,19 @@ func loopbackURL(raw string) (*url.URL, error) {
 }
 
 func (c *Client) Health(ctx context.Context, requestID string) (graphsync.Health, error) {
+	health, _, err := c.HealthWithStatus(ctx, requestID)
+	return health, err
+}
+
+func (c *Client) HealthWithStatus(ctx context.Context, requestID string) (graphsync.Health, int, error) {
 	var response healthWire
-	if err := c.call(ctx, http.MethodGet, "/health", requestID, nil, &response, http.StatusOK, http.StatusServiceUnavailable); err != nil {
-		return graphsync.Health{}, err
+	status, err := c.callStatus(ctx, http.MethodGet, "/health", requestID, nil, &response, http.StatusOK, http.StatusServiceUnavailable)
+	if err != nil {
+		return graphsync.Health{}, status, err
 	}
-	return response.toDomain()
+	health, err := response.toDomain()
+	health.HTTPStatus = status
+	return health, status, err
 }
 func (c *Client) InspectSnapshot(ctx context.Context, namespace, version, requestID string) (graphsync.Snapshot, error) {
 	var response snapshotWire
@@ -123,28 +131,33 @@ func snapshotPath(namespace, version string) string {
 }
 
 func (c *Client) call(ctx context.Context, method, path, requestID string, request, response any, allowed ...int) error {
+	_, err := c.callStatus(ctx, method, path, requestID, request, response, allowed...)
+	return err
+}
+
+func (c *Client) callStatus(ctx context.Context, method, path, requestID string, request, response any, allowed ...int) (int, error) {
 	if strings.TrimSpace(requestID) == "" {
-		return fmt.Errorf("%w: request ID is required", ErrContract)
+		return 0, fmt.Errorf("%w: request ID is required", ErrContract)
 	}
 	var body io.Reader
 	if request != nil {
 		encoded, err := json.Marshal(request)
 		if err != nil {
-			return fmt.Errorf("encode request: %w", err)
+			return 0, fmt.Errorf("encode request: %w", err)
 		}
 		body = bytes.NewReader(encoded)
 	}
 	u := *c.base
 	decodedPath, err := url.PathUnescape(path)
 	if err != nil {
-		return fmt.Errorf("%w: invalid route", ErrContract)
+		return 0, fmt.Errorf("%w: invalid route", ErrContract)
 	}
 	prefix := strings.TrimSuffix(c.base.Path, "/")
 	u.Path = prefix + decodedPath
 	u.RawPath = prefix + path
 	httpRequest, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	httpRequest.Header.Set("Accept", "application/json")
 	httpRequest.Header.Set("X-Request-ID", requestID)
@@ -155,32 +168,32 @@ func (c *Client) call(ctx context.Context, method, path, requestID string, reque
 	// sends Idempotency-Key.
 	httpResponse, err := c.http.Do(httpRequest)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer httpResponse.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(httpResponse.Body, c.maxResponse+1))
 	if err != nil {
-		return err
+		return httpResponse.StatusCode, err
 	}
 	if int64(len(data)) > c.maxResponse {
-		return fmt.Errorf("%w: response too large", ErrContract)
+		return httpResponse.StatusCode, fmt.Errorf("%w: response too large", ErrContract)
 	}
 	for _, status := range allowed {
 		if httpResponse.StatusCode == status {
 			if response == nil || len(data) == 0 {
-				return nil
+				return httpResponse.StatusCode, nil
 			}
 			if err := json.Unmarshal(data, response); err != nil {
-				return fmt.Errorf("%w: invalid JSON response", ErrContract)
+				return httpResponse.StatusCode, fmt.Errorf("%w: invalid JSON response", ErrContract)
 			}
-			return nil
+			return httpResponse.StatusCode, nil
 		}
 	}
 	providerError := graphsync.ProviderError{}
 	if err := json.Unmarshal(data, &providerError); err != nil || !providerError.Valid() {
-		return fmt.Errorf("%w: HTTP %d", ErrContract, httpResponse.StatusCode)
+		return httpResponse.StatusCode, fmt.Errorf("%w: HTTP %d", ErrContract, httpResponse.StatusCode)
 	}
-	return &providerError
+	return httpResponse.StatusCode, &providerError
 }
 
 // Retry executes only caller-designated idempotent work. It does not know how

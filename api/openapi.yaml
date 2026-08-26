@@ -332,12 +332,12 @@ paths:
         default: { $ref: '#/components/responses/Problem' }
     patch:
       operationId: patchSettings
-      description: Replaces the bounded non-sensitive AI Provider selection. Credential material is rejected and uses the separate write-only endpoint.
+      description: Atomically updates bounded non-sensitive machine settings and reports fields applied now or requiring an explicit reconnect/restart. Credential material is rejected and uses the separate write-only endpoint.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/PatchSettingsRequest' } } }
       responses:
-        '200': { description: Updated non-sensitive runtime settings., content: { application/json: { schema: { $ref: '#/components/schemas/SettingsResource' } } } }
+        '200': { description: Updated settings and their deterministic application effects., content: { application/json: { schema: { $ref: '#/components/schemas/SettingsUpdateResult' } } } }
         default: { $ref: '#/components/responses/Problem' }
   /settings/credentials/{provider}:
     put:
@@ -360,9 +360,25 @@ paths:
   /runtime/status:
     get:
       operationId: getRuntimeStatus
-      description: Reads safe process-wide capability, registered contract and bounded-limit status without secrets.
+      description: Reads one immutable, side-effect-free runtime snapshot without handles, secrets, raw paths, Provider payloads, child output, or business content.
       responses:
-        '200': { description: Safe runtime status., content: { application/json: { schema: { $ref: '#/components/schemas/RuntimeCapabilities' } } } }
+        '200': { description: Versioned safe runtime status., content: { application/json: { schema: { $ref: '#/components/schemas/RuntimeStatusResource' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /runtime/reprobe:
+    post:
+      operationId: reprobeRuntimeDependencies
+      description: Invalidates the selected Graph health observation and performs one bounded, side-effect-free compatibility probe. It never starts a process or creates business work.
+      parameters: [ { $ref: '#/components/parameters/RuntimeActionIdempotencyKey' } ]
+      responses:
+        '204': { description: Dependency health was re-probed and runtime capabilities were refreshed. }
+        default: { $ref: '#/components/responses/Problem' }
+  /runtime/reconnect:
+    post:
+      operationId: reconnectRuntimeGraph
+      description: Re-applies the validated Graph selection, stopping only a child owned by this Eco Guardian instance. External services are never terminated.
+      parameters: [ { $ref: '#/components/parameters/RuntimeActionIdempotencyKey' } ]
+      responses:
+        '204': { description: Graph selection was reconnected and runtime capabilities were refreshed. }
         default: { $ref: '#/components/responses/Problem' }
   /runtime/capabilities:
     get:
@@ -385,6 +401,7 @@ components:
     AIProviderName: { name: provider, in: path, required: true, schema: { type: string, enum: [openai-compatible] } }
     IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 256 }, description: Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. }
     GraphRetryIdempotencyKey: { name: Idempotency-Key, in: header, required: false, schema: { type: string, minLength: 1, maxLength: 256 }, description: Required when graph-sync intent is retry; reuse returns the original retry Job and changed retry input conflicts. It is ignored for ensure. }
+    RuntimeActionIdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$' }, description: Reuse for the same runtime action returns the original bounded action outcome without executing it again. }
     LastEventID: { name: Last-Event-ID, in: header, schema: { type: integer, minimum: 0 }, description: Resume SSE delivery strictly after this persisted event ordinal. }
     IfMatch: { name: If-Match, in: header, required: true, schema: { type: string }, description: Strong ETag returned by GET/create/patch. }
   headers:
@@ -1411,19 +1428,78 @@ components:
         model: { type: string, maxLength: 256 }
         request_timeout_seconds: { type: integer, minimum: 1, maximum: 600 }
         allow_cloud: { type: boolean }
+    BrowserSettings:
+      type: object
+      additionalProperties: false
+      required: [auto_open]
+      properties:
+        auto_open: { type: boolean }
+    PackageSettings:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode: { type: string, enum: [development, complete, lightweight], readOnly: true }
+    GraphSettings:
+      type: object
+      additionalProperties: false
+      required: [mode, endpoint, health_timeout_seconds, startup_timeout_seconds, restart_limit]
+      properties:
+        mode: { type: string, enum: [disabled, external, bundled] }
+        endpoint: { type: string, maxLength: 2048, description: Unauthenticated loopback local-rag endpoint only. }
+        health_timeout_seconds: { type: integer, minimum: 1, maximum: 60 }
+        startup_timeout_seconds: { type: integer, minimum: 1, maximum: 300 }
+        restart_limit: { type: integer, minimum: 0, maximum: 10 }
+    LogSettings:
+      type: object
+      additionalProperties: false
+      required: [max_bytes, max_files]
+      properties:
+        max_bytes: { type: integer, format: int64, minimum: 65536, maximum: 1073741824 }
+        max_files: { type: integer, minimum: 1, maximum: 20 }
+    BackupDefaultSettings:
+      type: object
+      additionalProperties: false
+      required: [retention_days]
+      properties:
+        retention_days: { type: integer, minimum: 0, maximum: 3650 }
     SettingsResource:
       type: object
       additionalProperties: false
-      required: [schema_version, ai]
+      required: [schema_version, browser, package, graph, ai, logs, backup]
       properties:
         schema_version: { type: integer, minimum: 1 }
+        browser: { $ref: '#/components/schemas/BrowserSettings' }
+        package: { $ref: '#/components/schemas/PackageSettings' }
+        graph: { $ref: '#/components/schemas/GraphSettings' }
         ai: { $ref: '#/components/schemas/AIProviderSettings' }
+        logs: { $ref: '#/components/schemas/LogSettings' }
+        backup: { $ref: '#/components/schemas/BackupDefaultSettings' }
     PatchSettingsRequest:
       type: object
       additionalProperties: false
-      required: [ai]
+      minProperties: 1
       properties:
+        browser: { $ref: '#/components/schemas/BrowserSettings' }
+        graph: { $ref: '#/components/schemas/GraphSettings' }
         ai: { $ref: '#/components/schemas/PatchAIProviderSettings' }
+        logs: { $ref: '#/components/schemas/LogSettings' }
+        backup: { $ref: '#/components/schemas/BackupDefaultSettings' }
+    SettingsApplyDisposition: { type: string, enum: [applied, reconnect_required, restart_required] }
+    SettingsApplyEffect:
+      type: object
+      additionalProperties: false
+      required: [field, disposition]
+      properties:
+        field: { type: string, minLength: 1 }
+        disposition: { $ref: '#/components/schemas/SettingsApplyDisposition' }
+    SettingsUpdateResult:
+      type: object
+      additionalProperties: false
+      required: [settings, effects]
+      properties:
+        settings: { $ref: '#/components/schemas/SettingsResource' }
+        effects: { type: array, items: { $ref: '#/components/schemas/SettingsApplyEffect' } }
     PutProviderCredentialRequest:
       type: object
       additionalProperties: false
@@ -1469,6 +1545,105 @@ components:
         release: { $ref: '#/components/schemas/ReleaseCapability' }
         graph: { $ref: '#/components/schemas/GraphRuntimeCapability' }
         ai: { $ref: '#/components/schemas/AIProviderCapability' }
+    RuntimeStatusResource:
+      type: object
+      additionalProperties: false
+      required: [schema_version, generation, build, listener, phase, project, process, dependencies, capabilities, recovery, log_location, updated_at]
+      properties:
+        schema_version: { type: integer, const: 1 }
+        generation: { type: integer, format: int64, minimum: 0 }
+        build: { $ref: '#/components/schemas/RuntimeBuildIdentity' }
+        listener: { $ref: '#/components/schemas/RuntimeListener' }
+        phase: { type: string, enum: [loading_settings, verifying_package, binding_http, starting_dependencies, recovering, opening_recent_project, ready, degraded, stopping, stopped] }
+        project: { $ref: '#/components/schemas/RuntimeProjectSummary' }
+        process: { $ref: '#/components/schemas/RuntimeProcessSummary' }
+        dependencies: { type: array, items: { $ref: '#/components/schemas/RuntimeDependencyObservation' } }
+        capabilities: { type: array, items: { $ref: '#/components/schemas/RuntimeCapabilityResult' } }
+        recovery: { type: array, items: { $ref: '#/components/schemas/RuntimeRecoverySummary' } }
+        log_location: { type: string, maxLength: 256, description: Display-safe application log location; never an arbitrary file-read target. }
+        updated_at: { type: string, format: date-time }
+    RuntimeBuildIdentity:
+      type: object
+      additionalProperties: false
+      required: [version, build, commit, package_mode]
+      properties:
+        version: { type: string, minLength: 1, maxLength: 128 }
+        build: { type: string, minLength: 1, maxLength: 128 }
+        commit: { type: string, minLength: 1, maxLength: 128 }
+        package_mode: { type: string, enum: [development, complete, lightweight] }
+    RuntimeListener:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url: { type: string, pattern: '^http://127\.0\.0\.1:[0-9]{1,5}$', maxLength: 64 }
+    RuntimeProjectSummary:
+      type: object
+      additionalProperties: false
+      required: [state, project_id, recent_count, recovery_required]
+      properties:
+        state: { type: string, enum: [none, opening, active, locked, incompatible, recovery_required] }
+        project_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        recent_count: { type: integer, minimum: 0, maximum: 100 }
+        recovery_required: { type: boolean }
+    RuntimeProcessSummary:
+      type: object
+      additionalProperties: false
+      required: [ownership, state, launch_generation, endpoint, restart_attempt, reason]
+      properties:
+        ownership: { type: string, enum: [not_selected, external, bundled] }
+        state: { type: string, enum: [not_selected, external, starting, ready, backoff, exited, restart_exhausted, stopping] }
+        launch_generation: { type: integer, format: int64, minimum: 0 }
+        endpoint: { type: [string, 'null'], maxLength: 64, pattern: '^http://(127\.0\.0\.1|localhost):[0-9]{1,5}$' }
+        restart_attempt: { type: integer, minimum: 0, maximum: 100 }
+        reason: { type: [string, 'null'], maxLength: 128 }
+    RuntimeDependencyObservation:
+      type: object
+      additionalProperties: false
+      required: [id, state, generation, observed_at, expires_at, reasons]
+      properties:
+        id: { type: string, pattern: '^[a-z][a-z0-9._-]{0,127}$' }
+        state: { type: string, enum: [unknown, healthy, degraded, unavailable] }
+        generation: { type: integer, format: int64, minimum: 0 }
+        observed_at: { type: [string, 'null'], format: date-time }
+        expires_at: { type: [string, 'null'], format: date-time }
+        reasons: { type: array, items: { $ref: '#/components/schemas/RuntimeReason' } }
+    RuntimeCapabilityResult:
+      type: object
+      additionalProperties: false
+      required: [id, version, state, observation_generation, reasons, actions]
+      properties:
+        id: { type: string, pattern: '^[a-z][a-z0-9._-]{0,127}$' }
+        version: { type: string, pattern: '^[0-9]+(\.[0-9]+){0,2}$' }
+        state: { type: string, enum: [available, degraded, unavailable] }
+        observation_generation: { type: integer, format: int64, minimum: 0 }
+        reasons: { type: array, items: { $ref: '#/components/schemas/RuntimeReason' } }
+        actions: { type: array, items: { $ref: '#/components/schemas/RuntimeAction' } }
+    RuntimeReason:
+      type: object
+      additionalProperties: false
+      required: [code, component, observation_generation]
+      properties:
+        code: { type: string, pattern: '^[A-Z][A-Z0-9_]{0,127}$' }
+        component: { type: string, pattern: '^[a-z][a-z0-9._-]{0,127}$' }
+        observation_generation: { type: integer, format: int64, minimum: 0 }
+    RuntimeAction:
+      type: object
+      additionalProperties: false
+      required: [id, method, uri, idempotency_required]
+      properties:
+        id: { type: string, enum: [runtime.reprobe, graph.reconnect, graph.retry, job.cancel, provider.settings, credential.configure] }
+        method: { type: string, enum: [POST, PATCH, PUT] }
+        uri: { type: string, pattern: '^/api/v1/', maxLength: 256 }
+        idempotency_required: { type: boolean }
+    RuntimeRecoverySummary:
+      type: object
+      additionalProperties: false
+      required: [job_kind, state, count]
+      properties:
+        job_kind: { type: string, pattern: '^[a-z][a-z0-9._-]{0,127}$' }
+        state: { type: string, enum: [pending, reconciling, recovery_required, complete] }
+        count: { type: integer, minimum: 0, maximum: 10000 }
     GraphRuntimeCapability:
       type: object
       required: [available, compatible, required_capabilities, degradations, disabled_reasons, release_disabled_reasons]
@@ -1824,7 +1999,7 @@ components:
         status: { type: integer }
         detail: { type: string }
         instance: { type: string }
-        code: { type: string, enum: [INVALID_SELECTION, PROJECT_LOCKED, ACTIVE_PROJECT_CONFLICT, CLOSE_BLOCKED, UNSUPPORTED_KIND, UNSUPPORTED_SCHEMA, DUPLICATE_KEY, PRECONDITION_REQUIRED, REVISION_CONFLICT, ENTITY_REFERENCED, VALIDATION_FAILED, PROJECT_NOT_OPEN, INVALID_VALIDATION_REQUEST, INVALID_VALIDATION_SOURCE, INVALID_VALIDATION_SCOPE, INVALID_VALIDATION_TARGET, VALIDATION_SOURCE_NOT_FOUND, VALIDATION_RUN_NOT_FOUND, VALIDATION_STORAGE_FAILURE, REVISION_NOT_FOUND, REVISION_IMMUTABLE, DIFF_BASE_INVALID, RELEASE_POLICY_INVALID, RELEASE_CAPABILITY_DISABLED, RELEASE_PREFLIGHT_FAILED, RELEASE_BASE_CONFLICT, IDEMPOTENCY_CONFLICT, MANDATORY_BACKUP_FAILED, MIGRATION_BACKUP_REQUIRED, INVALID_CONFIRMATION, HISTORY_NOT_FOUND, STORAGE_FAILURE, EXTERNAL_SERVICE_FAILURE, GRAPH_VALIDATION_REQUIRED, GRAPH_VALIDATION_BLOCKED, PROJECTOR_VERSION_UNAVAILABLE, GRAPH_CAPABILITY_UNAVAILABLE, BASE_SNAPSHOT_NOT_FOUND, BASE_SNAPSHOT_NOT_READY, CONTENT_HASH_MISMATCH, CONTENT_HASH_CONFLICT, PROVIDER_TASK_FAILED, GRAPH_RETRY_EXHAUSTED, GRAPH_RETRY_NOT_SAFE, GRAPH_STATUS_UNAVAILABLE, SIMULATION_CAPABILITY_UNAVAILABLE, SIMULATION_IDEMPOTENCY_REQUIRED, SIMULATION_INPUT_INVALID, SIMULATION_SEED_INVALID, SIMULATION_VALIDATION_REQUIRED, SIMULATION_SOURCE_INVALID, SIMULATION_SCENE_INVALID, SIMULATION_PARAMETER_INVALID, SIMULATION_METRIC_INVALID, SIMULATION_SAMPLE_INVALID, SIMULATION_BUDGET_INVALID, SIMULATION_IMPLEMENTATION_UNAVAILABLE, SIMULATION_VERIFICATION_TARGET_INVALID, SIMULATION_RUN_NOT_FOUND, SIMULATION_RUN_UNAVAILABLE, BUDGET_EXCEEDED, TIMEOUT, RECOVERY_MISMATCH, RECOVERY_UNAVAILABLE, RISK_IDEMPOTENCY_REQUIRED, RISK_COMMAND_INVALID, RISK_REVISION_INVALID, RISK_BASELINE_INVALID, RISK_POLICY_INVALID, THRESHOLD_NOT_CONFIGURED, THRESHOLD_INVALID, RISK_VALIDATION_INVALID, RISK_SIMULATION_INVALID, RISK_COHORT_INVALID, RISK_REQUIRED_METRIC_UNAVAILABLE, RISK_STALE_IDENTITY, RISK_REGISTRY_INCOMPATIBLE, RISK_RULE_CONTRACT_INVALID, RISK_DECISION_INVALID, RISK_REVIEW_NOT_FOUND, RISK_CANCELED, RISK_INTERRUPTED, AI_IDEMPOTENCY_REQUIRED, AI_PROVIDER_UNCONFIGURED, AI_CAPABILITY_UNAVAILABLE, AI_INPUT_INVALID, AI_EVIDENCE_UNAVAILABLE, AI_SNAPSHOT_IDENTITY_MISMATCH, AI_SNAPSHOT_INDEX_NOT_READY, AI_RETRIEVAL_UNAVAILABLE, AI_PROVIDER_FAILED, AI_PROVIDER_TIMEOUT, AI_OUTPUT_INVALID, AI_REPAIR_EXHAUSTED, AI_TOOL_POLICY_VIOLATION, AI_BUDGET_EXCEEDED, AI_PREVIEW_BLOCKED, AI_PATCH_NOT_FOUND, AI_PATCH_NOT_ACCEPTABLE, AI_PATCH_STALE, AI_DECISION_CONFLICT, AI_CANCELED, AI_INTERRUPTED, AI_CREDENTIAL_INVALID, AI_CREDENTIAL_STORE_FAILED] }
+        code: { type: string, enum: [INVALID_SELECTION, PROJECT_LOCKED, ACTIVE_PROJECT_CONFLICT, CLOSE_BLOCKED, UNSUPPORTED_KIND, UNSUPPORTED_SCHEMA, DUPLICATE_KEY, PRECONDITION_REQUIRED, REVISION_CONFLICT, ENTITY_REFERENCED, VALIDATION_FAILED, PROJECT_NOT_OPEN, INVALID_VALIDATION_REQUEST, INVALID_VALIDATION_SOURCE, INVALID_VALIDATION_SCOPE, INVALID_VALIDATION_TARGET, VALIDATION_SOURCE_NOT_FOUND, VALIDATION_RUN_NOT_FOUND, VALIDATION_STORAGE_FAILURE, REVISION_NOT_FOUND, REVISION_IMMUTABLE, DIFF_BASE_INVALID, RELEASE_POLICY_INVALID, RELEASE_CAPABILITY_DISABLED, RELEASE_PREFLIGHT_FAILED, RELEASE_BASE_CONFLICT, IDEMPOTENCY_CONFLICT, MANDATORY_BACKUP_FAILED, MIGRATION_BACKUP_REQUIRED, INVALID_CONFIRMATION, HISTORY_NOT_FOUND, STORAGE_FAILURE, SETTINGS_INVALID, SETTINGS_UNAVAILABLE, EXTERNAL_SERVICE_FAILURE, GRAPH_VALIDATION_REQUIRED, GRAPH_VALIDATION_BLOCKED, PROJECTOR_VERSION_UNAVAILABLE, GRAPH_CAPABILITY_UNAVAILABLE, BASE_SNAPSHOT_NOT_FOUND, BASE_SNAPSHOT_NOT_READY, CONTENT_HASH_MISMATCH, CONTENT_HASH_CONFLICT, PROVIDER_TASK_FAILED, GRAPH_RETRY_EXHAUSTED, GRAPH_RETRY_NOT_SAFE, GRAPH_STATUS_UNAVAILABLE, SIMULATION_CAPABILITY_UNAVAILABLE, SIMULATION_IDEMPOTENCY_REQUIRED, SIMULATION_INPUT_INVALID, SIMULATION_SEED_INVALID, SIMULATION_VALIDATION_REQUIRED, SIMULATION_SOURCE_INVALID, SIMULATION_SCENE_INVALID, SIMULATION_PARAMETER_INVALID, SIMULATION_METRIC_INVALID, SIMULATION_SAMPLE_INVALID, SIMULATION_BUDGET_INVALID, SIMULATION_IMPLEMENTATION_UNAVAILABLE, SIMULATION_VERIFICATION_TARGET_INVALID, SIMULATION_RUN_NOT_FOUND, SIMULATION_RUN_UNAVAILABLE, BUDGET_EXCEEDED, TIMEOUT, RECOVERY_MISMATCH, RECOVERY_UNAVAILABLE, RISK_IDEMPOTENCY_REQUIRED, RISK_COMMAND_INVALID, RISK_REVISION_INVALID, RISK_BASELINE_INVALID, RISK_POLICY_INVALID, THRESHOLD_NOT_CONFIGURED, THRESHOLD_INVALID, RISK_VALIDATION_INVALID, RISK_SIMULATION_INVALID, RISK_COHORT_INVALID, RISK_REQUIRED_METRIC_UNAVAILABLE, RISK_STALE_IDENTITY, RISK_REGISTRY_INCOMPATIBLE, RISK_RULE_CONTRACT_INVALID, RISK_DECISION_INVALID, RISK_REVIEW_NOT_FOUND, RISK_CANCELED, RISK_INTERRUPTED, AI_IDEMPOTENCY_REQUIRED, AI_PROVIDER_UNCONFIGURED, AI_CAPABILITY_UNAVAILABLE, AI_INPUT_INVALID, AI_EVIDENCE_UNAVAILABLE, AI_SNAPSHOT_IDENTITY_MISMATCH, AI_SNAPSHOT_INDEX_NOT_READY, AI_RETRIEVAL_UNAVAILABLE, AI_PROVIDER_FAILED, AI_PROVIDER_TIMEOUT, AI_OUTPUT_INVALID, AI_REPAIR_EXHAUSTED, AI_TOOL_POLICY_VIOLATION, AI_BUDGET_EXCEEDED, AI_PREVIEW_BLOCKED, AI_PATCH_NOT_FOUND, AI_PATCH_NOT_ACCEPTABLE, AI_PATCH_STALE, AI_DECISION_CONFLICT, AI_CANCELED, AI_INTERRUPTED, AI_CREDENTIAL_INVALID, AI_CREDENTIAL_STORE_FAILED] }
         retryable: { type: boolean }
         request_id: { type: string }
         entity_id: { $ref: '#/components/schemas/UUIDv7' }

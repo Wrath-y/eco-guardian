@@ -506,7 +506,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** @description Replaces the bounded non-sensitive AI Provider selection. Credential material is rejected and uses the separate write-only endpoint. */
+        /** @description Atomically updates bounded non-sensitive machine settings and reports fields applied now or requiring an explicit reconnect/restart. Credential material is rejected and uses the separate write-only endpoint. */
         patch: operations["patchSettings"];
         trace?: never;
     };
@@ -535,10 +535,44 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Reads safe process-wide capability, registered contract and bounded-limit status without secrets. */
+        /** @description Reads one immutable, side-effect-free runtime snapshot without handles, secrets, raw paths, Provider payloads, child output, or business content. */
         get: operations["getRuntimeStatus"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runtime/reprobe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Invalidates the selected Graph health observation and performs one bounded, side-effect-free compatibility probe. It never starts a process or creates business work. */
+        post: operations["reprobeRuntimeDependencies"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runtime/reconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Re-applies the validated Graph selection, stopping only a child owned by this Eco Guardian instance. External services are never terminated. */
+        post: operations["reconnectRuntimeGraph"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1503,12 +1537,55 @@ export interface components {
             request_timeout_seconds: number;
             allow_cloud: boolean;
         };
+        BrowserSettings: {
+            auto_open: boolean;
+        };
+        PackageSettings: {
+            /** @enum {string} */
+            readonly mode: "development" | "complete" | "lightweight";
+        };
+        GraphSettings: {
+            /** @enum {string} */
+            mode: "disabled" | "external" | "bundled";
+            /** @description Unauthenticated loopback local-rag endpoint only. */
+            endpoint: string;
+            health_timeout_seconds: number;
+            startup_timeout_seconds: number;
+            restart_limit: number;
+        };
+        LogSettings: {
+            /** Format: int64 */
+            max_bytes: number;
+            max_files: number;
+        };
+        BackupDefaultSettings: {
+            retention_days: number;
+        };
         SettingsResource: {
             schema_version: number;
+            browser: components["schemas"]["BrowserSettings"];
+            package: components["schemas"]["PackageSettings"];
+            graph: components["schemas"]["GraphSettings"];
             ai: components["schemas"]["AIProviderSettings"];
+            logs: components["schemas"]["LogSettings"];
+            backup: components["schemas"]["BackupDefaultSettings"];
         };
         PatchSettingsRequest: {
-            ai: components["schemas"]["PatchAIProviderSettings"];
+            browser?: components["schemas"]["BrowserSettings"];
+            graph?: components["schemas"]["GraphSettings"];
+            ai?: components["schemas"]["PatchAIProviderSettings"];
+            logs?: components["schemas"]["LogSettings"];
+            backup?: components["schemas"]["BackupDefaultSettings"];
+        };
+        /** @enum {string} */
+        SettingsApplyDisposition: "applied" | "reconnect_required" | "restart_required";
+        SettingsApplyEffect: {
+            field: string;
+            disposition: components["schemas"]["SettingsApplyDisposition"];
+        };
+        SettingsUpdateResult: {
+            settings: components["schemas"]["SettingsResource"];
+            effects: components["schemas"]["SettingsApplyEffect"][];
         };
         PutProviderCredentialRequest: {
             /** @description Write-only Provider credential stored by the platform credential manager. */
@@ -1547,6 +1624,95 @@ export interface components {
             release: components["schemas"]["ReleaseCapability"];
             graph: components["schemas"]["GraphRuntimeCapability"];
             ai: components["schemas"]["AIProviderCapability"];
+        };
+        RuntimeStatusResource: {
+            /** @constant */
+            schema_version: 1;
+            /** Format: int64 */
+            generation: number;
+            build: components["schemas"]["RuntimeBuildIdentity"];
+            listener: components["schemas"]["RuntimeListener"];
+            /** @enum {string} */
+            phase: "loading_settings" | "verifying_package" | "binding_http" | "starting_dependencies" | "recovering" | "opening_recent_project" | "ready" | "degraded" | "stopping" | "stopped";
+            project: components["schemas"]["RuntimeProjectSummary"];
+            process: components["schemas"]["RuntimeProcessSummary"];
+            dependencies: components["schemas"]["RuntimeDependencyObservation"][];
+            capabilities: components["schemas"]["RuntimeCapabilityResult"][];
+            recovery: components["schemas"]["RuntimeRecoverySummary"][];
+            /** @description Display-safe application log location; never an arbitrary file-read target. */
+            log_location: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        RuntimeBuildIdentity: {
+            version: string;
+            build: string;
+            commit: string;
+            /** @enum {string} */
+            package_mode: "development" | "complete" | "lightweight";
+        };
+        RuntimeListener: {
+            url: string;
+        };
+        RuntimeProjectSummary: {
+            /** @enum {string} */
+            state: "none" | "opening" | "active" | "locked" | "incompatible" | "recovery_required";
+            project_id: components["schemas"]["UUIDv7"] | null;
+            recent_count: number;
+            recovery_required: boolean;
+        };
+        RuntimeProcessSummary: {
+            /** @enum {string} */
+            ownership: "not_selected" | "external" | "bundled";
+            /** @enum {string} */
+            state: "not_selected" | "external" | "starting" | "ready" | "backoff" | "exited" | "restart_exhausted" | "stopping";
+            /** Format: int64 */
+            launch_generation: number;
+            endpoint: string | null;
+            restart_attempt: number;
+            reason: string | null;
+        };
+        RuntimeDependencyObservation: {
+            id: string;
+            /** @enum {string} */
+            state: "unknown" | "healthy" | "degraded" | "unavailable";
+            /** Format: int64 */
+            generation: number;
+            /** Format: date-time */
+            observed_at: string | null;
+            /** Format: date-time */
+            expires_at: string | null;
+            reasons: components["schemas"]["RuntimeReason"][];
+        };
+        RuntimeCapabilityResult: {
+            id: string;
+            version: string;
+            /** @enum {string} */
+            state: "available" | "degraded" | "unavailable";
+            /** Format: int64 */
+            observation_generation: number;
+            reasons: components["schemas"]["RuntimeReason"][];
+            actions: components["schemas"]["RuntimeAction"][];
+        };
+        RuntimeReason: {
+            code: string;
+            component: string;
+            /** Format: int64 */
+            observation_generation: number;
+        };
+        RuntimeAction: {
+            /** @enum {string} */
+            id: "runtime.reprobe" | "graph.reconnect" | "graph.retry" | "job.cancel" | "provider.settings" | "credential.configure";
+            /** @enum {string} */
+            method: "POST" | "PATCH" | "PUT";
+            uri: string;
+            idempotency_required: boolean;
+        };
+        RuntimeRecoverySummary: {
+            job_kind: string;
+            /** @enum {string} */
+            state: "pending" | "reconciling" | "recovery_required" | "complete";
+            count: number;
         };
         /** @description Server-authoritative Graph provider health and compatibility. Graph release readiness remains a Gate result for an exact candidate revision. */
         GraphRuntimeCapability: {
@@ -1867,7 +2033,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "INVALID_SELECTION" | "PROJECT_LOCKED" | "ACTIVE_PROJECT_CONFLICT" | "CLOSE_BLOCKED" | "UNSUPPORTED_KIND" | "UNSUPPORTED_SCHEMA" | "DUPLICATE_KEY" | "PRECONDITION_REQUIRED" | "REVISION_CONFLICT" | "ENTITY_REFERENCED" | "VALIDATION_FAILED" | "PROJECT_NOT_OPEN" | "INVALID_VALIDATION_REQUEST" | "INVALID_VALIDATION_SOURCE" | "INVALID_VALIDATION_SCOPE" | "INVALID_VALIDATION_TARGET" | "VALIDATION_SOURCE_NOT_FOUND" | "VALIDATION_RUN_NOT_FOUND" | "VALIDATION_STORAGE_FAILURE" | "REVISION_NOT_FOUND" | "REVISION_IMMUTABLE" | "DIFF_BASE_INVALID" | "RELEASE_POLICY_INVALID" | "RELEASE_CAPABILITY_DISABLED" | "RELEASE_PREFLIGHT_FAILED" | "RELEASE_BASE_CONFLICT" | "IDEMPOTENCY_CONFLICT" | "MANDATORY_BACKUP_FAILED" | "MIGRATION_BACKUP_REQUIRED" | "INVALID_CONFIRMATION" | "HISTORY_NOT_FOUND" | "STORAGE_FAILURE" | "EXTERNAL_SERVICE_FAILURE" | "GRAPH_VALIDATION_REQUIRED" | "GRAPH_VALIDATION_BLOCKED" | "PROJECTOR_VERSION_UNAVAILABLE" | "GRAPH_CAPABILITY_UNAVAILABLE" | "BASE_SNAPSHOT_NOT_FOUND" | "BASE_SNAPSHOT_NOT_READY" | "CONTENT_HASH_MISMATCH" | "CONTENT_HASH_CONFLICT" | "PROVIDER_TASK_FAILED" | "GRAPH_RETRY_EXHAUSTED" | "GRAPH_RETRY_NOT_SAFE" | "GRAPH_STATUS_UNAVAILABLE" | "SIMULATION_CAPABILITY_UNAVAILABLE" | "SIMULATION_IDEMPOTENCY_REQUIRED" | "SIMULATION_INPUT_INVALID" | "SIMULATION_SEED_INVALID" | "SIMULATION_VALIDATION_REQUIRED" | "SIMULATION_SOURCE_INVALID" | "SIMULATION_SCENE_INVALID" | "SIMULATION_PARAMETER_INVALID" | "SIMULATION_METRIC_INVALID" | "SIMULATION_SAMPLE_INVALID" | "SIMULATION_BUDGET_INVALID" | "SIMULATION_IMPLEMENTATION_UNAVAILABLE" | "SIMULATION_VERIFICATION_TARGET_INVALID" | "SIMULATION_RUN_NOT_FOUND" | "SIMULATION_RUN_UNAVAILABLE" | "BUDGET_EXCEEDED" | "TIMEOUT" | "RECOVERY_MISMATCH" | "RECOVERY_UNAVAILABLE" | "RISK_IDEMPOTENCY_REQUIRED" | "RISK_COMMAND_INVALID" | "RISK_REVISION_INVALID" | "RISK_BASELINE_INVALID" | "RISK_POLICY_INVALID" | "THRESHOLD_NOT_CONFIGURED" | "THRESHOLD_INVALID" | "RISK_VALIDATION_INVALID" | "RISK_SIMULATION_INVALID" | "RISK_COHORT_INVALID" | "RISK_REQUIRED_METRIC_UNAVAILABLE" | "RISK_STALE_IDENTITY" | "RISK_REGISTRY_INCOMPATIBLE" | "RISK_RULE_CONTRACT_INVALID" | "RISK_DECISION_INVALID" | "RISK_REVIEW_NOT_FOUND" | "RISK_CANCELED" | "RISK_INTERRUPTED" | "AI_IDEMPOTENCY_REQUIRED" | "AI_PROVIDER_UNCONFIGURED" | "AI_CAPABILITY_UNAVAILABLE" | "AI_INPUT_INVALID" | "AI_EVIDENCE_UNAVAILABLE" | "AI_SNAPSHOT_IDENTITY_MISMATCH" | "AI_SNAPSHOT_INDEX_NOT_READY" | "AI_RETRIEVAL_UNAVAILABLE" | "AI_PROVIDER_FAILED" | "AI_PROVIDER_TIMEOUT" | "AI_OUTPUT_INVALID" | "AI_REPAIR_EXHAUSTED" | "AI_TOOL_POLICY_VIOLATION" | "AI_BUDGET_EXCEEDED" | "AI_PREVIEW_BLOCKED" | "AI_PATCH_NOT_FOUND" | "AI_PATCH_NOT_ACCEPTABLE" | "AI_PATCH_STALE" | "AI_DECISION_CONFLICT" | "AI_CANCELED" | "AI_INTERRUPTED" | "AI_CREDENTIAL_INVALID" | "AI_CREDENTIAL_STORE_FAILED";
+            code: "INVALID_SELECTION" | "PROJECT_LOCKED" | "ACTIVE_PROJECT_CONFLICT" | "CLOSE_BLOCKED" | "UNSUPPORTED_KIND" | "UNSUPPORTED_SCHEMA" | "DUPLICATE_KEY" | "PRECONDITION_REQUIRED" | "REVISION_CONFLICT" | "ENTITY_REFERENCED" | "VALIDATION_FAILED" | "PROJECT_NOT_OPEN" | "INVALID_VALIDATION_REQUEST" | "INVALID_VALIDATION_SOURCE" | "INVALID_VALIDATION_SCOPE" | "INVALID_VALIDATION_TARGET" | "VALIDATION_SOURCE_NOT_FOUND" | "VALIDATION_RUN_NOT_FOUND" | "VALIDATION_STORAGE_FAILURE" | "REVISION_NOT_FOUND" | "REVISION_IMMUTABLE" | "DIFF_BASE_INVALID" | "RELEASE_POLICY_INVALID" | "RELEASE_CAPABILITY_DISABLED" | "RELEASE_PREFLIGHT_FAILED" | "RELEASE_BASE_CONFLICT" | "IDEMPOTENCY_CONFLICT" | "MANDATORY_BACKUP_FAILED" | "MIGRATION_BACKUP_REQUIRED" | "INVALID_CONFIRMATION" | "HISTORY_NOT_FOUND" | "STORAGE_FAILURE" | "SETTINGS_INVALID" | "SETTINGS_UNAVAILABLE" | "EXTERNAL_SERVICE_FAILURE" | "GRAPH_VALIDATION_REQUIRED" | "GRAPH_VALIDATION_BLOCKED" | "PROJECTOR_VERSION_UNAVAILABLE" | "GRAPH_CAPABILITY_UNAVAILABLE" | "BASE_SNAPSHOT_NOT_FOUND" | "BASE_SNAPSHOT_NOT_READY" | "CONTENT_HASH_MISMATCH" | "CONTENT_HASH_CONFLICT" | "PROVIDER_TASK_FAILED" | "GRAPH_RETRY_EXHAUSTED" | "GRAPH_RETRY_NOT_SAFE" | "GRAPH_STATUS_UNAVAILABLE" | "SIMULATION_CAPABILITY_UNAVAILABLE" | "SIMULATION_IDEMPOTENCY_REQUIRED" | "SIMULATION_INPUT_INVALID" | "SIMULATION_SEED_INVALID" | "SIMULATION_VALIDATION_REQUIRED" | "SIMULATION_SOURCE_INVALID" | "SIMULATION_SCENE_INVALID" | "SIMULATION_PARAMETER_INVALID" | "SIMULATION_METRIC_INVALID" | "SIMULATION_SAMPLE_INVALID" | "SIMULATION_BUDGET_INVALID" | "SIMULATION_IMPLEMENTATION_UNAVAILABLE" | "SIMULATION_VERIFICATION_TARGET_INVALID" | "SIMULATION_RUN_NOT_FOUND" | "SIMULATION_RUN_UNAVAILABLE" | "BUDGET_EXCEEDED" | "TIMEOUT" | "RECOVERY_MISMATCH" | "RECOVERY_UNAVAILABLE" | "RISK_IDEMPOTENCY_REQUIRED" | "RISK_COMMAND_INVALID" | "RISK_REVISION_INVALID" | "RISK_BASELINE_INVALID" | "RISK_POLICY_INVALID" | "THRESHOLD_NOT_CONFIGURED" | "THRESHOLD_INVALID" | "RISK_VALIDATION_INVALID" | "RISK_SIMULATION_INVALID" | "RISK_COHORT_INVALID" | "RISK_REQUIRED_METRIC_UNAVAILABLE" | "RISK_STALE_IDENTITY" | "RISK_REGISTRY_INCOMPATIBLE" | "RISK_RULE_CONTRACT_INVALID" | "RISK_DECISION_INVALID" | "RISK_REVIEW_NOT_FOUND" | "RISK_CANCELED" | "RISK_INTERRUPTED" | "AI_IDEMPOTENCY_REQUIRED" | "AI_PROVIDER_UNCONFIGURED" | "AI_CAPABILITY_UNAVAILABLE" | "AI_INPUT_INVALID" | "AI_EVIDENCE_UNAVAILABLE" | "AI_SNAPSHOT_IDENTITY_MISMATCH" | "AI_SNAPSHOT_INDEX_NOT_READY" | "AI_RETRIEVAL_UNAVAILABLE" | "AI_PROVIDER_FAILED" | "AI_PROVIDER_TIMEOUT" | "AI_OUTPUT_INVALID" | "AI_REPAIR_EXHAUSTED" | "AI_TOOL_POLICY_VIOLATION" | "AI_BUDGET_EXCEEDED" | "AI_PREVIEW_BLOCKED" | "AI_PATCH_NOT_FOUND" | "AI_PATCH_NOT_ACCEPTABLE" | "AI_PATCH_STALE" | "AI_DECISION_CONFLICT" | "AI_CANCELED" | "AI_INTERRUPTED" | "AI_CREDENTIAL_INVALID" | "AI_CREDENTIAL_STORE_FAILED";
             retryable: boolean;
             request_id: string;
             entity_id?: components["schemas"]["UUIDv7"];
@@ -1904,6 +2070,8 @@ export interface components {
         IdempotencyKey: string;
         /** @description Required when graph-sync intent is retry; reuse returns the original retry Job and changed retry input conflicts. It is ignored for ensure. */
         GraphRetryIdempotencyKey: string;
+        /** @description Reuse for the same runtime action returns the original bounded action outcome without executing it again. */
+        RuntimeActionIdempotencyKey: string;
         /** @description Resume SSE delivery strictly after this persisted event ordinal. */
         LastEventID: number;
         /** @description Strong ETag returned by GET/create/patch. */
@@ -2869,13 +3037,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Updated non-sensitive runtime settings. */
+            /** @description Updated settings and their deterministic application effects. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SettingsResource"];
+                    "application/json": components["schemas"]["SettingsUpdateResult"];
                 };
             };
             default: components["responses"]["Problem"];
@@ -2940,14 +3108,58 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Safe runtime status. */
+            /** @description Versioned safe runtime status. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RuntimeCapabilities"];
+                    "application/json": components["schemas"]["RuntimeStatusResource"];
                 };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    reprobeRuntimeDependencies: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse for the same runtime action returns the original bounded action outcome without executing it again. */
+                "Idempotency-Key": components["parameters"]["RuntimeActionIdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Dependency health was re-probed and runtime capabilities were refreshed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    reconnectRuntimeGraph: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse for the same runtime action returns the original bounded action outcome without executing it again. */
+                "Idempotency-Key": components["parameters"]["RuntimeActionIdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Graph selection was reconnected and runtime capabilities were refreshed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Problem"];
         };

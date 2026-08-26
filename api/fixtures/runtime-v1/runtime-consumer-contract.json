@@ -1,0 +1,14 @@
+{
+  "fixture_version": "1.0",
+  "startup_phases": ["loading_settings", "verifying_package", "binding_http", "starting_dependencies", "recovering", "opening_recent_project", "ready", "degraded", "stopping", "stopped"],
+  "package_modes": ["complete", "lightweight", "development"],
+  "projections": ["healthy", "degraded", "unavailable"],
+  "independent_recovery": [
+    { "component": "retrieval.vector", "before": "degraded", "after": "healthy", "unaffected": ["local.editing", "validation", "simulation.deterministic"] },
+    { "component": "ai.provider", "before": "unavailable", "after": "healthy", "unaffected": ["graph.sync", "retrieval", "release"] }
+  ],
+  "safe_action_ids": ["runtime.reprobe", "graph.reconnect", "graph.retry", "job.cancel", "provider.settings", "credential.configure"],
+  "settings_problem_codes": ["SETTINGS_VALIDATION_FAILED", "SETTINGS_APPLY_FAILED"],
+  "public_diagnostic_fields": ["event_name", "component", "phase", "state", "code", "duration_ms", "correlation", "timestamp"],
+  "forbidden_public_diagnostic_fields": ["authorization", "credential", "provider_body", "embedding", "graph_text", "business_text", "entity_payload", "sql", "stack", "user_path"]
+}

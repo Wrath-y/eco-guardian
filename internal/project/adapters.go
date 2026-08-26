@@ -54,6 +54,7 @@ type SQLiteFactory struct {
 	GraphGateRegistry       *versioninggate.Registry
 	GraphGateProvider       versioninggate.Provider
 	GraphRecovery           graphsync.RecoveryDispatcher
+	RecoveryStages          *RecoveryStages
 	Recover                 func(context.Context, *store.Store) error
 	AfterRevision           func(context.Context, *store.Store, domain.RevisionSummary)
 }
@@ -81,6 +82,13 @@ func (f SQLiteFactory) Open(ctx context.Context, dir string) (ProjectHandle, err
 	if err = f.configureGraphVersion(s); err != nil {
 		_ = s.Close()
 		return nil, err
+	}
+	if f.RecoveryStages != nil {
+		if err = f.RecoveryStages.Recover(ctx, s); err != nil {
+			_ = s.Close()
+			return nil, err
+		}
+		return &sqliteHandle{s}, nil
 	}
 	if f.GraphRecovery != nil {
 		if _, err = (graphsync.RecoveryService{States: s, Jobs: s, Events: s, Dispatcher: f.GraphRecovery}).Recover(ctx); err != nil {

@@ -542,13 +542,13 @@ func (e DslUnitMetadataValueType) Valid() bool {
 
 // Defines values for EntitySchemaVersion.
 const (
-	N1 EntitySchemaVersion = 1
+	EntitySchemaVersionN1 EntitySchemaVersion = 1
 )
 
 // Valid indicates whether the value is a known member of the EntitySchemaVersion enum.
 func (e EntitySchemaVersion) Valid() bool {
 	switch e {
-	case N1:
+	case EntitySchemaVersionN1:
 		return true
 	default:
 		return false
@@ -587,16 +587,16 @@ func (e EntityKind) Valid() bool {
 
 // Defines values for EntityStatus.
 const (
-	Active   EntityStatus = "active"
-	Archived EntityStatus = "archived"
+	EntityStatusActive   EntityStatus = "active"
+	EntityStatusArchived EntityStatus = "archived"
 )
 
 // Valid indicates whether the value is a known member of the EntityStatus enum.
 func (e EntityStatus) Valid() bool {
 	switch e {
-	case Active:
+	case EntityStatusActive:
 		return true
-	case Archived:
+	case EntityStatusArchived:
 		return true
 	default:
 		return false
@@ -828,6 +828,27 @@ func (e GraphProviderObservationStatus) Valid() bool {
 	}
 }
 
+// Defines values for GraphSettingsMode.
+const (
+	GraphSettingsModeBundled  GraphSettingsMode = "bundled"
+	GraphSettingsModeDisabled GraphSettingsMode = "disabled"
+	GraphSettingsModeExternal GraphSettingsMode = "external"
+)
+
+// Valid indicates whether the value is a known member of the GraphSettingsMode enum.
+func (e GraphSettingsMode) Valid() bool {
+	switch e {
+	case GraphSettingsModeBundled:
+		return true
+	case GraphSettingsModeDisabled:
+		return true
+	case GraphSettingsModeExternal:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GraphStatusImpactState.
 const (
 	GraphStatusImpactStateConsumed    GraphStatusImpactState = "consumed"
@@ -987,6 +1008,27 @@ func (e OpenProjectRequestMode) Valid() bool {
 	}
 }
 
+// Defines values for PackageSettingsMode.
+const (
+	PackageSettingsModeComplete    PackageSettingsMode = "complete"
+	PackageSettingsModeDevelopment PackageSettingsMode = "development"
+	PackageSettingsModeLightweight PackageSettingsMode = "lightweight"
+)
+
+// Valid indicates whether the value is a known member of the PackageSettingsMode enum.
+func (e PackageSettingsMode) Valid() bool {
+	switch e {
+	case PackageSettingsModeComplete:
+		return true
+	case PackageSettingsModeDevelopment:
+		return true
+	case PackageSettingsModeLightweight:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProblemCode.
 const (
 	ProblemCodeACTIVEPROJECTCONFLICT               ProblemCode = "ACTIVE_PROJECT_CONFLICT"
@@ -1069,6 +1111,8 @@ const (
 	ProblemCodeRISKSIMULATIONINVALID               ProblemCode = "RISK_SIMULATION_INVALID"
 	ProblemCodeRISKSTALEIDENTITY                   ProblemCode = "RISK_STALE_IDENTITY"
 	ProblemCodeRISKVALIDATIONINVALID               ProblemCode = "RISK_VALIDATION_INVALID"
+	ProblemCodeSETTINGSINVALID                     ProblemCode = "SETTINGS_INVALID"
+	ProblemCodeSETTINGSUNAVAILABLE                 ProblemCode = "SETTINGS_UNAVAILABLE"
 	ProblemCodeSIMULATIONBUDGETINVALID             ProblemCode = "SIMULATION_BUDGET_INVALID"
 	ProblemCodeSIMULATIONCAPABILITYUNAVAILABLE     ProblemCode = "SIMULATION_CAPABILITY_UNAVAILABLE"
 	ProblemCodeSIMULATIONIDEMPOTENCYREQUIRED       ProblemCode = "SIMULATION_IDEMPOTENCY_REQUIRED"
@@ -1258,6 +1302,10 @@ func (e ProblemCode) Valid() bool {
 	case ProblemCodeRISKSTALEIDENTITY:
 		return true
 	case ProblemCodeRISKVALIDATIONINVALID:
+		return true
+	case ProblemCodeSETTINGSINVALID:
+		return true
+	case ProblemCodeSETTINGSUNAVAILABLE:
 		return true
 	case ProblemCodeSIMULATIONBUDGETINVALID:
 		return true
@@ -1941,6 +1989,312 @@ func (e RiskThresholdEntryDirection) Valid() bool {
 	}
 }
 
+// Defines values for RuntimeActionId.
+const (
+	CredentialConfigure RuntimeActionId = "credential.configure"
+	GraphReconnect      RuntimeActionId = "graph.reconnect"
+	GraphRetry          RuntimeActionId = "graph.retry"
+	JobCancel           RuntimeActionId = "job.cancel"
+	ProviderSettings    RuntimeActionId = "provider.settings"
+	RuntimeReprobe      RuntimeActionId = "runtime.reprobe"
+)
+
+// Valid indicates whether the value is a known member of the RuntimeActionId enum.
+func (e RuntimeActionId) Valid() bool {
+	switch e {
+	case CredentialConfigure:
+		return true
+	case GraphReconnect:
+		return true
+	case GraphRetry:
+		return true
+	case JobCancel:
+		return true
+	case ProviderSettings:
+		return true
+	case RuntimeReprobe:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RuntimeActionMethod.
+const (
+	PATCH RuntimeActionMethod = "PATCH"
+	POST  RuntimeActionMethod = "POST"
+	PUT   RuntimeActionMethod = "PUT"
+)
+
+// Valid indicates whether the value is a known member of the RuntimeActionMethod enum.
+func (e RuntimeActionMethod) Valid() bool {
+	switch e {
+	case PATCH:
+		return true
+	case POST:
+		return true
+	case PUT:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RuntimeBuildIdentityPackageMode.
+const (
+	RuntimeBuildIdentityPackageModeComplete    RuntimeBuildIdentityPackageMode = "complete"
+	RuntimeBuildIdentityPackageModeDevelopment RuntimeBuildIdentityPackageMode = "development"
+	RuntimeBuildIdentityPackageModeLightweight RuntimeBuildIdentityPackageMode = "lightweight"
+)
+
+// Valid indicates whether the value is a known member of the RuntimeBuildIdentityPackageMode enum.
+func (e RuntimeBuildIdentityPackageMode) Valid() bool {
+	switch e {
+	case RuntimeBuildIdentityPackageModeComplete:
+		return true
+	case RuntimeBuildIdentityPackageModeDevelopment:
+		return true
+	case RuntimeBuildIdentityPackageModeLightweight:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RuntimeCapabilityResultState.
+const (
+	RuntimeCapabilityResultStateAvailable   RuntimeCapabilityResultState = "available"
+	RuntimeCapabilityResultStateDegraded    RuntimeCapabilityResultState = "degraded"
+	RuntimeCapabilityResultStateUnavailable RuntimeCapabilityResultState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the RuntimeCapabilityResultState enum.
+func (e RuntimeCapabilityResultState) Valid() bool {
+	switch e {
+	case RuntimeCapabilityResultStateAvailable:
+		return true
+	case RuntimeCapabilityResultStateDegraded:
+		return true
+	case RuntimeCapabilityResultStateUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RuntimeDependencyObservationState.
+const (
+	RuntimeDependencyObservationStateDegraded    RuntimeDependencyObservationState = "degraded"
+	RuntimeDependencyObservationStateHealthy     RuntimeDependencyObservationState = "healthy"
+	RuntimeDependencyObservationStateUnavailable RuntimeDependencyObservationState = "unavailable"
+	RuntimeDependencyObservationStateUnknown     RuntimeDependencyObservationState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the RuntimeDependencyObservationState enum.
+func (e RuntimeDependencyObservationState) Valid() bool {
+	switch e {
+	case RuntimeDependencyObservationStateDegraded:
+		return true
+	case RuntimeDependencyObservationStateHealthy:
+		return true
+	case RuntimeDependencyObservationStateUnavailable:
+		return true
+	case RuntimeDependencyObservationStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RuntimeProcessSummaryOwnership.
+const (
+	RuntimeProcessSummaryOwnershipBundled     RuntimeProcessSummaryOwnership = "bundled"
+	RuntimeProcessSummaryOwnershipExternal    RuntimeProcessSummaryOwnership = "external"
+	RuntimeProcessSummaryOwnershipNotSelected RuntimeProcessSummaryOwnership = "not_selected"
+)
+
+// Valid indicates whether the value is a known member of the RuntimeProcessSummaryOwnership enum.
+func (e RuntimeProcessSummaryOwnership) Valid() bool {
+	switch e {
+	case RuntimeProcessSummaryOwnershipBundled:
+		return true
+	case RuntimeProcessSummaryOwnershipExternal:
+		return true
+	case RuntimeProcessSummaryOwnershipNotSelected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RuntimeProcessSummaryState.
+const (
+	RuntimeProcessSummaryStateBackoff          RuntimeProcessSummaryState = "backoff"
+	RuntimeProcessSummaryStateExited           RuntimeProcessSummaryState = "exited"
+	RuntimeProcessSummaryStateExternal         RuntimeProcessSummaryState = "external"
+	RuntimeProcessSummaryStateNotSelected      RuntimeProcessSummaryState = "not_selected"
+	RuntimeProcessSummaryStateReady            RuntimeProcessSummaryState = "ready"
+	RuntimeProcessSummaryStateRestartExhausted RuntimeProcessSummaryState = "restart_exhausted"
+	RuntimeProcessSummaryStateStarting         RuntimeProcessSummaryState = "starting"
+	RuntimeProcessSummaryStateStopping         RuntimeProcessSummaryState = "stopping"
+)
+
+// Valid indicates whether the value is a known member of the RuntimeProcessSummaryState enum.
+func (e RuntimeProcessSummaryState) Valid() bool {
+	switch e {
+	case RuntimeProcessSummaryStateBackoff:
+		return true
+	case RuntimeProcessSummaryStateExited:
+		return true
+	case RuntimeProcessSummaryStateExternal:
+		return true
+	case RuntimeProcessSummaryStateNotSelected:
+		return true
+	case RuntimeProcessSummaryStateReady:
+		return true
+	case RuntimeProcessSummaryStateRestartExhausted:
+		return true
+	case RuntimeProcessSummaryStateStarting:
+		return true
+	case RuntimeProcessSummaryStateStopping:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RuntimeProjectSummaryState.
+const (
+	RuntimeProjectSummaryStateActive           RuntimeProjectSummaryState = "active"
+	RuntimeProjectSummaryStateIncompatible     RuntimeProjectSummaryState = "incompatible"
+	RuntimeProjectSummaryStateLocked           RuntimeProjectSummaryState = "locked"
+	RuntimeProjectSummaryStateNone             RuntimeProjectSummaryState = "none"
+	RuntimeProjectSummaryStateOpening          RuntimeProjectSummaryState = "opening"
+	RuntimeProjectSummaryStateRecoveryRequired RuntimeProjectSummaryState = "recovery_required"
+)
+
+// Valid indicates whether the value is a known member of the RuntimeProjectSummaryState enum.
+func (e RuntimeProjectSummaryState) Valid() bool {
+	switch e {
+	case RuntimeProjectSummaryStateActive:
+		return true
+	case RuntimeProjectSummaryStateIncompatible:
+		return true
+	case RuntimeProjectSummaryStateLocked:
+		return true
+	case RuntimeProjectSummaryStateNone:
+		return true
+	case RuntimeProjectSummaryStateOpening:
+		return true
+	case RuntimeProjectSummaryStateRecoveryRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RuntimeRecoverySummaryState.
+const (
+	RuntimeRecoverySummaryStateComplete         RuntimeRecoverySummaryState = "complete"
+	RuntimeRecoverySummaryStatePending          RuntimeRecoverySummaryState = "pending"
+	RuntimeRecoverySummaryStateReconciling      RuntimeRecoverySummaryState = "reconciling"
+	RuntimeRecoverySummaryStateRecoveryRequired RuntimeRecoverySummaryState = "recovery_required"
+)
+
+// Valid indicates whether the value is a known member of the RuntimeRecoverySummaryState enum.
+func (e RuntimeRecoverySummaryState) Valid() bool {
+	switch e {
+	case RuntimeRecoverySummaryStateComplete:
+		return true
+	case RuntimeRecoverySummaryStatePending:
+		return true
+	case RuntimeRecoverySummaryStateReconciling:
+		return true
+	case RuntimeRecoverySummaryStateRecoveryRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RuntimeStatusResourcePhase.
+const (
+	RuntimeStatusResourcePhaseBindingHttp          RuntimeStatusResourcePhase = "binding_http"
+	RuntimeStatusResourcePhaseDegraded             RuntimeStatusResourcePhase = "degraded"
+	RuntimeStatusResourcePhaseLoadingSettings      RuntimeStatusResourcePhase = "loading_settings"
+	RuntimeStatusResourcePhaseOpeningRecentProject RuntimeStatusResourcePhase = "opening_recent_project"
+	RuntimeStatusResourcePhaseReady                RuntimeStatusResourcePhase = "ready"
+	RuntimeStatusResourcePhaseRecovering           RuntimeStatusResourcePhase = "recovering"
+	RuntimeStatusResourcePhaseStartingDependencies RuntimeStatusResourcePhase = "starting_dependencies"
+	RuntimeStatusResourcePhaseStopped              RuntimeStatusResourcePhase = "stopped"
+	RuntimeStatusResourcePhaseStopping             RuntimeStatusResourcePhase = "stopping"
+	RuntimeStatusResourcePhaseVerifyingPackage     RuntimeStatusResourcePhase = "verifying_package"
+)
+
+// Valid indicates whether the value is a known member of the RuntimeStatusResourcePhase enum.
+func (e RuntimeStatusResourcePhase) Valid() bool {
+	switch e {
+	case RuntimeStatusResourcePhaseBindingHttp:
+		return true
+	case RuntimeStatusResourcePhaseDegraded:
+		return true
+	case RuntimeStatusResourcePhaseLoadingSettings:
+		return true
+	case RuntimeStatusResourcePhaseOpeningRecentProject:
+		return true
+	case RuntimeStatusResourcePhaseReady:
+		return true
+	case RuntimeStatusResourcePhaseRecovering:
+		return true
+	case RuntimeStatusResourcePhaseStartingDependencies:
+		return true
+	case RuntimeStatusResourcePhaseStopped:
+		return true
+	case RuntimeStatusResourcePhaseStopping:
+		return true
+	case RuntimeStatusResourcePhaseVerifyingPackage:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RuntimeStatusResourceSchemaVersion.
+const (
+	RuntimeStatusResourceSchemaVersionN1 RuntimeStatusResourceSchemaVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the RuntimeStatusResourceSchemaVersion enum.
+func (e RuntimeStatusResourceSchemaVersion) Valid() bool {
+	switch e {
+	case RuntimeStatusResourceSchemaVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SettingsApplyDisposition.
+const (
+	Applied           SettingsApplyDisposition = "applied"
+	ReconnectRequired SettingsApplyDisposition = "reconnect_required"
+	RestartRequired   SettingsApplyDisposition = "restart_required"
+)
+
+// Valid indicates whether the value is a known member of the SettingsApplyDisposition enum.
+func (e SettingsApplyDisposition) Valid() bool {
+	switch e {
+	case Applied:
+		return true
+	case ReconnectRequired:
+		return true
+	case RestartRequired:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SimulationCapturedInputSchemaVersion.
 const (
 	SimulationCapturedInputSchemaVersionV1 SimulationCapturedInputSchemaVersion = "v1"
@@ -2546,6 +2900,16 @@ type AttributePayload_Default struct {
 // AttributePayloadValueType defines model for AttributePayload.ValueType.
 type AttributePayloadValueType string
 
+// BackupDefaultSettings defines model for BackupDefaultSettings.
+type BackupDefaultSettings struct {
+	RetentionDays int `json:"retention_days"`
+}
+
+// BrowserSettings defines model for BrowserSettings.
+type BrowserSettings struct {
+	AutoOpen bool `json:"auto_open"`
+}
+
 // CapabilityGateRequirement defines model for CapabilityGateRequirement.
 type CapabilityGateRequirement struct {
 	CapabilityId          string  `json:"capability_id"`
@@ -2976,6 +3340,19 @@ type GraphSafeError struct {
 	Retryable    bool    `json:"retryable"`
 }
 
+// GraphSettings defines model for GraphSettings.
+type GraphSettings struct {
+	// Endpoint Unauthenticated loopback local-rag endpoint only.
+	Endpoint              string            `json:"endpoint"`
+	HealthTimeoutSeconds  int               `json:"health_timeout_seconds"`
+	Mode                  GraphSettingsMode `json:"mode"`
+	RestartLimit          int               `json:"restart_limit"`
+	StartupTimeoutSeconds int               `json:"startup_timeout_seconds"`
+}
+
+// GraphSettingsMode defines model for GraphSettings.Mode.
+type GraphSettingsMode string
+
 // GraphStatus defines model for GraphStatus.
 type GraphStatus struct {
 	Actions          []GraphAction             `json:"actions"`
@@ -3102,6 +3479,12 @@ type LocalValidationSummary struct {
 // LocalValidationSummaryScope defines model for LocalValidationSummary.Scope.
 type LocalValidationSummaryScope string
 
+// LogSettings defines model for LogSettings.
+type LogSettings struct {
+	MaxBytes int64 `json:"max_bytes"`
+	MaxFiles int   `json:"max_files"`
+}
+
 // Modifier defines model for Modifier.
 type Modifier struct {
 	// AttributeId Server allocated UUIDv7.
@@ -3124,6 +3507,14 @@ type OpenProjectRequest struct {
 // OpenProjectRequestMode defines model for OpenProjectRequest.Mode.
 type OpenProjectRequestMode string
 
+// PackageSettings defines model for PackageSettings.
+type PackageSettings struct {
+	Mode *PackageSettingsMode `json:"mode,omitempty"`
+}
+
+// PackageSettingsMode defines model for PackageSettings.Mode.
+type PackageSettingsMode string
+
 // PatchAIProviderSettings defines model for PatchAIProviderSettings.
 type PatchAIProviderSettings struct {
 	AllowCloud            bool   `json:"allow_cloud"`
@@ -3135,7 +3526,11 @@ type PatchAIProviderSettings struct {
 
 // PatchSettingsRequest defines model for PatchSettingsRequest.
 type PatchSettingsRequest struct {
-	Ai PatchAIProviderSettings `json:"ai"`
+	Ai      *PatchAIProviderSettings `json:"ai,omitempty"`
+	Backup  *BackupDefaultSettings   `json:"backup,omitempty"`
+	Browser *BrowserSettings         `json:"browser,omitempty"`
+	Graph   *GraphSettings           `json:"graph,omitempty"`
+	Logs    *LogSettings             `json:"logs,omitempty"`
 }
 
 // Problem defines model for Problem.
@@ -3800,6 +4195,31 @@ type RiskThresholdSelection struct {
 	union json.RawMessage
 }
 
+// RuntimeAction defines model for RuntimeAction.
+type RuntimeAction struct {
+	Id                  RuntimeActionId     `json:"id"`
+	IdempotencyRequired bool                `json:"idempotency_required"`
+	Method              RuntimeActionMethod `json:"method"`
+	Uri                 string              `json:"uri"`
+}
+
+// RuntimeActionId defines model for RuntimeAction.Id.
+type RuntimeActionId string
+
+// RuntimeActionMethod defines model for RuntimeAction.Method.
+type RuntimeActionMethod string
+
+// RuntimeBuildIdentity defines model for RuntimeBuildIdentity.
+type RuntimeBuildIdentity struct {
+	Build       string                          `json:"build"`
+	Commit      string                          `json:"commit"`
+	PackageMode RuntimeBuildIdentityPackageMode `json:"package_mode"`
+	Version     string                          `json:"version"`
+}
+
+// RuntimeBuildIdentityPackageMode defines model for RuntimeBuildIdentity.PackageMode.
+type RuntimeBuildIdentityPackageMode string
+
 // RuntimeCapabilities Safe runtime availability projection. It deliberately omits credential material and client-computed Gate pass state.
 type RuntimeCapabilities struct {
 	Ai AIProviderCapability `json:"ai"`
@@ -3809,16 +4229,135 @@ type RuntimeCapabilities struct {
 	Release ReleaseCapability      `json:"release"`
 }
 
+// RuntimeCapabilityResult defines model for RuntimeCapabilityResult.
+type RuntimeCapabilityResult struct {
+	Actions               []RuntimeAction              `json:"actions"`
+	Id                    string                       `json:"id"`
+	ObservationGeneration int64                        `json:"observation_generation"`
+	Reasons               []RuntimeReason              `json:"reasons"`
+	State                 RuntimeCapabilityResultState `json:"state"`
+	Version               string                       `json:"version"`
+}
+
+// RuntimeCapabilityResultState defines model for RuntimeCapabilityResult.State.
+type RuntimeCapabilityResultState string
+
+// RuntimeDependencyObservation defines model for RuntimeDependencyObservation.
+type RuntimeDependencyObservation struct {
+	ExpiresAt  *time.Time                        `json:"expires_at"`
+	Generation int64                             `json:"generation"`
+	Id         string                            `json:"id"`
+	ObservedAt *time.Time                        `json:"observed_at"`
+	Reasons    []RuntimeReason                   `json:"reasons"`
+	State      RuntimeDependencyObservationState `json:"state"`
+}
+
+// RuntimeDependencyObservationState defines model for RuntimeDependencyObservation.State.
+type RuntimeDependencyObservationState string
+
+// RuntimeListener defines model for RuntimeListener.
+type RuntimeListener struct {
+	Url string `json:"url"`
+}
+
+// RuntimeProcessSummary defines model for RuntimeProcessSummary.
+type RuntimeProcessSummary struct {
+	Endpoint         *string                        `json:"endpoint"`
+	LaunchGeneration int64                          `json:"launch_generation"`
+	Ownership        RuntimeProcessSummaryOwnership `json:"ownership"`
+	Reason           *string                        `json:"reason"`
+	RestartAttempt   int                            `json:"restart_attempt"`
+	State            RuntimeProcessSummaryState     `json:"state"`
+}
+
+// RuntimeProcessSummaryOwnership defines model for RuntimeProcessSummary.Ownership.
+type RuntimeProcessSummaryOwnership string
+
+// RuntimeProcessSummaryState defines model for RuntimeProcessSummary.State.
+type RuntimeProcessSummaryState string
+
+// RuntimeProjectSummary defines model for RuntimeProjectSummary.
+type RuntimeProjectSummary struct {
+	ProjectId        *UUIDv7                    `json:"project_id"`
+	RecentCount      int                        `json:"recent_count"`
+	RecoveryRequired bool                       `json:"recovery_required"`
+	State            RuntimeProjectSummaryState `json:"state"`
+}
+
+// RuntimeProjectSummaryState defines model for RuntimeProjectSummary.State.
+type RuntimeProjectSummaryState string
+
+// RuntimeReason defines model for RuntimeReason.
+type RuntimeReason struct {
+	Code                  string `json:"code"`
+	Component             string `json:"component"`
+	ObservationGeneration int64  `json:"observation_generation"`
+}
+
+// RuntimeRecoverySummary defines model for RuntimeRecoverySummary.
+type RuntimeRecoverySummary struct {
+	Count   int                         `json:"count"`
+	JobKind string                      `json:"job_kind"`
+	State   RuntimeRecoverySummaryState `json:"state"`
+}
+
+// RuntimeRecoverySummaryState defines model for RuntimeRecoverySummary.State.
+type RuntimeRecoverySummaryState string
+
+// RuntimeStatusResource defines model for RuntimeStatusResource.
+type RuntimeStatusResource struct {
+	Build        RuntimeBuildIdentity           `json:"build"`
+	Capabilities []RuntimeCapabilityResult      `json:"capabilities"`
+	Dependencies []RuntimeDependencyObservation `json:"dependencies"`
+	Generation   int64                          `json:"generation"`
+	Listener     RuntimeListener                `json:"listener"`
+
+	// LogLocation Display-safe application log location; never an arbitrary file-read target.
+	LogLocation   string                             `json:"log_location"`
+	Phase         RuntimeStatusResourcePhase         `json:"phase"`
+	Process       RuntimeProcessSummary              `json:"process"`
+	Project       RuntimeProjectSummary              `json:"project"`
+	Recovery      []RuntimeRecoverySummary           `json:"recovery"`
+	SchemaVersion RuntimeStatusResourceSchemaVersion `json:"schema_version"`
+	UpdatedAt     time.Time                          `json:"updated_at"`
+}
+
+// RuntimeStatusResourcePhase defines model for RuntimeStatusResource.Phase.
+type RuntimeStatusResourcePhase string
+
+// RuntimeStatusResourceSchemaVersion defines model for RuntimeStatusResource.SchemaVersion.
+type RuntimeStatusResourceSchemaVersion int
+
 // SaveEntityResponse defines model for SaveEntityResponse.
 type SaveEntityResponse struct {
 	Entity   Entity          `json:"entity"`
 	Revision RevisionSummary `json:"revision"`
 }
 
+// SettingsApplyDisposition defines model for SettingsApplyDisposition.
+type SettingsApplyDisposition string
+
+// SettingsApplyEffect defines model for SettingsApplyEffect.
+type SettingsApplyEffect struct {
+	Disposition SettingsApplyDisposition `json:"disposition"`
+	Field       string                   `json:"field"`
+}
+
 // SettingsResource defines model for SettingsResource.
 type SettingsResource struct {
-	Ai            AIProviderSettings `json:"ai"`
-	SchemaVersion int                `json:"schema_version"`
+	Ai            AIProviderSettings    `json:"ai"`
+	Backup        BackupDefaultSettings `json:"backup"`
+	Browser       BrowserSettings       `json:"browser"`
+	Graph         GraphSettings         `json:"graph"`
+	Logs          LogSettings           `json:"logs"`
+	Package       PackageSettings       `json:"package"`
+	SchemaVersion int                   `json:"schema_version"`
+}
+
+// SettingsUpdateResult defines model for SettingsUpdateResult.
+type SettingsUpdateResult struct {
+	Effects  []SettingsApplyEffect `json:"effects"`
+	Settings SettingsResource      `json:"settings"`
 }
 
 // SeveritySummary defines model for SeveritySummary.
@@ -4170,6 +4709,9 @@ type RevisionID = UUIDv7
 // RiskReviewID Server allocated UUIDv7.
 type RiskReviewID = UUIDv7
 
+// RuntimeActionIdempotencyKey defines model for RuntimeActionIdempotencyKey.
+type RuntimeActionIdempotencyKey = string
+
 // SimulationRunID Server allocated UUIDv7.
 type SimulationRunID = UUIDv7
 
@@ -4264,6 +4806,18 @@ type EnsureGraphSyncParams struct {
 type CreateRiskReviewParams struct {
 	// IdempotencyKey Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict.
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ReconnectRuntimeGraphParams defines parameters for ReconnectRuntimeGraph.
+type ReconnectRuntimeGraphParams struct {
+	// IdempotencyKey Reuse for the same runtime action returns the original bounded action outcome without executing it again.
+	IdempotencyKey RuntimeActionIdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ReprobeRuntimeDependenciesParams defines parameters for ReprobeRuntimeDependencies.
+type ReprobeRuntimeDependenciesParams struct {
+	// IdempotencyKey Reuse for the same runtime action returns the original bounded action outcome without executing it again.
+	IdempotencyKey RuntimeActionIdempotencyKey `json:"Idempotency-Key"`
 }
 
 // DeleteProviderCredentialParamsProvider defines parameters for DeleteProviderCredential.

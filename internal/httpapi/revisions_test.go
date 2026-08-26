@@ -115,7 +115,7 @@ func TestVersionHandlerDelegatesPolicyCapabilityAndReleaseCommands(t *testing.T)
 func TestUnavailableAICapabilityDoesNotChangeReleaseOrGraphCapabilities(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := &fakeVersionService{capability: versioninggate.ReleaseCapability{Enabled: true}}
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/status", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/capabilities", nil)
 
 	baselineEngine := gin.New()
 	NewVersionHandler(func() app.VersioningService { return service }).Register(baselineEngine)
@@ -132,7 +132,7 @@ func TestUnavailableAICapabilityDoesNotChangeReleaseOrGraphCapabilities(t *testi
 	})
 	handler.Register(failedEngine)
 	failedResponse := httptest.NewRecorder()
-	failedEngine.ServeHTTP(failedResponse, httptest.NewRequest(http.MethodGet, "/api/v1/runtime/status", nil))
+	failedEngine.ServeHTTP(failedResponse, httptest.NewRequest(http.MethodGet, "/api/v1/runtime/capabilities", nil))
 
 	var baseline, failed map[string]any
 	if err := json.Unmarshal(baselineResponse.Body.Bytes(), &baseline); err != nil {
@@ -163,7 +163,7 @@ func TestRuntimeStatusProjectsMissingAndIncompatibleAIReasons(t *testing.T) {
 		handler.RegisterAICapabilityProvider(func(context.Context) aiprovider.Capability { return projected })
 		handler.Register(engine)
 		response := httptest.NewRecorder()
-		engine.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/runtime/status", nil))
+		engine.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/runtime/capabilities", nil))
 		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), capability.Reasons[0]) || !strings.Contains(response.Body.String(), `"release":{"disabled_reasons":[],"enabled":true}`) {
 			t.Fatalf("runtime capability response=%d body=%s", response.Code, response.Body.String())
 		}
