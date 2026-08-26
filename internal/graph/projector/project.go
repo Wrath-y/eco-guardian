@@ -82,7 +82,7 @@ func Project(descriptor Descriptor, revision Revision) (Result, error) {
 		if entity.Status == domain.StatusArchived {
 			continue
 		}
-		id := nodeID(revision.ProjectID, entity)
+		id := NodeID(revision.ProjectID, entity)
 		label, text, properties, formatErr := descriptor.Formatter.Format(entity)
 		if formatErr != nil {
 			return Result{}, formatErr
@@ -116,7 +116,11 @@ func Project(descriptor Descriptor, revision Revision) (Result, error) {
 	sort.Slice(edges, func(i, j int) bool { return edges[i].ID < edges[j].ID })
 	return Result{Nodes: nodes, Edges: edges}, nil
 }
-func nodeID(projectID domain.ID, entity domain.Entity) string {
+
+// NodeID is the shared v1 projection identity builder. Consumers that need to
+// address an entity in an exact Graph snapshot must use this function instead
+// of reproducing the URN format.
+func NodeID(projectID domain.ID, entity domain.Entity) string {
 	return "urn:eco:" + string(projectID) + ":" + string(entity.Kind) + ":" + string(entity.ID)
 }
 func EdgeID(from string, token RelationToken, to, path string, ordinal int) string {

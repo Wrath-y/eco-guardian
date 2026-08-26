@@ -620,22 +620,22 @@ func (e EvaluateRiskReviewCommandCommand) Valid() bool {
 
 // Defines values for FieldChangeKind.
 const (
-	ADD    FieldChangeKind = "ADD"
-	DELETE FieldChangeKind = "DELETE"
-	MODIFY FieldChangeKind = "MODIFY"
-	MOVE   FieldChangeKind = "MOVE"
+	FieldChangeKindADD    FieldChangeKind = "ADD"
+	FieldChangeKindDELETE FieldChangeKind = "DELETE"
+	FieldChangeKindMODIFY FieldChangeKind = "MODIFY"
+	FieldChangeKindMOVE   FieldChangeKind = "MOVE"
 )
 
 // Valid indicates whether the value is a known member of the FieldChangeKind enum.
 func (e FieldChangeKind) Valid() bool {
 	switch e {
-	case ADD:
+	case FieldChangeKindADD:
 		return true
-	case DELETE:
+	case FieldChangeKindDELETE:
 		return true
-	case MODIFY:
+	case FieldChangeKindMODIFY:
 		return true
-	case MOVE:
+	case FieldChangeKindMOVE:
 		return true
 	default:
 		return false
@@ -912,6 +912,294 @@ func (e GraphSyncIntent) Valid() bool {
 	case GraphSyncIntentEnsure:
 		return true
 	case GraphSyncIntentRetry:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImpactAnalysisReportAnalysisContractVersion.
+const (
+	DependencyImpactV1 ImpactAnalysisReportAnalysisContractVersion = "dependency-impact-v1"
+)
+
+// Valid indicates whether the value is a known member of the ImpactAnalysisReportAnalysisContractVersion enum.
+func (e ImpactAnalysisReportAnalysisContractVersion) Valid() bool {
+	switch e {
+	case DependencyImpactV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImpactAnalysisReportMode.
+const (
+	RelationshipExploration ImpactAnalysisReportMode = "relationship_exploration"
+	ReverseDependencyImpact ImpactAnalysisReportMode = "reverse_dependency_impact"
+)
+
+// Valid indicates whether the value is a known member of the ImpactAnalysisReportMode enum.
+func (e ImpactAnalysisReportMode) Valid() bool {
+	switch e {
+	case RelationshipExploration:
+		return true
+	case ReverseDependencyImpact:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImpactChangedEntityChangeKind.
+const (
+	ImpactChangedEntityChangeKindADD    ImpactChangedEntityChangeKind = "ADD"
+	ImpactChangedEntityChangeKindDELETE ImpactChangedEntityChangeKind = "DELETE"
+	ImpactChangedEntityChangeKindMODIFY ImpactChangedEntityChangeKind = "MODIFY"
+	ImpactChangedEntityChangeKindMOVE   ImpactChangedEntityChangeKind = "MOVE"
+)
+
+// Valid indicates whether the value is a known member of the ImpactChangedEntityChangeKind enum.
+func (e ImpactChangedEntityChangeKind) Valid() bool {
+	switch e {
+	case ImpactChangedEntityChangeKindADD:
+		return true
+	case ImpactChangedEntityChangeKindDELETE:
+		return true
+	case ImpactChangedEntityChangeKindMODIFY:
+		return true
+	case ImpactChangedEntityChangeKindMOVE:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImpactChangedEntityIneligibility.
+const (
+	FilteredNodeType ImpactChangedEntityIneligibility = "filtered_node_type"
+	NotInTargetGraph ImpactChangedEntityIneligibility = "not_in_target_graph"
+)
+
+// Valid indicates whether the value is a known member of the ImpactChangedEntityIneligibility enum.
+func (e ImpactChangedEntityIneligibility) Valid() bool {
+	switch e {
+	case FilteredNodeType:
+		return true
+	case NotInTargetGraph:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImpactDirection.
+const (
+	Both     ImpactDirection = "both"
+	Incoming ImpactDirection = "incoming"
+	Outgoing ImpactDirection = "outgoing"
+)
+
+// Valid indicates whether the value is a known member of the ImpactDirection enum.
+func (e ImpactDirection) Valid() bool {
+	switch e {
+	case Both:
+		return true
+	case Incoming:
+		return true
+	case Outgoing:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImpactExplanationAiGenerated.
+const (
+	ImpactExplanationAiGeneratedTrue ImpactExplanationAiGenerated = true
+)
+
+// Valid indicates whether the value is a known member of the ImpactExplanationAiGenerated enum.
+func (e ImpactExplanationAiGenerated) Valid() bool {
+	switch e {
+	case ImpactExplanationAiGeneratedTrue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImpactExplanationStatus.
+const (
+	ImpactExplanationStatusFailed    ImpactExplanationStatus = "failed"
+	ImpactExplanationStatusQueued    ImpactExplanationStatus = "queued"
+	ImpactExplanationStatusSucceeded ImpactExplanationStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the ImpactExplanationStatus enum.
+func (e ImpactExplanationStatus) Valid() bool {
+	switch e {
+	case ImpactExplanationStatusFailed:
+		return true
+	case ImpactExplanationStatusQueued:
+		return true
+	case ImpactExplanationStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImpactFiltersEdgeTypes.
+const (
+	CharacterHasSkill       ImpactFiltersEdgeTypes = "character_has_skill"
+	CharacterUsesItem       ImpactFiltersEdgeTypes = "character_uses_item"
+	EffectModifiesAttribute ImpactFiltersEdgeTypes = "effect_modifies_attribute"
+	EffectTriggersEffect    ImpactFiltersEdgeTypes = "effect_triggers_effect"
+	EntityHasTag            ImpactFiltersEdgeTypes = "entity_has_tag"
+	FormulaReadsAttribute   ImpactFiltersEdgeTypes = "formula_reads_attribute"
+	ItemAppliesEffect       ImpactFiltersEdgeTypes = "item_applies_effect"
+	ItemEnhancesTag         ImpactFiltersEdgeTypes = "item_enhances_tag"
+	SkillAppliesEffect      ImpactFiltersEdgeTypes = "skill_applies_effect"
+)
+
+// Valid indicates whether the value is a known member of the ImpactFiltersEdgeTypes enum.
+func (e ImpactFiltersEdgeTypes) Valid() bool {
+	switch e {
+	case CharacterHasSkill:
+		return true
+	case CharacterUsesItem:
+		return true
+	case EffectModifiesAttribute:
+		return true
+	case EffectTriggersEffect:
+		return true
+	case EntityHasTag:
+		return true
+	case FormulaReadsAttribute:
+		return true
+	case ItemAppliesEffect:
+		return true
+	case ItemEnhancesTag:
+		return true
+	case SkillAppliesEffect:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImpactGraphEdgeRelationKind.
+const (
+	ImpactGraphEdgeRelationKindExplicit ImpactGraphEdgeRelationKind = "explicit"
+	ImpactGraphEdgeRelationKindInferred ImpactGraphEdgeRelationKind = "inferred"
+)
+
+// Valid indicates whether the value is a known member of the ImpactGraphEdgeRelationKind enum.
+func (e ImpactGraphEdgeRelationKind) Valid() bool {
+	switch e {
+	case ImpactGraphEdgeRelationKindExplicit:
+		return true
+	case ImpactGraphEdgeRelationKindInferred:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImpactJobAcceptedResultType.
+const (
+	ImpactAnalysis ImpactJobAcceptedResultType = "impact_analysis"
+)
+
+// Valid indicates whether the value is a known member of the ImpactJobAcceptedResultType enum.
+func (e ImpactJobAcceptedResultType) Valid() bool {
+	switch e {
+	case ImpactAnalysis:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImpactLimitsDefaultPathsPerTarget.
+const (
+	ImpactLimitsDefaultPathsPerTargetN1 ImpactLimitsDefaultPathsPerTarget = 1
+)
+
+// Valid indicates whether the value is a known member of the ImpactLimitsDefaultPathsPerTarget enum.
+func (e ImpactLimitsDefaultPathsPerTarget) Valid() bool {
+	switch e {
+	case ImpactLimitsDefaultPathsPerTargetN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImpactSuspectedEvidenceRelationshipKinds.
+const (
+	ImpactSuspectedEvidenceRelationshipKindsExplicit ImpactSuspectedEvidenceRelationshipKinds = "explicit"
+	ImpactSuspectedEvidenceRelationshipKindsInferred ImpactSuspectedEvidenceRelationshipKinds = "inferred"
+)
+
+// Valid indicates whether the value is a known member of the ImpactSuspectedEvidenceRelationshipKinds enum.
+func (e ImpactSuspectedEvidenceRelationshipKinds) Valid() bool {
+	switch e {
+	case ImpactSuspectedEvidenceRelationshipKindsExplicit:
+		return true
+	case ImpactSuspectedEvidenceRelationshipKindsInferred:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImpactSuspectedState.
+const (
+	ImpactSuspectedStateCanceled        ImpactSuspectedState = "canceled"
+	ImpactSuspectedStateDegraded        ImpactSuspectedState = "degraded"
+	ImpactSuspectedStateDisabled        ImpactSuspectedState = "disabled"
+	ImpactSuspectedStateReady           ImpactSuspectedState = "ready"
+	ImpactSuspectedStateRebuildRequired ImpactSuspectedState = "rebuild_required"
+	ImpactSuspectedStateUnavailable     ImpactSuspectedState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the ImpactSuspectedState enum.
+func (e ImpactSuspectedState) Valid() bool {
+	switch e {
+	case ImpactSuspectedStateCanceled:
+		return true
+	case ImpactSuspectedStateDegraded:
+		return true
+	case ImpactSuspectedStateDisabled:
+		return true
+	case ImpactSuspectedStateReady:
+		return true
+	case ImpactSuspectedStateRebuildRequired:
+		return true
+	case ImpactSuspectedStateUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImpactTruncationReason.
+const (
+	MAXDEPTH ImpactTruncationReason = "MAX_DEPTH"
+	MAXNODES ImpactTruncationReason = "MAX_NODES"
+	MAXPATHS ImpactTruncationReason = "MAX_PATHS"
+)
+
+// Valid indicates whether the value is a known member of the ImpactTruncationReason enum.
+func (e ImpactTruncationReason) Valid() bool {
+	switch e {
+	case MAXDEPTH:
+		return true
+	case MAXNODES:
+		return true
+	case MAXPATHS:
 		return true
 	default:
 		return false
@@ -2952,6 +3240,21 @@ type CreateCheckpointRevision struct {
 // CreateCheckpointRevisionKind defines model for CreateCheckpointRevision.Kind.
 type CreateCheckpointRevisionKind string
 
+// CreateImpactAnalysisRequest defines model for CreateImpactAnalysisRequest.
+type CreateImpactAnalysisRequest struct {
+	// BaseRevisionId Server allocated UUIDv7.
+	BaseRevisionId UUIDv7         `json:"base_revision_id"`
+	Filters        *ImpactFilters `json:"filters,omitempty"`
+	Limits         *ImpactLimits  `json:"limits,omitempty"`
+
+	// ProjectUuid Server allocated UUIDv7.
+	ProjectUuid UUIDv7                  `json:"project_uuid"`
+	Suspected   *ImpactSuspectedOptions `json:"suspected,omitempty"`
+
+	// TargetRevisionId Server allocated UUIDv7.
+	TargetRevisionId UUIDv7 `json:"target_revision_id"`
+}
+
 // CreateReleasePolicyRequest defines model for CreateReleasePolicyRequest.
 type CreateReleasePolicyRequest = ReleasePolicyDefinition
 
@@ -3418,6 +3721,252 @@ type GraphWarning struct {
 
 // Hash defines model for Hash.
 type Hash = string
+
+// ImpactAffectedEntity defines model for ImpactAffectedEntity.
+type ImpactAffectedEntity struct {
+	DefaultPath  *ImpactPath     `json:"default_path,omitempty"`
+	Direct       bool            `json:"direct"`
+	EvidenceRef  Hash            `json:"evidence_ref"`
+	Indirect     bool            `json:"indirect"`
+	MinimumDepth int             `json:"minimum_depth"`
+	Node         ImpactGraphNode `json:"node"`
+	TagRule      bool            `json:"tag_rule"`
+}
+
+// ImpactAnalysisReport defines model for ImpactAnalysisReport.
+type ImpactAnalysisReport struct {
+	AnalysisContractVersion ImpactAnalysisReportAnalysisContractVersion `json:"analysis_contract_version"`
+	Base                    ImpactRevisionIdentity                      `json:"base"`
+	CacheHit                bool                                        `json:"cache_hit"`
+	ChangedEntities         []ImpactChangedEntity                       `json:"changed_entities"`
+	CreatedAt               time.Time                                   `json:"created_at"`
+	DeterministicAffected   []ImpactAffectedEntity                      `json:"deterministic_affected"`
+	Filters                 ImpactFilters                               `json:"filters"`
+	Freshness               ImpactFreshness                             `json:"freshness"`
+
+	// Id Server allocated UUIDv7.
+	Id        UUIDv7       `json:"id"`
+	InputHash Hash         `json:"input_hash"`
+	Limits    ImpactLimits `json:"limits"`
+	Links     struct {
+		Explanations   string `json:"explanations"`
+		Job            string `json:"job"`
+		PathExpansions string `json:"path_expansions"`
+		Self           string `json:"self"`
+	} `json:"links"`
+	Mode ImpactAnalysisReportMode `json:"mode"`
+
+	// ProjectUuid Server allocated UUIDv7.
+	ProjectUuid           UUIDv7                    `json:"project_uuid"`
+	ResultHash            Hash                      `json:"result_hash"`
+	SuspectedAssociations []ImpactSuspectedEvidence `json:"suspected_associations"`
+	SuspectedOptions      ImpactSuspectedOptions    `json:"suspected_options"`
+	SuspectedState        ImpactSuspectedState      `json:"suspected_state"`
+	Target                ImpactRevisionIdentity    `json:"target"`
+	Truncated             bool                      `json:"truncated"`
+	TruncationReasons     []ImpactTruncationReason  `json:"truncation_reasons"`
+	Warnings              []string                  `json:"warnings"`
+}
+
+// ImpactAnalysisReportAnalysisContractVersion defines model for ImpactAnalysisReport.AnalysisContractVersion.
+type ImpactAnalysisReportAnalysisContractVersion string
+
+// ImpactAnalysisReportMode defines model for ImpactAnalysisReport.Mode.
+type ImpactAnalysisReportMode string
+
+// ImpactChangedEntity defines model for ImpactChangedEntity.
+type ImpactChangedEntity struct {
+	ChangeKind ImpactChangedEntityChangeKind `json:"change_kind"`
+
+	// EntityId Server allocated UUIDv7.
+	EntityId      UUIDv7                            `json:"entity_id"`
+	FieldPaths    []string                          `json:"field_paths"`
+	Ineligibility *ImpactChangedEntityIneligibility `json:"ineligibility,omitempty"`
+	Kind          EntityKind                        `json:"kind"`
+	QueryEligible bool                              `json:"query_eligible"`
+	TargetNodeId  *string                           `json:"target_node_id,omitempty"`
+}
+
+// ImpactChangedEntityChangeKind defines model for ImpactChangedEntity.ChangeKind.
+type ImpactChangedEntityChangeKind string
+
+// ImpactChangedEntityIneligibility defines model for ImpactChangedEntity.Ineligibility.
+type ImpactChangedEntityIneligibility string
+
+// ImpactDirection defines model for ImpactDirection.
+type ImpactDirection string
+
+// ImpactExplanation defines model for ImpactExplanation.
+type ImpactExplanation struct {
+	AiGenerated  ImpactExplanationAiGenerated `json:"ai_generated"`
+	CreatedAt    time.Time                    `json:"created_at"`
+	Diagnostic   *string                      `json:"diagnostic,omitempty"`
+	EvidenceRefs []string                     `json:"evidence_refs"`
+
+	// Id Server allocated UUIDv7.
+	Id       UUIDv7  `json:"id"`
+	Model    *string `json:"model,omitempty"`
+	Provider *string `json:"provider,omitempty"`
+
+	// ReportId Server allocated UUIDv7.
+	ReportId UUIDv7                  `json:"report_id"`
+	Status   ImpactExplanationStatus `json:"status"`
+	Text     *string                 `json:"text,omitempty"`
+}
+
+// ImpactExplanationAiGenerated defines model for ImpactExplanation.AiGenerated.
+type ImpactExplanationAiGenerated bool
+
+// ImpactExplanationStatus defines model for ImpactExplanation.Status.
+type ImpactExplanationStatus string
+
+// ImpactExplanationRequest defines model for ImpactExplanationRequest.
+type ImpactExplanationRequest struct {
+	EvidenceRefs []string `json:"evidence_refs"`
+}
+
+// ImpactFilters defines model for ImpactFilters.
+type ImpactFilters struct {
+	Direction         *ImpactDirection          `json:"direction,omitempty"`
+	EdgeTypes         *[]ImpactFiltersEdgeTypes `json:"edge_types,omitempty"`
+	NodeTypes         *[]EntityKind             `json:"node_types,omitempty"`
+	RelationshipKinds *[]interface{}            `json:"relationship_kinds,omitempty"`
+}
+
+// ImpactFiltersEdgeTypes defines model for ImpactFilters.EdgeTypes.
+type ImpactFiltersEdgeTypes string
+
+// ImpactFreshness defines model for ImpactFreshness.
+type ImpactFreshness struct {
+	Fresh   bool     `json:"fresh"`
+	Reasons []string `json:"reasons"`
+}
+
+// ImpactGraphEdge defines model for ImpactGraphEdge.
+type ImpactGraphEdge struct {
+	Confidence   float32                     `json:"confidence"`
+	From         string                      `json:"from"`
+	Id           string                      `json:"id"`
+	Properties   map[string]interface{}      `json:"properties"`
+	Provenance   map[string]interface{}      `json:"provenance"`
+	RelationKind ImpactGraphEdgeRelationKind `json:"relation_kind"`
+	To           string                      `json:"to"`
+	Type         string                      `json:"type"`
+}
+
+// ImpactGraphEdgeRelationKind defines model for ImpactGraphEdge.RelationKind.
+type ImpactGraphEdgeRelationKind string
+
+// ImpactGraphNode defines model for ImpactGraphNode.
+type ImpactGraphNode struct {
+	Id         string                 `json:"id"`
+	Label      string                 `json:"label"`
+	Properties map[string]interface{} `json:"properties"`
+	Provenance map[string]interface{} `json:"provenance"`
+	Text       string                 `json:"text"`
+	Type       string                 `json:"type"`
+}
+
+// ImpactJobAccepted defines model for ImpactJobAccepted.
+type ImpactJobAccepted struct {
+	CacheHit   *bool                       `json:"cache_hit,omitempty"`
+	Job        Job                         `json:"job"`
+	Location   string                      `json:"location"`
+	ResultId   *UUIDv7                     `json:"result_id,omitempty"`
+	ResultType ImpactJobAcceptedResultType `json:"result_type"`
+	ResultUrl  string                      `json:"result_url"`
+}
+
+// ImpactJobAcceptedResultType defines model for ImpactJobAccepted.ResultType.
+type ImpactJobAcceptedResultType string
+
+// ImpactLimits defines model for ImpactLimits.
+type ImpactLimits struct {
+	DefaultPathsPerTarget *ImpactLimitsDefaultPathsPerTarget `json:"default_paths_per_target,omitempty"`
+	ExpandedMaxPaths      *int                               `json:"expanded_max_paths,omitempty"`
+	MaxDepth              *int                               `json:"max_depth,omitempty"`
+	MaxNodes              *int                               `json:"max_nodes,omitempty"`
+}
+
+// ImpactLimitsDefaultPathsPerTarget defines model for ImpactLimits.DefaultPathsPerTarget.
+type ImpactLimitsDefaultPathsPerTarget int
+
+// ImpactPath defines model for ImpactPath.
+type ImpactPath struct {
+	EdgeIds           []string                 `json:"edge_ids"`
+	Edges             []ImpactGraphEdge        `json:"edges"`
+	HopCount          int                      `json:"hop_count"`
+	NodeIds           []string                 `json:"node_ids"`
+	Nodes             []ImpactGraphNode        `json:"nodes"`
+	SourceNodeId      string                   `json:"source_node_id"`
+	TargetNodeId      string                   `json:"target_node_id"`
+	Truncated         bool                     `json:"truncated"`
+	TruncationReasons []ImpactTruncationReason `json:"truncation_reasons"`
+}
+
+// ImpactPathExpansion defines model for ImpactPathExpansion.
+type ImpactPathExpansion struct {
+	ExpansionHash Hash         `json:"expansion_hash"`
+	Paths         []ImpactPath `json:"paths"`
+
+	// ReportId Server allocated UUIDv7.
+	ReportId          UUIDv7                   `json:"report_id"`
+	TargetNodeId      string                   `json:"target_node_id"`
+	TruncationReasons []ImpactTruncationReason `json:"truncation_reasons"`
+	Warnings          []string                 `json:"warnings"`
+}
+
+// ImpactPathExpansionRequest defines model for ImpactPathExpansionRequest.
+type ImpactPathExpansionRequest struct {
+	MaxPaths     *int   `json:"max_paths,omitempty"`
+	TargetNodeId string `json:"target_node_id"`
+}
+
+// ImpactRevisionIdentity defines model for ImpactRevisionIdentity.
+type ImpactRevisionIdentity struct {
+	ConfigHash        Hash `json:"config_hash"`
+	GraphEdgeCount    int  `json:"graph_edge_count"`
+	GraphManifestHash Hash `json:"graph_manifest_hash"`
+	GraphNodeCount    int  `json:"graph_node_count"`
+
+	// RevisionId Server allocated UUIDv7.
+	RevisionId          UUIDv7 `json:"revision_id"`
+	VersionManifestHash Hash   `json:"version_manifest_hash"`
+}
+
+// ImpactSuspectedEvidence defines model for ImpactSuspectedEvidence.
+type ImpactSuspectedEvidence struct {
+	AlgorithmVersion  string                                     `json:"algorithm_version"`
+	CitationText      string                                     `json:"citation_text"`
+	EvidenceRef       Hash                                       `json:"evidence_ref"`
+	FtsGeneration     *string                                    `json:"fts_generation,omitempty"`
+	Model             *string                                    `json:"model,omitempty"`
+	ModelProvider     *string                                    `json:"model_provider,omitempty"`
+	Node              ImpactGraphNode                            `json:"node"`
+	Path              *ImpactPath                                `json:"path,omitempty"`
+	Rank              int                                        `json:"rank"`
+	RelationshipKinds []ImpactSuspectedEvidenceRelationshipKinds `json:"relationship_kinds"`
+	Scores            map[string]interface{}                     `json:"scores"`
+	SeedNodeId        string                                     `json:"seed_node_id"`
+	VectorGeneration  *string                                    `json:"vector_generation,omitempty"`
+}
+
+// ImpactSuspectedEvidenceRelationshipKinds defines model for ImpactSuspectedEvidence.RelationshipKinds.
+type ImpactSuspectedEvidenceRelationshipKinds string
+
+// ImpactSuspectedOptions defines model for ImpactSuspectedOptions.
+type ImpactSuspectedOptions struct {
+	Enabled       *bool `json:"enabled,omitempty"`
+	GraphMaxDepth *int  `json:"graph_max_depth,omitempty"`
+	MaxResults    *int  `json:"max_results,omitempty"`
+	MaxSeeds      *int  `json:"max_seeds,omitempty"`
+}
+
+// ImpactSuspectedState defines model for ImpactSuspectedState.
+type ImpactSuspectedState string
+
+// ImpactTruncationReason defines model for ImpactTruncationReason.
+type ImpactTruncationReason string
 
 // IntegerString Canonical integer string.
 type IntegerString = string
@@ -4688,6 +5237,9 @@ type IdempotencyKey = string
 // IfMatch defines model for IfMatch.
 type IfMatch = string
 
+// ImpactAnalysisID Server allocated UUIDv7.
+type ImpactAnalysisID = UUIDv7
+
 // JobID Server allocated UUIDv7.
 type JobID = UUIDv7
 
@@ -4755,6 +5307,24 @@ type DeleteEntityParams struct {
 type PatchEntityParams struct {
 	// IfMatch Strong ETag returned by GET/create/patch.
 	IfMatch IfMatch `json:"If-Match"`
+}
+
+// CreateImpactAnalysisParams defines parameters for CreateImpactAnalysis.
+type CreateImpactAnalysisParams struct {
+	// IdempotencyKey Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict.
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ExplainImpactEvidenceParams defines parameters for ExplainImpactEvidence.
+type ExplainImpactEvidenceParams struct {
+	// IdempotencyKey Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict.
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ExpandImpactPathsParams defines parameters for ExpandImpactPaths.
+type ExpandImpactPathsParams struct {
+	// IdempotencyKey Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict.
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
 // StreamJobEventsParams defines parameters for StreamJobEvents.
@@ -4846,6 +5416,15 @@ type CreateEntityJSONRequestBody = EntityDraft
 
 // PatchEntityJSONRequestBody defines body for PatchEntity for application/json ContentType.
 type PatchEntityJSONRequestBody = EntityPatch
+
+// CreateImpactAnalysisJSONRequestBody defines body for CreateImpactAnalysis for application/json ContentType.
+type CreateImpactAnalysisJSONRequestBody = CreateImpactAnalysisRequest
+
+// ExplainImpactEvidenceJSONRequestBody defines body for ExplainImpactEvidence for application/json ContentType.
+type ExplainImpactEvidenceJSONRequestBody = ImpactExplanationRequest
+
+// ExpandImpactPathsJSONRequestBody defines body for ExpandImpactPaths for application/json ContentType.
+type ExpandImpactPathsJSONRequestBody = ImpactPathExpansionRequest
 
 // OpenProjectJSONRequestBody defines body for OpenProject for application/json ContentType.
 type OpenProjectJSONRequestBody = OpenProjectRequest

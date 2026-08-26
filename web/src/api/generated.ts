@@ -262,6 +262,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/impact-analyses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Admits one immutable revision-pair impact analysis. All revision, validation and Graph identity preconditions are synchronous and no Job is created when they fail. */
+        post: operations["createImpactAnalysis"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/impact-analyses/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Reads one immutable historical impact report and derives freshness without mutating it. */
+        get: operations["getImpactAnalysis"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/impact-analyses/{id}/path-expansions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["expandImpactPaths"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/impact-analyses/{id}/explanations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["explainImpactEvidence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/release-policies": {
         parameters: {
             query?: never;
@@ -611,6 +677,227 @@ export interface components {
         Hash: string;
         /** @enum {string} */
         EntityKind: "character" | "skill" | "item" | "effect" | "tag" | "attribute";
+        /**
+         * @default incoming
+         * @enum {string}
+         */
+        ImpactDirection: "incoming" | "outgoing" | "both";
+        /** @enum {string} */
+        ImpactTruncationReason: "MAX_DEPTH" | "MAX_NODES" | "MAX_PATHS";
+        /** @enum {string} */
+        ImpactSuspectedState: "disabled" | "ready" | "degraded" | "rebuild_required" | "unavailable" | "canceled";
+        ImpactFilters: {
+            /**
+             * @default [
+             *       "explicit"
+             *     ]
+             */
+            relationship_kinds: [
+                "explicit"
+            ];
+            node_types?: components["schemas"]["EntityKind"][];
+            edge_types?: ("character_has_skill" | "character_uses_item" | "skill_applies_effect" | "item_applies_effect" | "formula_reads_attribute" | "effect_modifies_attribute" | "entity_has_tag" | "item_enhances_tag" | "effect_triggers_effect")[];
+            direction?: components["schemas"]["ImpactDirection"];
+        };
+        ImpactLimits: {
+            /** @default 3 */
+            max_depth: number;
+            /** @default 500 */
+            max_nodes: number;
+            /**
+             * @default 1
+             * @constant
+             */
+            default_paths_per_target: 1;
+            /** @default 20 */
+            expanded_max_paths: number;
+        };
+        ImpactSuspectedOptions: {
+            /** @default false */
+            enabled: boolean;
+            /** @default 20 */
+            max_seeds: number;
+            /** @default 20 */
+            max_results: number;
+            /** @default 2 */
+            graph_max_depth: number;
+        };
+        CreateImpactAnalysisRequest: {
+            project_uuid: components["schemas"]["UUIDv7"];
+            base_revision_id: components["schemas"]["UUIDv7"];
+            target_revision_id: components["schemas"]["UUIDv7"];
+            filters?: components["schemas"]["ImpactFilters"];
+            limits?: components["schemas"]["ImpactLimits"];
+            suspected?: components["schemas"]["ImpactSuspectedOptions"];
+        };
+        ImpactJobAccepted: {
+            job: components["schemas"]["Job"];
+            /** Format: uri-reference */
+            location: string;
+            /** @constant */
+            result_type: "impact_analysis";
+            result_id?: components["schemas"]["UUIDv7"] | null;
+            /** Format: uri-reference */
+            result_url: string;
+            /** @default false */
+            cache_hit: boolean;
+        };
+        ImpactRevisionIdentity: {
+            revision_id: components["schemas"]["UUIDv7"];
+            config_hash: components["schemas"]["Hash"];
+            version_manifest_hash: components["schemas"]["Hash"];
+            graph_manifest_hash: components["schemas"]["Hash"];
+            graph_node_count: number;
+            graph_edge_count: number;
+        };
+        ImpactChangedEntity: {
+            entity_id: components["schemas"]["UUIDv7"];
+            kind: components["schemas"]["EntityKind"];
+            /** @enum {string} */
+            change_kind: "ADD" | "DELETE" | "MOVE" | "MODIFY";
+            field_paths: string[];
+            target_node_id?: string;
+            query_eligible: boolean;
+            /** @enum {string} */
+            ineligibility?: "not_in_target_graph" | "filtered_node_type";
+        };
+        ImpactGraphNode: {
+            id: string;
+            type: string;
+            label: string;
+            text: string;
+            properties: {
+                [key: string]: unknown;
+            };
+            provenance: {
+                [key: string]: unknown;
+            };
+        };
+        ImpactGraphEdge: {
+            id: string;
+            from: string;
+            to: string;
+            type: string;
+            /** @enum {string} */
+            relation_kind: "explicit" | "inferred";
+            confidence: number;
+            properties: {
+                [key: string]: unknown;
+            };
+            provenance: {
+                [key: string]: unknown;
+            };
+        };
+        ImpactPath: {
+            source_node_id: string;
+            target_node_id: string;
+            node_ids: string[];
+            edge_ids: string[];
+            nodes: components["schemas"]["ImpactGraphNode"][];
+            edges: components["schemas"]["ImpactGraphEdge"][];
+            hop_count: number;
+            truncated: boolean;
+            truncation_reasons: components["schemas"]["ImpactTruncationReason"][];
+        };
+        ImpactAffectedEntity: {
+            node: components["schemas"]["ImpactGraphNode"];
+            minimum_depth: number;
+            direct: boolean;
+            indirect: boolean;
+            tag_rule: boolean;
+            evidence_ref: components["schemas"]["Hash"];
+            default_path?: components["schemas"]["ImpactPath"];
+        };
+        ImpactSuspectedEvidence: {
+            rank: number;
+            node: components["schemas"]["ImpactGraphNode"];
+            citation_text: string;
+            seed_node_id: string;
+            path?: components["schemas"]["ImpactPath"];
+            relationship_kinds: ("explicit" | "inferred")[];
+            scores: {
+                [key: string]: unknown;
+            };
+            fts_generation?: string;
+            vector_generation?: string;
+            algorithm_version: string;
+            evidence_ref: components["schemas"]["Hash"];
+            model_provider?: string;
+            model?: string;
+        };
+        ImpactFreshness: {
+            fresh: boolean;
+            reasons: string[];
+        };
+        ImpactAnalysisReport: {
+            id: components["schemas"]["UUIDv7"];
+            input_hash: components["schemas"]["Hash"];
+            result_hash: components["schemas"]["Hash"];
+            /** @constant */
+            analysis_contract_version: "dependency-impact-v1";
+            project_uuid: components["schemas"]["UUIDv7"];
+            base: components["schemas"]["ImpactRevisionIdentity"];
+            target: components["schemas"]["ImpactRevisionIdentity"];
+            filters: components["schemas"]["ImpactFilters"];
+            limits: components["schemas"]["ImpactLimits"];
+            suspected_options: components["schemas"]["ImpactSuspectedOptions"];
+            /** @enum {string} */
+            mode: "reverse_dependency_impact" | "relationship_exploration";
+            changed_entities: components["schemas"]["ImpactChangedEntity"][];
+            deterministic_affected: components["schemas"]["ImpactAffectedEntity"][];
+            suspected_associations: components["schemas"]["ImpactSuspectedEvidence"][];
+            suspected_state: components["schemas"]["ImpactSuspectedState"];
+            truncated: boolean;
+            truncation_reasons: components["schemas"]["ImpactTruncationReason"][];
+            warnings: string[];
+            cache_hit: boolean;
+            freshness: components["schemas"]["ImpactFreshness"];
+            /** Format: date-time */
+            created_at: string;
+            links: {
+                /** Format: uri-reference */
+                self: string;
+                /** Format: uri-reference */
+                job: string;
+                /** Format: uri-reference */
+                path_expansions: string;
+                /** Format: uri-reference */
+                explanations: string;
+            };
+        };
+        ImpactPathExpansionRequest: {
+            target_node_id: string;
+            /** @default 20 */
+            max_paths: number;
+        };
+        ImpactPathExpansion: {
+            report_id: components["schemas"]["UUIDv7"];
+            expansion_hash: components["schemas"]["Hash"];
+            target_node_id: string;
+            paths: components["schemas"]["ImpactPath"][];
+            truncation_reasons: components["schemas"]["ImpactTruncationReason"][];
+            warnings: string[];
+        };
+        ImpactExplanationRequest: {
+            evidence_refs: string[];
+        };
+        ImpactExplanation: {
+            id: components["schemas"]["UUIDv7"];
+            report_id: components["schemas"]["UUIDv7"];
+            /** @enum {string} */
+            status: "queued" | "succeeded" | "failed";
+            /** @constant */
+            ai_generated: true;
+            text?: string;
+            provider?: string;
+            model?: string;
+            evidence_refs: string[];
+            diagnostic?: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @enum {string} */
+        ImpactProblemCode: "INVALID_REVISION_PAIR" | "NO_BASELINE" | "GRAPH_NOT_READY" | "GRAPH_IDENTITY_MISMATCH" | "NODE_NOT_FOUND" | "LIMIT_EXCEEDED" | "GRAPH_STORE_UNAVAILABLE" | "SNAPSHOT_INDEX_NOT_READY" | "RETRIEVAL_UNAVAILABLE" | "PROVIDER_CONTRACT_MISMATCH" | "IDEMPOTENCY_CONFLICT" | "INTERNAL_ERROR";
         ProjectSelection: {
             /** @description Opaque short-lived process-local capability. */
             token: string;
@@ -2065,6 +2352,7 @@ export interface components {
         SimulationRunID: components["schemas"]["UUIDv7"];
         RiskReviewID: components["schemas"]["UUIDv7"];
         DraftPatchID: components["schemas"]["UUIDv7"];
+        ImpactAnalysisID: components["schemas"]["UUIDv7"];
         AIProviderName: "openai-compatible";
         /** @description Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. */
         IdempotencyKey: string;
@@ -2584,6 +2872,124 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GraphStatus"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createImpactAnalysis: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateImpactAnalysisRequest"];
+            };
+        };
+        responses: {
+            /** @description Existing or newly admitted durable impact Job. */
+            202: {
+                headers: {
+                    Location: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImpactJobAccepted"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getImpactAnalysis: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ImpactAnalysisID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable impact report. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImpactAnalysisReport"];
+                };
+            };
+            404: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    expandImpactPaths: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["ImpactAnalysisID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImpactPathExpansionRequest"];
+            };
+        };
+        responses: {
+            /** @description Existing or newly appended insert-only path expansion. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImpactPathExpansion"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    explainImpactEvidence: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["ImpactAnalysisID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImpactExplanationRequest"];
+            };
+        };
+        responses: {
+            /** @description Bounded optional AI explanation attempt. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImpactExplanation"];
                 };
             };
             default: components["responses"]["Problem"];

@@ -7,6 +7,7 @@ import RuntimeStatusBanner from '@/components/RuntimeStatusBanner.vue'
     <nav aria-label="主导航">
       <RouterLink to="/projects">项目</RouterLink>
       <RouterLink to="/settings">运行设置</RouterLink>
+      <RouterLink to="/impact">影响分析</RouterLink>
     </nav>
     <RouterView />
   </main>

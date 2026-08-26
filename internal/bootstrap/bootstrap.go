@@ -159,7 +159,10 @@ func Build(options BuildOptions) (*Process, error) {
 	if source, ok := packageVerifier.(verifiedPackageSource); ok {
 		graphDependency.packages = source
 	}
-	workers := &workerGroup{values: append([]Worker(nil), options.Workers...)}
+	impactWorker := &impactRuntime{projects: projects, graph: graphDependency}
+	workerValues := append([]Worker(nil), options.Workers...)
+	workerValues = append(workerValues, impactWorker)
+	workers := &workerGroup{values: workerValues}
 	dependencyWorkers := make([]Worker, 0, len(options.Dependencies)+1)
 	for _, dependency := range options.Dependencies {
 		dependencyWorkers = append(dependencyWorkers, &packageGatedWorker{packages: packageVerifier, next: dependency})
@@ -210,7 +213,7 @@ func Build(options BuildOptions) (*Process, error) {
 	}
 	statusObserver := runtimeStatusObserver{assembler: statusAssembler, build: identity, projects: projects, graph: graphDependency}
 	graphDependency.refresh = runtimeCapabilityRefresher{status: status, convergence: capabilityConvergence, publish: statusObserver.Observe}.Refresh
-	registerRoutes(host, projects, registry, settingsStore, credentialResolver, assets, statusAssembler, graphDependency)
+	registerRoutes(host, projects, registry, settingsStore, credentialResolver, assets, statusAssembler, graphDependency, impactWorker.Submit)
 	process := &Process{
 		Coordinator: coordinator, Status: status, Host: host, Projects: projects, Assets: assets,
 		workers: workers, dependencies: dependencies, boundaries: append([]ShutdownBoundary(nil), options.ShutdownBoundaries...), settings: settings, stdout: options.Stdout,
@@ -236,7 +239,7 @@ func Build(options BuildOptions) (*Process, error) {
 	return process, nil
 }
 
-func registerRoutes(host *httpapi.Runtime, projects *project.Manager, registry *domain.Registry, settings *runtimeconfig.Store, credentials provider.CredentialResolver, assets fs.FS, status *appruntime.StatusAssembler, runtimeActions httpapi.RuntimeActionService) {
+func registerRoutes(host *httpapi.Runtime, projects *project.Manager, registry *domain.Registry, settings *runtimeconfig.Store, credentials provider.CredentialResolver, assets fs.FS, status *appruntime.StatusAssembler, runtimeActions httpapi.RuntimeActionService, impactSubmit func(context.Context, domain.ID) error) {
 	engine := host.Engine()
 	httpapi.NewProjectHandler(projects, project.NativeDirectorySelector{}).Register(engine)
 	httpapi.NewSchemaHandler(registry).Register(engine)
@@ -250,13 +253,17 @@ func registerRoutes(host *httpapi.Runtime, projects *project.Manager, registry *
 
 	graph := httpapi.GraphSyncServiceFromProjectManager(projects, nil)
 	versions := httpapi.NewVersionHandlerWithGraph(httpapi.VersioningServiceFromProjectManagerWithDependencies(projects, app.VersioningDependencies{}), graph)
+	impactProvider, _ := runtimeActions.(httpapi.ImpactProvider)
+	impactAnalyses := httpapi.ImpactAnalysisServiceFromProjectManager(projects, httpapi.ImpactServiceDependencies{Provider: impactProvider, Submit: impactSubmit})
 	simulationJobs := httpapi.SimulationJobStoreFromProjectManager(projects)
+	versions.RegisterDurableResolver(httpapi.ImpactJobResolver(impactAnalyses))
 	versions.RegisterDurableResolver(httpapi.SimulationJobResolver(simulationJobs))
 	versions.RegisterDurableResolver(httpapi.AIJobResolver(httpapi.AIJobRuntimeServiceFromProjectManager(projects)))
 	versions.Register(engine)
 	httpapi.NewRuntimeStatusHandler(status).Register(engine)
 	httpapi.NewRuntimeActionHandler(runtimeActions).Register(engine)
 	httpapi.NewGraphHandler(graph).Register(engine)
+	httpapi.NewImpactHandler(impactAnalyses).Register(engine)
 	httpapi.NewSimulationAdmissionHandler(httpapi.SimulationAdmissionServiceFromProjectManager(projects), simulationJobs).Register(engine)
 	httpapi.NewSimulationHandler(httpapi.SimulationRunStoreFromProjectManager(projects)).Register(engine)
 	httpapi.NewAIDecisionHandler(httpapi.AIDecisionServiceFromProjectManager(projects)).Register(engine)

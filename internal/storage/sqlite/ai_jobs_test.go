@@ -52,7 +52,7 @@ func TestAIDesignSchemaMigrationCreatesBoundedLinkedTables(t *testing.T) {
 		}
 	}
 	var version int
-	if err := store.db.QueryRow(`SELECT db_schema_version FROM project_meta WHERE id=?`, store.ProjectID()).Scan(&version); err != nil || version != 20 {
+	if err := store.db.QueryRow(`SELECT db_schema_version FROM project_meta WHERE id=?`, store.ProjectID()).Scan(&version); err != nil || version != DBSchemaVersion() {
 		t.Fatalf("version=%d err=%v", version, err)
 	}
 	var steps int

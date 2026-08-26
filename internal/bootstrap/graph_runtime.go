@@ -18,6 +18,9 @@ import (
 	runtimeconfig "github.com/zouyi/eco-guardian/internal/app/runtime/config"
 	runtimediagnostics "github.com/zouyi/eco-guardian/internal/app/runtime/diagnostics"
 	"github.com/zouyi/eco-guardian/internal/app/runtime/graphprocess"
+	graphclient "github.com/zouyi/eco-guardian/internal/graph/client"
+	"github.com/zouyi/eco-guardian/internal/graph/impact"
+	graphsync "github.com/zouyi/eco-guardian/internal/graph/sync"
 	"github.com/zouyi/eco-guardian/internal/packageinfo"
 	platformprocess "github.com/zouyi/eco-guardian/internal/platform/process"
 	"github.com/zouyi/eco-guardian/internal/project"
@@ -65,6 +68,51 @@ type graphRuntimeDependency struct {
 	endpoint   string
 	process    graphprocess.ProcessObservation
 	health     graphprocess.HealthObservation
+}
+
+func (dependency *graphRuntimeDependency) impactClient() (*graphclient.Client, error) {
+	if dependency == nil {
+		return nil, errors.New("graph runtime unavailable")
+	}
+	dependency.mu.Lock()
+	endpoint := dependency.endpoint
+	dependency.mu.Unlock()
+	if endpoint == "" {
+		return nil, errors.New("graph runtime unavailable")
+	}
+	return graphclient.New(graphclient.Config{Endpoint: endpoint, HTTPClient: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}})
+}
+
+func (dependency *graphRuntimeDependency) InspectSnapshot(ctx context.Context, namespace, version, requestID string) (graphsync.Snapshot, error) {
+	client, err := dependency.impactClient()
+	if err != nil {
+		return graphsync.Snapshot{}, err
+	}
+	return client.InspectSnapshot(ctx, namespace, version, requestID)
+}
+
+func (dependency *graphRuntimeDependency) Traverse(ctx context.Context, request impact.TraverseRequest, requestID string) (impact.TraverseResponse, error) {
+	client, err := dependency.impactClient()
+	if err != nil {
+		return impact.TraverseResponse{}, err
+	}
+	return (graphclient.ImpactQueryProvider{Client: client}).Traverse(ctx, request, requestID)
+}
+
+func (dependency *graphRuntimeDependency) Paths(ctx context.Context, request impact.PathsRequest, requestID string) (impact.PathsResponse, error) {
+	client, err := dependency.impactClient()
+	if err != nil {
+		return impact.PathsResponse{}, err
+	}
+	return (graphclient.ImpactQueryProvider{Client: client}).Paths(ctx, request, requestID)
+}
+
+func (dependency *graphRuntimeDependency) Retrieve(ctx context.Context, request impact.RetrieveRequest, requestID string) (impact.RetrieveResponse, error) {
+	client, err := dependency.impactClient()
+	if err != nil {
+		return impact.RetrieveResponse{}, err
+	}
+	return (graphclient.ImpactQueryProvider{Client: client}).Retrieve(ctx, request, requestID)
 }
 
 func (dependency *graphRuntimeDependency) Start(ctx context.Context) error {

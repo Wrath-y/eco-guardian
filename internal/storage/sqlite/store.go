@@ -25,7 +25,7 @@ import (
 )
 
 const databaseName = "project.db"
-const currentSchemaVersion = 20
+const currentSchemaVersion = 21
 
 func DBSchemaVersion() int { return currentSchemaVersion }
 
@@ -441,6 +441,17 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 		}
 		version = 20
 	}
+	if version == 20 {
+		if err := applyMigrationV21(ctx, tx); err != nil {
+			return err
+		}
+		if hook != nil {
+			if err := hook("dependency-impact-v21"); err != nil {
+				return err
+			}
+		}
+		version = 21
+	}
 	if version != currentSchemaVersion {
 		return fmt.Errorf("unsupported schema version %d", version)
 	}
@@ -643,6 +654,17 @@ func applyMigrationV20(ctx context.Context, tx *sql.Tx) error {
 	return recordMigrationChecksums(ctx, tx)
 }
 
+func applyMigrationV21(ctx context.Context, tx *sql.Tx) error {
+	body, err := root.Assets.ReadFile("migrations/0021_dependency_impact.sql")
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, string(body)); err != nil {
+		return err
+	}
+	return recordMigrationChecksums(ctx, tx)
+}
+
 func seedRiskStarterThreshold(ctx context.Context, tx *sql.Tx) error {
 	starter := riskthreshold.StarterFixtureV1()
 	body, err := starter.Body.CanonicalJSON()
@@ -697,6 +719,7 @@ func migrationStepChecksums() (map[string]string, error) {
 		"ai-generation-immutability-v18":      "migrations/0018_ai_generation_immutability.sql",
 		"ai-patch-decisions-v19":              "migrations/0019_ai_patch_decisions.sql",
 		"ai-preview-facts-v20":                "migrations/0020_ai_preview_facts.sql",
+		"dependency-impact-v21":               "migrations/0021_dependency_impact.sql",
 	}
 	checksums := make(map[string]string, len(files))
 	for stepID, path := range files {

@@ -15,6 +15,9 @@ const (
 	ErrorStoreUnavailable ErrorKind = "store_unavailable"
 	ErrorRetryExhausted   ErrorKind = "retry_exhausted"
 	ErrorIntegrity        ErrorKind = "integrity"
+	ErrorNodeMissing      ErrorKind = "node_missing"
+	ErrorQueryInvalid     ErrorKind = "query_invalid"
+	ErrorRetrieval        ErrorKind = "retrieval_unavailable"
 	ErrorUnexpected       ErrorKind = "unexpected"
 )
 
@@ -33,12 +36,18 @@ func ClassifyError(err *graphsync.ProviderError) ErrorKind {
 		return ErrorTaskMissing
 	case "SNAPSHOT_NOT_READY", "SNAPSHOT_INDEX_NOT_READY":
 		return ErrorNotReady
+	case "NODE_NOT_FOUND":
+		return ErrorNodeMissing
 	case "CONTENT_HASH_CONFLICT":
 		return ErrorHashConflict
 	case "CONTENT_HASH_MISMATCH":
 		return ErrorHashMismatch
 	case "INVALID_SNAPSHOT_REQUEST", "INVALID_DELTA_OPERATION", "LIMIT_EXCEEDED":
 		return ErrorCapability
+	case "INVALID_GRAPH_QUERY":
+		return ErrorQueryInvalid
+	case "RETRIEVAL_UNAVAILABLE":
+		return ErrorRetrieval
 	case "GRAPH_STORE_UNAVAILABLE":
 		return ErrorStoreUnavailable
 	case "RETRY_EXHAUSTED":

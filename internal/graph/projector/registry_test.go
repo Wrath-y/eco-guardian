@@ -121,6 +121,20 @@ func TestProjectMaterializesStableNodesAndRegisteredEdgesOnly(t *testing.T) {
 	}
 }
 
+func TestNodeIDIsSharedWithProjection(t *testing.T) {
+	projectID, entityID := projectorTestID(t), projectorTestID(t)
+	entity := domain.Entity{ID: entityID, Kind: domain.KindSkill, Key: "skill", Name: "Skill", Status: domain.StatusActive, SchemaVersion: 1}
+	want := "urn:eco:" + string(projectID) + ":skill:" + string(entityID)
+	if got := NodeID(projectID, entity); got != want {
+		t.Fatalf("NodeID()=%q want %q", got, want)
+	}
+	descriptor := Descriptor{SchemaVersion: ProjectionSchemaV1, Version: ProjectorV1, Relations: V1Relations(), Formatter: V1Formatter{}}
+	result, err := Project(descriptor, Revision{ProjectID: projectID, RevisionID: projectorTestID(t), ConfigHash: strings.Repeat("a", 64), Entities: []domain.Entity{entity}})
+	if err != nil || len(result.Nodes) != 1 || result.Nodes[0].ID != want {
+		t.Fatalf("projection=%#v err=%v", result, err)
+	}
+}
+
 func TestProjectionIsDeterministicAcrossInputOrderAndRegistryRestart(t *testing.T) {
 	project, revision, character, skill, tag := projectorTestID(t), projectorTestID(t), projectorTestID(t), projectorTestID(t), projectorTestID(t)
 	base := Revision{

@@ -1,0 +1,37 @@
+{
+  "project_uuid": "0198a100-0000-7000-8000-000000000001",
+  "base": {
+    "revision_id": "0198a100-0000-7000-8000-000000000002",
+    "config_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "version_manifest_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "graph_manifest_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "graph_node_count": 10,
+    "graph_edge_count": 20
+  },
+  "target": {
+    "revision_id": "0198a100-0000-7000-8000-000000000003",
+    "config_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "version_manifest_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "graph_manifest_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "graph_node_count": 11,
+    "graph_edge_count": 22
+  },
+  "filters": {
+    "relationship_kinds": ["explicit"],
+    "node_types": ["skill", "attribute", "skill"],
+    "edge_types": ["skill_applies_effect", "character_has_skill"],
+    "direction": "incoming"
+  },
+  "limits": {
+    "max_depth": 3,
+    "max_nodes": 500,
+    "default_paths_per_target": 1,
+    "expanded_max_paths": 20
+  },
+  "suspected": {
+    "enabled": true,
+    "max_seeds": 20,
+    "max_results": 20,
+    "graph_max_depth": 2
+  }
+}

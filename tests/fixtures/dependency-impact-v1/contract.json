@@ -1,0 +1,23 @@
+{
+  "analysis_contract_version": "dependency-impact-v1",
+  "directions": ["both", "incoming", "outgoing"],
+  "relationship_kinds": ["explicit"],
+  "truncation_reasons": ["MAX_DEPTH", "MAX_NODES", "MAX_PATHS"],
+  "error_codes": [
+    "GRAPH_IDENTITY_MISMATCH",
+    "GRAPH_NOT_READY",
+    "GRAPH_STORE_UNAVAILABLE",
+    "IDEMPOTENCY_CONFLICT",
+    "INTERNAL_ERROR",
+    "INVALID_GRAPH_QUERY",
+    "INVALID_IMPACT_INPUT",
+    "INVALID_REVISION_PAIR",
+    "LIMIT_EXCEEDED",
+    "NODE_NOT_FOUND",
+    "NO_BASELINE",
+    "PROVIDER_CONTRACT_MISMATCH",
+    "RETRIEVAL_UNAVAILABLE",
+    "SNAPSHOT_INDEX_NOT_READY",
+    "VALIDATION_REQUIRED"
+  ]
+}

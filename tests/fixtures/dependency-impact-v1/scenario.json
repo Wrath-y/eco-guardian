@@ -1,0 +1,6 @@
+{
+  "version": "dependency-impact-v1",
+  "entity_kinds": ["attribute", "character", "effect", "item", "skill", "tag"],
+  "relation_types": ["character_has_skill", "character_uses_item", "effect_modifies_attribute", "effect_triggers_effect", "entity_has_tag", "formula_reads_attribute", "item_applies_effect", "item_enhances_tag", "skill_applies_effect"],
+  "required_cases": ["changed_tombstone", "cycle", "direct", "equal_content_checkpoint", "field_formula_provenance", "filtered_start", "multi_level", "parallel_edges", "tag_impact"]
+}

@@ -178,6 +178,48 @@ paths:
       responses:
         '200': { description: Exact revision Graph state and last safe provider observation, content: { application/json: { schema: { $ref: '#/components/schemas/GraphStatus' } } } }
         default: { $ref: '#/components/responses/Problem' }
+  /impact-analyses:
+    post:
+      operationId: createImpactAnalysis
+      description: Admits one immutable revision-pair impact analysis. All revision, validation and Graph identity preconditions are synchronous and no Job is created when they fail.
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateImpactAnalysisRequest' } } } }
+      responses:
+        '202':
+          description: Existing or newly admitted durable impact Job.
+          headers: { Location: { required: true, schema: { type: string, format: uri-reference } } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/ImpactJobAccepted' } } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+  /impact-analyses/{id}:
+    get:
+      operationId: getImpactAnalysis
+      description: Reads one immutable historical impact report and derives freshness without mutating it.
+      parameters: [ { $ref: '#/components/parameters/ImpactAnalysisID' } ]
+      responses:
+        '200': { description: Immutable impact report., content: { application/json: { schema: { $ref: '#/components/schemas/ImpactAnalysisReport' } } } }
+        '404': { $ref: '#/components/responses/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+  /impact-analyses/{id}/path-expansions:
+    post:
+      operationId: expandImpactPaths
+      parameters: [ { $ref: '#/components/parameters/ImpactAnalysisID' }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ImpactPathExpansionRequest' } } } }
+      responses:
+        '200': { description: Existing or newly appended insert-only path expansion., content: { application/json: { schema: { $ref: '#/components/schemas/ImpactPathExpansion' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /impact-analyses/{id}/explanations:
+    post:
+      operationId: explainImpactEvidence
+      parameters: [ { $ref: '#/components/parameters/ImpactAnalysisID' }, { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ImpactExplanationRequest' } } } }
+      responses:
+        '202': { description: Bounded optional AI explanation attempt., content: { application/json: { schema: { $ref: '#/components/schemas/ImpactExplanation' } } } }
+        default: { $ref: '#/components/responses/Problem' }
   /release-policies:
     get:
       operationId: listReleasePolicies
@@ -398,6 +440,7 @@ components:
     SimulationRunID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     RiskReviewID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     DraftPatchID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
+    ImpactAnalysisID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     AIProviderName: { name: provider, in: path, required: true, schema: { type: string, enum: [openai-compatible] } }
     IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 256 }, description: Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. }
     GraphRetryIdempotencyKey: { name: Idempotency-Key, in: header, required: false, schema: { type: string, minLength: 1, maxLength: 256 }, description: Required when graph-sync intent is retry; reuse returns the original retry Job and changed retry input conflicts. It is ignored for ensure. }
@@ -414,6 +457,214 @@ components:
     IntegerString: { type: string, pattern: '^-?(0|[1-9][0-9]*)$', description: Canonical integer string. }
     Hash: { type: string, pattern: '^[a-f0-9]{64}$' }
     EntityKind: { type: string, enum: [character, skill, item, effect, tag, attribute] }
+    ImpactDirection: { type: string, enum: [incoming, outgoing, both], default: incoming }
+    ImpactTruncationReason: { type: string, enum: [MAX_DEPTH, MAX_NODES, MAX_PATHS] }
+    ImpactSuspectedState: { type: string, enum: [disabled, ready, degraded, rebuild_required, unavailable, canceled] }
+    ImpactFilters:
+      type: object
+      properties:
+        relationship_kinds: { type: array, default: [explicit], minItems: 1, maxItems: 1, prefixItems: [ { const: explicit } ] }
+        node_types: { type: array, uniqueItems: true, items: { $ref: '#/components/schemas/EntityKind' } }
+        edge_types: { type: array, uniqueItems: true, items: { type: string, enum: [character_has_skill, character_uses_item, skill_applies_effect, item_applies_effect, formula_reads_attribute, effect_modifies_attribute, entity_has_tag, item_enhances_tag, effect_triggers_effect] } }
+        direction: { $ref: '#/components/schemas/ImpactDirection' }
+    ImpactLimits:
+      type: object
+      properties:
+        max_depth: { type: integer, minimum: 1, maximum: 6, default: 3 }
+        max_nodes: { type: integer, minimum: 1, maximum: 500, default: 500 }
+        default_paths_per_target: { type: integer, const: 1, default: 1 }
+        expanded_max_paths: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    ImpactSuspectedOptions:
+      type: object
+      properties:
+        enabled: { type: boolean, default: false }
+        max_seeds: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        max_results: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        graph_max_depth: { type: integer, minimum: 0, maximum: 3, default: 2 }
+    CreateImpactAnalysisRequest:
+      type: object
+      additionalProperties: false
+      required: [project_uuid, base_revision_id, target_revision_id]
+      properties:
+        project_uuid: { $ref: '#/components/schemas/UUIDv7' }
+        base_revision_id: { $ref: '#/components/schemas/UUIDv7' }
+        target_revision_id: { $ref: '#/components/schemas/UUIDv7' }
+        filters: { $ref: '#/components/schemas/ImpactFilters' }
+        limits: { $ref: '#/components/schemas/ImpactLimits' }
+        suspected: { $ref: '#/components/schemas/ImpactSuspectedOptions' }
+    ImpactJobAccepted:
+      type: object
+      required: [job, location, result_type, result_url]
+      properties:
+        job: { $ref: '#/components/schemas/Job' }
+        location: { type: string, format: uri-reference }
+        result_type: { type: string, const: impact_analysis }
+        result_id: { oneOf: [ { $ref: '#/components/schemas/UUIDv7' }, { type: 'null' } ] }
+        result_url: { type: string, format: uri-reference }
+        cache_hit: { type: boolean, default: false }
+    ImpactRevisionIdentity:
+      type: object
+      required: [revision_id, config_hash, version_manifest_hash, graph_manifest_hash, graph_node_count, graph_edge_count]
+      properties:
+        revision_id: { $ref: '#/components/schemas/UUIDv7' }
+        config_hash: { $ref: '#/components/schemas/Hash' }
+        version_manifest_hash: { $ref: '#/components/schemas/Hash' }
+        graph_manifest_hash: { $ref: '#/components/schemas/Hash' }
+        graph_node_count: { type: integer, minimum: 0 }
+        graph_edge_count: { type: integer, minimum: 0 }
+    ImpactChangedEntity:
+      type: object
+      required: [entity_id, kind, change_kind, field_paths, query_eligible]
+      properties:
+        entity_id: { $ref: '#/components/schemas/UUIDv7' }
+        kind: { $ref: '#/components/schemas/EntityKind' }
+        change_kind: { type: string, enum: [ADD, DELETE, MOVE, MODIFY] }
+        field_paths: { type: array, items: { type: string } }
+        target_node_id: { type: string }
+        query_eligible: { type: boolean }
+        ineligibility: { type: string, enum: [not_in_target_graph, filtered_node_type] }
+    ImpactGraphNode:
+      type: object
+      required: [id, type, label, text, properties, provenance]
+      properties:
+        id: { type: string }
+        type: { type: string }
+        label: { type: string }
+        text: { type: string }
+        properties: { type: object, additionalProperties: true }
+        provenance: { type: object, additionalProperties: true }
+    ImpactGraphEdge:
+      type: object
+      required: [id, from, to, type, relation_kind, confidence, properties, provenance]
+      properties:
+        id: { type: string }
+        from: { type: string }
+        to: { type: string }
+        type: { type: string }
+        relation_kind: { type: string, enum: [explicit, inferred] }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        properties: { type: object, additionalProperties: true }
+        provenance: { type: object, additionalProperties: true }
+    ImpactPath:
+      type: object
+      required: [source_node_id, target_node_id, node_ids, edge_ids, nodes, edges, hop_count, truncated, truncation_reasons]
+      properties:
+        source_node_id: { type: string }
+        target_node_id: { type: string }
+        node_ids: { type: array, items: { type: string } }
+        edge_ids: { type: array, items: { type: string } }
+        nodes: { type: array, items: { $ref: '#/components/schemas/ImpactGraphNode' } }
+        edges: { type: array, items: { $ref: '#/components/schemas/ImpactGraphEdge' } }
+        hop_count: { type: integer, minimum: 0, maximum: 6 }
+        truncated: { type: boolean }
+        truncation_reasons: { type: array, items: { $ref: '#/components/schemas/ImpactTruncationReason' } }
+    ImpactAffectedEntity:
+      type: object
+      required: [node, minimum_depth, direct, indirect, tag_rule, evidence_ref]
+      properties:
+        node: { $ref: '#/components/schemas/ImpactGraphNode' }
+        minimum_depth: { type: integer, minimum: 1, maximum: 6 }
+        direct: { type: boolean }
+        indirect: { type: boolean }
+        tag_rule: { type: boolean }
+        evidence_ref: { $ref: '#/components/schemas/Hash' }
+        default_path: { $ref: '#/components/schemas/ImpactPath' }
+    ImpactSuspectedEvidence:
+      type: object
+      required: [rank, node, citation_text, seed_node_id, relationship_kinds, scores, algorithm_version, evidence_ref]
+      properties:
+        rank: { type: integer, minimum: 1 }
+        node: { $ref: '#/components/schemas/ImpactGraphNode' }
+        citation_text: { type: string }
+        seed_node_id: { type: string }
+        path: { $ref: '#/components/schemas/ImpactPath' }
+        relationship_kinds: { type: array, items: { type: string, enum: [explicit, inferred] } }
+        scores: { type: object, additionalProperties: true }
+        fts_generation: { type: string }
+        vector_generation: { type: string }
+        algorithm_version: { type: string }
+        evidence_ref: { $ref: '#/components/schemas/Hash' }
+        model_provider: { type: string }
+        model: { type: string }
+    ImpactFreshness:
+      type: object
+      required: [fresh, reasons]
+      properties:
+        fresh: { type: boolean }
+        reasons: { type: array, items: { type: string } }
+    ImpactAnalysisReport:
+      type: object
+      required: [id, input_hash, result_hash, analysis_contract_version, project_uuid, base, target, filters, limits, suspected_options, mode, changed_entities, deterministic_affected, suspected_associations, suspected_state, truncated, truncation_reasons, warnings, cache_hit, freshness, created_at, links]
+      properties:
+        id: { $ref: '#/components/schemas/UUIDv7' }
+        input_hash: { $ref: '#/components/schemas/Hash' }
+        result_hash: { $ref: '#/components/schemas/Hash' }
+        analysis_contract_version: { type: string, const: dependency-impact-v1 }
+        project_uuid: { $ref: '#/components/schemas/UUIDv7' }
+        base: { $ref: '#/components/schemas/ImpactRevisionIdentity' }
+        target: { $ref: '#/components/schemas/ImpactRevisionIdentity' }
+        filters: { $ref: '#/components/schemas/ImpactFilters' }
+        limits: { $ref: '#/components/schemas/ImpactLimits' }
+        suspected_options: { $ref: '#/components/schemas/ImpactSuspectedOptions' }
+        mode: { type: string, enum: [reverse_dependency_impact, relationship_exploration] }
+        changed_entities: { type: array, items: { $ref: '#/components/schemas/ImpactChangedEntity' } }
+        deterministic_affected: { type: array, items: { $ref: '#/components/schemas/ImpactAffectedEntity' } }
+        suspected_associations: { type: array, items: { $ref: '#/components/schemas/ImpactSuspectedEvidence' } }
+        suspected_state: { $ref: '#/components/schemas/ImpactSuspectedState' }
+        truncated: { type: boolean }
+        truncation_reasons: { type: array, items: { $ref: '#/components/schemas/ImpactTruncationReason' } }
+        warnings: { type: array, items: { type: string } }
+        cache_hit: { type: boolean }
+        freshness: { $ref: '#/components/schemas/ImpactFreshness' }
+        created_at: { type: string, format: date-time }
+        links:
+          type: object
+          required: [self, job, path_expansions, explanations]
+          properties:
+            self: { type: string, format: uri-reference }
+            job: { type: string, format: uri-reference }
+            path_expansions: { type: string, format: uri-reference }
+            explanations: { type: string, format: uri-reference }
+    ImpactPathExpansionRequest:
+      type: object
+      additionalProperties: false
+      required: [target_node_id]
+      properties:
+        target_node_id: { type: string, minLength: 1 }
+        max_paths: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    ImpactPathExpansion:
+      type: object
+      required: [report_id, expansion_hash, target_node_id, paths, truncation_reasons, warnings]
+      properties:
+        report_id: { $ref: '#/components/schemas/UUIDv7' }
+        expansion_hash: { $ref: '#/components/schemas/Hash' }
+        target_node_id: { type: string }
+        paths: { type: array, items: { $ref: '#/components/schemas/ImpactPath' } }
+        truncation_reasons: { type: array, items: { $ref: '#/components/schemas/ImpactTruncationReason' } }
+        warnings: { type: array, items: { type: string } }
+    ImpactExplanationRequest:
+      type: object
+      additionalProperties: false
+      required: [evidence_refs]
+      properties:
+        evidence_refs: { type: array, minItems: 1, maxItems: 50, uniqueItems: true, items: { type: string } }
+    ImpactExplanation:
+      type: object
+      required: [id, report_id, status, ai_generated, evidence_refs, created_at]
+      properties:
+        id: { $ref: '#/components/schemas/UUIDv7' }
+        report_id: { $ref: '#/components/schemas/UUIDv7' }
+        status: { type: string, enum: [queued, succeeded, failed] }
+        ai_generated: { type: boolean, const: true }
+        text: { type: string }
+        provider: { type: string }
+        model: { type: string }
+        evidence_refs: { type: array, items: { type: string } }
+        diagnostic: { type: string }
+        created_at: { type: string, format: date-time }
+    ImpactProblemCode:
+      type: string
+      enum: [INVALID_REVISION_PAIR, NO_BASELINE, GRAPH_NOT_READY, GRAPH_IDENTITY_MISMATCH, NODE_NOT_FOUND, LIMIT_EXCEEDED, GRAPH_STORE_UNAVAILABLE, SNAPSHOT_INDEX_NOT_READY, RETRIEVAL_UNAVAILABLE, PROVIDER_CONTRACT_MISMATCH, IDEMPOTENCY_CONFLICT, INTERNAL_ERROR]
     ProjectSelection:
       type: object
       required: [token, expires_at]

@@ -51,7 +51,7 @@ func (s *Store) ListQueuedImpactHandoffs(ctx context.Context, limit int) ([]grap
 	if limit < 1 || limit > 1000 {
 		return nil, ErrGraphImpactHandoffInvalid
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT revision_id,graph_manifest_hash,stage FROM graph_impact_handoffs WHERE status='queued' ORDER BY created_at,revision_id LIMIT ?`, limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT revision_id,graph_manifest_hash,stage FROM graph_impact_handoffs WHERE status IN ('queued','waiting') ORDER BY created_at,revision_id LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -68,6 +68,30 @@ func (s *Store) ListQueuedImpactHandoffs(ctx context.Context, limit int) ([]grap
 		result = append(result, handoff)
 	}
 	return result, rows.Err()
+}
+
+// SetImpactHandoffState records only consumer orchestration state for the
+// exact target revision/hash. It never changes Graph readiness or projection.
+func (s *Store) SetImpactHandoffState(ctx context.Context, targetID domain.ID, graphHash, status string, baseID, jobID, reportID domain.ID, safeReason string) error {
+	if !targetID.Valid() || !validGraphHash(graphHash) || (status != "waiting" && status != "claimed" && status != "consumed" && status != "failed") || (baseID != "" && !baseID.Valid()) || (jobID != "" && !jobID.Valid()) || (reportID != "" && !reportID.Valid()) || len(safeReason) > 512 {
+		return ErrGraphImpactHandoffInvalid
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE graph_impact_handoffs SET status=?,base_revision_id=?,job_id=?,report_id=?,safe_reason=?,updated_at=? WHERE revision_id=? AND graph_manifest_hash=? AND stage='impact'`, status, nullID(baseID), nullID(jobID), nullID(reportID), nullString(safeReason), s.now().UTC().Format(time.RFC3339Nano), targetID, graphHash)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil || rows != 1 {
+		return ErrGraphImpactHandoffInvalid
+	}
+	return nil
+}
+
+func validGraphHash(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	return strings.Trim(value, "0123456789abcdef") == ""
 }
 
 func hash64(value string) bool {

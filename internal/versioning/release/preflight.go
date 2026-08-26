@@ -69,7 +69,7 @@ func (s PreflightService) Preflight(ctx context.Context, command Command) (Prefl
 	if capability := versioninggate.CalculateReleaseCapability(s.Registry, validated.Policy); !capability.Enabled {
 		return Preflight{}, fmt.Errorf("%w: %v", ErrReleaseCapabilityDisabled, capability.Reasons)
 	}
-	versions, err := validationManifest(validated.Revision.Metadata.Manifest)
+	versions, err := ValidationManifest(validated.Revision.Metadata.Manifest)
 	if err != nil {
 		return Preflight{}, err
 	}
@@ -113,10 +113,10 @@ func (s PreflightService) Recheck(ctx context.Context, stage RecheckStage, comma
 	return s.Preflight(ctx, command)
 }
 
-// validationManifest reconstructs the narrow #6 manifest from identities
+// ValidationManifest reconstructs the narrow #6 manifest from identities
 // frozen on the revision. It never falls back to current implementation
 // versions when an old revision lacks one of the required entries.
-func validationManifest(manifest versioningrevision.VersionManifest) (validation.VersionManifest, error) {
+func ValidationManifest(manifest versioningrevision.VersionManifest) (validation.VersionManifest, error) {
 	if !manifest.Valid() {
 		return validation.VersionManifest{}, ErrValidationManifest
 	}

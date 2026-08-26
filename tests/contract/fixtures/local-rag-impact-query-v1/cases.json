@@ -1,0 +1,19 @@
+{
+  "cases": [
+    { "id": "inactive-explicit-snapshot", "operation": "traverse", "expected": "success" },
+    { "id": "incoming-stored-orientation", "operation": "paths", "expected": "success" },
+    { "id": "multi-source-shortest-path", "operation": "paths", "expected": "stable_order" },
+    { "id": "equal-hop-byte-order", "operation": "paths", "expected": "stable_order" },
+    { "id": "max-depth-prefix", "operation": "traverse", "expected": "MAX_DEPTH" },
+    { "id": "max-nodes-prefix", "operation": "traverse", "expected": "MAX_NODES" },
+    { "id": "max-paths-prefix", "operation": "paths", "expected": "MAX_PATHS" },
+    { "id": "full-field-provenance", "operation": "paths", "expected": "success" },
+    { "id": "hybrid-retrieve", "operation": "retrieve", "expected": "hybrid" },
+    { "id": "bm25-only-degradation", "operation": "retrieve", "expected": "degraded" },
+    { "id": "vector-only-degradation", "operation": "retrieve", "expected": "degraded" },
+    { "id": "retrieval-index-evicted", "operation": "retrieve", "expected": "SNAPSHOT_INDEX_NOT_READY" },
+    { "id": "node-not-found", "operation": "traverse", "expected": "NODE_NOT_FOUND" },
+    { "id": "store-unavailable", "operation": "paths", "expected": "GRAPH_STORE_UNAVAILABLE" },
+    { "id": "retrieval-unavailable", "operation": "retrieve", "expected": "RETRIEVAL_UNAVAILABLE" }
+  ]
+}

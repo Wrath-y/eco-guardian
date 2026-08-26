@@ -1,0 +1,8 @@
+{
+  "contract": "local-rag-impact-query-v1",
+  "api_version": "v1",
+  "snapshot_scoped": true,
+  "relationship_kinds": ["explicit"],
+  "limits": { "max_depth": 6, "max_nodes": 500, "max_paths": 100, "max_seeds": 100, "max_results": 100, "retrieval_graph_depth": 3 },
+  "errors": ["NODE_NOT_FOUND", "LIMIT_EXCEEDED", "INVALID_GRAPH_QUERY", "GRAPH_STORE_UNAVAILABLE", "SNAPSHOT_NOT_READY", "SNAPSHOT_NOT_FOUND", "SNAPSHOT_INDEX_NOT_READY", "RETRIEVAL_UNAVAILABLE"]
+}
