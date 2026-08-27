@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/zouyi/eco-guardian/internal/backup/application"
 	backupdomain "github.com/zouyi/eco-guardian/internal/backup/domain"
 	"github.com/zouyi/eco-guardian/internal/backup/ports"
 	"github.com/zouyi/eco-guardian/internal/backup/restorefs"
@@ -253,6 +255,210 @@ func TestRestoreStartupRecoveryFailsJobWhileOriginalMainIsStillProven(t *testing
 	reconciledBackup, err := reopened.GetBackupResult(ctx, journal.RestorePreResult.BackupID)
 	if err != nil || reconciledBackup.Source.CallerJobID != job.ID {
 		t.Fatalf("rollback restore-pre=%#v err=%v", reconciledBackup, err)
+	}
+}
+
+// TestRestoreCrashMatrixRestartSafety simulates a process crash after each
+// durable restore checkpoint by having a child test process write the journal
+// and exit before startup recovery is invoked in the parent. This exercises
+// the same persisted envelope used by a real process restart while remaining
+// portable; native Windows replace/handle coverage is run by the Windows gate.
+func TestRestoreCrashMatrixRestartSafety(t *testing.T) {
+	if os.Getenv("ECO_RESTORE_CRASH_HELPER") == "1" {
+		TestRestoreCrashMatrixHelper(t)
+		return
+	}
+	cases := []struct {
+		name        string
+		phase       backupdomain.RestorePhase
+		fileState   string
+		wantSuccess bool
+		ambiguous   bool
+	}{
+		{name: "journal_write", phase: backupdomain.RestorePreflighted, fileState: "original", wantSuccess: false},
+		{name: "maintenance", phase: backupdomain.RestoreMaintenance, fileState: "original", wantSuccess: false},
+		{name: "restore_pre_backup", phase: backupdomain.RestorePreBackup, fileState: "original", wantSuccess: false},
+		{name: "connection_close", phase: backupdomain.RestoreConnectionsClosed, fileState: "original", wantSuccess: false},
+		{name: "original_park", phase: backupdomain.RestoreOriginalParked, fileState: "parked", wantSuccess: false},
+		{name: "new_install", phase: backupdomain.RestoreInstalled, fileState: "installed", wantSuccess: true},
+		{name: "verify", phase: backupdomain.RestoreVerified, fileState: "installed", wantSuccess: true},
+		{name: "job_rehydrate", phase: backupdomain.RestoreReopened, fileState: "installed", wantSuccess: true},
+		{name: "migration_graph_result", phase: backupdomain.RestoreReconciled, fileState: "installed", wantSuccess: true},
+		{name: "journal_cleanup", phase: backupdomain.RestoreSucceeded, fileState: "installed", wantSuccess: true},
+		{name: "unproven_files", phase: backupdomain.RestoreInstalled, fileState: "ambiguous", ambiguous: true},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := context.Background()
+			registry, err := domain.NewRegistry()
+			if err != nil {
+				t.Fatal(err)
+			}
+			target := filepath.Clean(t.TempDir())
+			target, err = filepath.EvalSymlinks(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			opened, projectID, err := store.Create(ctx, target, registry)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err = opened.Create(ctx, domain.KindTag, domain.EntityDraft{Key: "crash_matrix", Name: "At backup", Payload: map[string]json.RawMessage{"category": json.RawMessage(`"element"`), "parent_tag_ids": json.RawMessage(`[]`)}}); err != nil {
+				t.Fatal(err)
+			}
+			snapshotPath := filepath.Join(t.TempDir(), "project.db")
+			if err = (store.BackupSource{Store: opened, AppVersion: "test"}).OnlineBackup(ctx, snapshotPath, nil); err != nil {
+				t.Fatal(err)
+			}
+			job := createRunningRestoreJob(t, ctx, opened, projectID)
+			if err = opened.Close(); err != nil {
+				t.Fatal(err)
+			}
+			snapshotHash, snapshotBytes := testFileHash(t, snapshotPath)
+			originalPath := filepath.Join(target, ".eco-restore-"+string(job.ID)+".original")
+			switch testCase.fileState {
+			case "original":
+				// Keep the original project.db in place.
+			case "parked", "installed", "ambiguous":
+				if err = os.Rename(filepath.Join(target, "project.db"), originalPath); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if testCase.fileState == "installed" {
+				copyFileForCrashMatrix(t, snapshotPath, filepath.Join(target, "project.db"))
+			} else if testCase.fileState == "ambiguous" {
+				if err = os.WriteFile(filepath.Join(target, "project.db"), []byte("not a sqlite database"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err = os.WriteFile(originalPath, []byte("not a sqlite database"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			journal := restoreJournalFixture(job, target, projectID, snapshotHash, snapshotBytes)
+			journal.Phase = testCase.phase
+			if !journal.Phase.AtOrAfter(backupdomain.RestorePreBackup) {
+				journal.RestorePreResult = nil
+			}
+			if testCase.fileState == "parked" || testCase.fileState == "installed" || testCase.fileState == "ambiguous" {
+				journal.OriginalPath = originalPath
+				journal.OriginalIdentity, _ = testFileHash(t, originalPath)
+			}
+			if testCase.fileState == "ambiguous" {
+				journal.OriginalIdentity, _ = testFileHash(t, originalPath)
+			}
+			journal.InstalledPath = filepath.Join(target, "project.db")
+			journal.InstalledIdentity = snapshotHash
+			journal.StagedPath = filepath.Join(target, ".eco-restore-"+string(job.ID)+".staging")
+			journal.StagedIdentity = snapshotHash
+			journalDir := filepath.Join(t.TempDir(), "restore-journal")
+			fixturePath := filepath.Join(t.TempDir(), "journal.json")
+			encoded, err := json.Marshal(journal)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = os.WriteFile(fixturePath, encoded, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command(os.Args[0], "-test.run=^TestRestoreCrashMatrixHelper$")
+			cmd.Env = append(os.Environ(), "ECO_RESTORE_CRASH_HELPER=1", "ECO_RESTORE_CRASH_INPUT="+fixturePath, "ECO_RESTORE_CRASH_JOURNAL="+journalDir)
+			err = cmd.Run()
+			var exitErr *exec.ExitError
+			if !errors.As(err, &exitErr) || exitErr.ExitCode() != 97 {
+				t.Fatalf("crash helper err=%v", err)
+			}
+			journalStore, err := restorejournal.New(journalDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("originalBase=%q expectedBase=%q originalID=%q jobID=%q", filepath.Base(journal.OriginalPath), ".eco-restore-"+string(job.ID)+".original", journal.OriginalIdentity, job.ID)
+			recovery := &RestoreStartupRecovery{Journal: journalStore, Locker: project.FileLocker{}, Registry: registry, Replacement: restorefs.Replacement{Verifier: store.BackupVerifier{}}, Verifier: store.BackupVerifier{}}
+			recoveryErr := recovery.Recover(ctx)
+			if testCase.ambiguous {
+				if !errors.Is(recoveryErr, application.ErrRestoreRecoveryRequired) || len(recovery.held) != 1 {
+					t.Fatalf("ambiguous recovery err=%v held=%d", recoveryErr, len(recovery.held))
+				}
+				if err = recovery.held[0].Release(); err != nil {
+					t.Fatal(err)
+				}
+				if _, err = os.Stat(filepath.Join(target, "project.db")); err != nil {
+					t.Fatal(err)
+				}
+				if _, err = os.Stat(originalPath); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if recoveryErr != nil {
+				t.Fatal(recoveryErr)
+			}
+			opened, openedID, err := store.OpenWithMigrationBackup(ctx, target, registry, nil)
+			if err != nil || openedID != projectID {
+				t.Fatalf("reopen id=%s err=%v", openedID, err)
+			}
+			durable, jobErr := opened.GetJob(ctx, job.ID)
+			_ = opened.Close()
+			if jobErr != nil {
+				t.Fatal(jobErr)
+			}
+			if testCase.wantSuccess && durable.Status != sharedjob.Succeeded {
+				t.Fatalf("job status=%s want succeeded", durable.Status)
+			}
+			if !testCase.wantSuccess && durable.Status != sharedjob.Failed {
+				t.Fatalf("job status=%s want failed", durable.Status)
+			}
+			if _, statErr := os.Stat(originalPath); !os.IsNotExist(statErr) {
+				t.Fatalf("original recovery candidate was not cleaned: %v", statErr)
+			}
+		})
+	}
+}
+
+func TestRestoreCrashMatrixHelper(t *testing.T) {
+	if os.Getenv("ECO_RESTORE_CRASH_HELPER") != "1" {
+		return
+	}
+	input := os.Getenv("ECO_RESTORE_CRASH_INPUT")
+	journalDir := os.Getenv("ECO_RESTORE_CRASH_JOURNAL")
+	encoded, err := os.ReadFile(input)
+	if err != nil {
+		os.Exit(98)
+	}
+	var journal ports.RestoreJournal
+	if err = json.Unmarshal(encoded, &journal); err != nil {
+		os.Exit(98)
+	}
+	journalStore, err := restorejournal.New(journalDir)
+	if err != nil {
+		os.Exit(98)
+	}
+	if changed, swapErr := journalStore.CompareAndSwap(context.Background(), 0, journal); swapErr != nil || !changed {
+		os.Exit(98)
+	}
+	os.Exit(97)
+}
+
+func copyFileForCrashMatrix(t *testing.T, source, destination string) {
+	t.Helper()
+	input, err := os.Open(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := os.OpenFile(destination, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		_ = input.Close()
+		t.Fatal(err)
+	}
+	if _, err = io.Copy(output, input); err != nil {
+		_ = input.Close()
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err = input.Close(); err != nil {
+		_ = output.Close()
+		t.Fatal(err)
+	}
+	if err = output.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 
