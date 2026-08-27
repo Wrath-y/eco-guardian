@@ -22,6 +22,9 @@ func (s *Store) CreateCheckpoint(ctx context.Context, currentWorkingRevision dom
 	if len(name) > 200 || len(description) > 10000 {
 		return domain.RevisionSummary{}, ErrInvalidCheckpoint
 	}
+	if err := s.admitBusinessWrite(ctx); err != nil {
+		return domain.RevisionSummary{}, err
+	}
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	tx, err := s.db.BeginTx(ctx, nil)

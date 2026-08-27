@@ -64,6 +64,18 @@ func TestArtifactInspectionRejectsLLMUndeclaredFilesAndCredentialSettings(t *tes
 		{name: "credential settings", mutate: func(t *testing.T, root string) {
 			writeFixtureFile(t, root, "defaults/settings.template.json", []byte(`{"schema_version":1,"credential":"secret-canary"}`))
 		}},
+		{name: "backup contents", mutate: func(t *testing.T, root string) {
+			writeFixtureFile(t, root, "backups/fixture.ecobackup/project.db", []byte("user database"))
+		}},
+		{name: "runtime logs", mutate: func(t *testing.T, root string) {
+			writeFixtureFile(t, root, "logs/runtime.log", []byte("diagnostic"))
+		}},
+		{name: "test recovery bypass", mutate: func(t *testing.T, root string) {
+			writeFixtureFile(t, root, "defaults/recovery-bypass.json", []byte(`{"enabled":true}`))
+		}},
+		{name: "development tools", mutate: func(t *testing.T, root string) {
+			writeFixtureFile(t, root, "tools/debug.exe", []byte("debug"))
+		}},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			request := lightweightAssemblyFixture(t, filepath.Join(t.TempDir(), "artifact"))

@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/zouyi/eco-guardian/internal/backup/application"
 	"github.com/zouyi/eco-guardian/internal/domain"
 	"github.com/zouyi/eco-guardian/internal/project"
 	store "github.com/zouyi/eco-guardian/internal/storage/sqlite"
@@ -190,6 +192,13 @@ func (h *EntityHandler) delete(c *gin.Context) {
 }
 func writeError(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, application.ErrDailyBackupRequired):
+		var required application.DailyRequiredError
+		if errors.As(err, &required) {
+			problemDetails(c, http.StatusConflict, "DAILY_BACKUP_REQUIRED", "Daily backup failed; the edit was not committed", gin.H{"failed_backup_job_id": required.JobID, "state": required.State}, "")
+			return
+		}
+		problem(c, http.StatusConflict, "DAILY_BACKUP_REQUIRED", "Daily backup is required before editing")
 	case errors.Is(err, store.ErrNotFound):
 		problem(c, 404, "VALIDATION_FAILED", "Entity not found")
 	case errors.Is(err, store.ErrDuplicateKey):

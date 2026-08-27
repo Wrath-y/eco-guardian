@@ -49,6 +49,7 @@ type ValidationPipeline struct {
 	Runner     FullValidationRunner
 	Evidence   FullValidationEvidenceReader
 	Jobs       JobAdmission
+	JobRequest func(ValidationPipelineRequest, []string) GraphJobRequest
 }
 
 func (p ValidationPipeline) Start(ctx context.Context, request ValidationPipelineRequest) (SyncState, error) {
@@ -103,7 +104,11 @@ func (p ValidationPipeline) queue(ctx context.Context, state SyncState, request 
 	if err != nil {
 		return p.finish(ctx, state, StateBlockedValidation, "VALIDATION_EVIDENCE_UNAVAILABLE")
 	}
-	job, _, err := p.Jobs.CreateOrGetGraphJob(ctx, AutomaticGraphJobRequest(request.ProjectID, request.RevisionID, request.ConfigHash, request.Versions, warnings))
+	jobRequest := AutomaticGraphJobRequest(request.ProjectID, request.RevisionID, request.ConfigHash, request.Versions, warnings)
+	if p.JobRequest != nil {
+		jobRequest = p.JobRequest(request, warnings)
+	}
+	job, _, err := p.Jobs.CreateOrGetGraphJob(ctx, jobRequest)
 	if err != nil {
 		return SyncState{}, err
 	}
@@ -114,6 +119,25 @@ func (p ValidationPipeline) queue(ctx context.Context, state SyncState, request 
 		return SyncState{}, err
 	}
 	return updated, nil
+}
+
+// RestoreGraphJobRequest creates a new full-rebuild identity for one restored
+// immutable revision. It deliberately includes the restore Job and stored
+// revision-manifest identities so a pre-restore successful Graph Job cannot be
+// mistaken for proof about the restored external Namespace.
+func RestoreGraphJobRequest(request ValidationPipelineRequest, warnings []string, restoreJobID domain.ID, restoreRequestHash, revisionManifestHash string) GraphJobRequest {
+	key := fmt.Sprintf("graph:restore:%s:%s:%s:%s", restoreJobID, request.RevisionID, request.ConfigHash, revisionManifestHash)
+	evidence, _ := json.Marshal(struct {
+		Intent               string                     `json:"intent"`
+		RestoreJobID         domain.ID                  `json:"restore_job_id"`
+		RestoreRequestHash   string                     `json:"restore_request_hash"`
+		RevisionManifestHash string                     `json:"revision_manifest_hash"`
+		Scope                string                     `json:"validation_scope"`
+		Versions             validation.VersionManifest `json:"validation_versions"`
+		Warnings             []string                   `json:"validation_warning_codes"`
+	}{Intent: "restore-full-rebuild", RestoreJobID: restoreJobID, RestoreRequestHash: restoreRequestHash, RevisionManifestHash: revisionManifestHash, Scope: string(validation.ScopeFull), Versions: request.Versions, Warnings: append([]string(nil), warnings...)})
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%s|%s|%s", request.ProjectID, request.RevisionID, request.ConfigHash, key, evidence)))
+	return GraphJobRequest{ProjectID: request.ProjectID, RevisionID: request.RevisionID, InputHash: request.ConfigHash, IdempotencyKey: key, RequestHash: fmt.Sprintf("%x", digest), Evidence: string(evidence)}
 }
 
 func AutomaticGraphJobRequest(projectID, revisionID domain.ID, inputHash string, versions validation.VersionManifest, warnings []string) GraphJobRequest {

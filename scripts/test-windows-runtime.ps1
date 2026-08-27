@@ -67,13 +67,14 @@ Invoke-Checked $go.Source @(
 
 # Repeat listener, worker, log, SSE, and SQLite close/reopen boundaries. The regular
 # expression is intentionally shared across packages; packages with no match pass.
-$resourcePattern = 'Test(ShutdownRunsSafePointsWorkersDependenciesAndStoresInOrder|ShutdownIsBoundedAndRepeatedCloseReturnsSameOutcome|GraphRuntimeDependencyCloseCancelsAndJoinsRefreshWorker|RuntimeStopIsConcurrentAndIdempotent|RuntimeActionsEnforcePreconditionsAndIdempotency|LoggerRotatesReopensFlushesAndCorrelatesHTTP|VersionHandlerResumesPersistedJobEventsAndCompletesTerminalStream|ConcurrentRiskReportReadsAndProjectReopen|UnresolvedHistoricalRevisionAndCloseReopenEquivalence)'
+$resourcePattern = 'Test(ShutdownRunsSafePointsWorkersDependenciesAndStoresInOrder|ShutdownIsBoundedAndRepeatedCloseReturnsSameOutcome|GraphRuntimeDependencyCloseCancelsAndJoinsRefreshWorker|RuntimeStopIsConcurrentAndIdempotent|RuntimeActionsEnforcePreconditionsAndIdempotency|LoggerRotatesReopensFlushesAndCorrelatesHTTP|VersionHandlerResumesPersistedJobEventsAndCompletesTerminalStream|ConcurrentRiskReportReadsAndProjectReopen|UnresolvedHistoricalRevisionAndCloseReopenEquivalence|WindowsLongPathCaseContainmentAndExactArtifactDeletion|WindowsSharingViolationCannotEvictValidArtifact)'
 Invoke-Checked $go.Source @(
     'test',
     './internal/bootstrap',
     './internal/app/runtime/diagnostics',
     './internal/httpapi',
     './internal/storage/sqlite',
+	'./internal/backup/filesystem',
     '-run', $resourcePattern,
     "-count=$RepeatCount",
     '-timeout=45m'

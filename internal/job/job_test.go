@@ -53,8 +53,21 @@ func TestRequestEquivalenceDistinguishesIdempotencyConflict(t *testing.T) {
 }
 
 func TestStatusTransitionsAndResultRequirements(t *testing.T) {
-	if !Queued.CanTransitionTo(Running) || !Running.CanTransitionTo(Succeeded) || Succeeded.CanTransitionTo(Failed) {
-		t.Fatal("unexpected state transition contract")
+	statuses := []Status{Queued, Running, Succeeded, Failed, Canceled, Interrupted}
+	allowed := map[Status]map[Status]bool{
+		Queued:      {Running: true, Failed: true, Canceled: true, Interrupted: true},
+		Running:     {Succeeded: true, Failed: true, Canceled: true, Interrupted: true},
+		Interrupted: {Succeeded: true, Failed: true, Canceled: true},
+	}
+	for _, current := range statuses {
+		if !current.Valid() {
+			t.Fatalf("declared status is invalid: %q", current)
+		}
+		for _, next := range statuses {
+			if got, want := current.CanTransitionTo(next), allowed[current][next]; got != want {
+				t.Fatalf("transition %s -> %s = %v want %v", current, next, got, want)
+			}
+		}
 	}
 	record := validRecord(t)
 	record.Status = Succeeded

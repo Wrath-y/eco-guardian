@@ -424,6 +424,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/backups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Lists filesystem-discovered backup artifacts for the active project in stable newest-first order. This operation is side-effect free. */
+        get: operations["listBackups"];
+        put?: never;
+        /** @description Admits one manual project backup. Clients cannot supply a source or destination path. */
+        post: operations["createBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backups/daily-waivers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Records an explicit same-day decision to continue ordinary editing after the bound daily backup Job failed. It never satisfies mandatory backup gates. */
+        post: operations["confirmDailyBackupWaiver"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backups/daily-retries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Replaces the bound failed same-day daily backup attempt and synchronously retries protection before the retained business mutation is resubmitted. */
+        post: operations["retryDailyBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backups/{backup_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getBackup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/restore-preflights": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Revalidates one inventory backup and server-owned target before any maintenance or mutation. The returned generation is bound to the final restore command. */
+        post: operations["createRestorePreflight"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/restores": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Admits the confirmed restore for exactly one fresh preflight. No arbitrary source or target path is accepted. */
+        post: operations["createRestore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/simulation-jobs": {
         parameters: {
             query?: never;
@@ -574,6 +676,23 @@ export interface paths {
         head?: never;
         /** @description Atomically updates bounded non-sensitive machine settings and reports fields applied now or requiring an explicit reconnect/restart. Credential material is rejected and uses the separate write-only endpoint. */
         patch: operations["patchSettings"];
+        trace?: never;
+    };
+    "/settings/backup-root-selection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Opens the native directory selector and atomically applies its one-use server-side selection token. No local path is returned to or accepted from the browser. */
+        post: operations["selectBackupRoot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/settings/credentials/{provider}": {
@@ -1385,6 +1504,8 @@ export interface components {
             progress: number;
             warning?: string | null;
             error?: string | null;
+            retryable?: boolean;
+            recovery_required?: boolean;
             result_type?: string | null;
             result_id?: components["schemas"]["UUIDv7"] | null;
             /** Format: uri-reference */
@@ -1415,10 +1536,156 @@ export interface components {
              * @description Time the current cancellation intent was recorded
              */
             cancel_requested_at?: string | null;
+            /** @description Latest persisted feature phase. */
+            phase?: string | null;
+            progress?: number;
+            warning?: string | null;
+            error?: string | null;
+            retryable?: boolean;
+            recovery_required?: boolean;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
             updated_at?: string;
+        };
+        /** @enum {string} */
+        BackupType: "manual" | "daily" | "migration" | "restore-pre" | "release";
+        /** @enum {string} */
+        BackupValidationState: "valid" | "damaged" | "incomplete" | "missing";
+        /** @enum {string} */
+        BackupCompatibilityState: "current" | "older" | "newer" | "unknown";
+        BackupSourceIdentity: {
+            revision_id?: components["schemas"]["UUIDv7"] | null;
+            release_id?: components["schemas"]["UUIDv7"] | null;
+            migration_id?: string | null;
+            caller_job_id?: components["schemas"]["UUIDv7"] | null;
+            request_hash?: components["schemas"]["Hash"] | null;
+        };
+        BackupLinks: {
+            /** Format: uri-reference */
+            self: string;
+            /** Format: uri-reference */
+            job?: string | null;
+        };
+        BackupRecord: {
+            backup_id: components["schemas"]["UUIDv7"];
+            project_uuid: components["schemas"]["UUIDv7"];
+            type: components["schemas"]["BackupType"];
+            /** Format: date-time */
+            created_at: string;
+            app_version: string | null;
+            schema_version: number | null;
+            /** Format: int64 */
+            db_bytes: number | null;
+            db_sha256: components["schemas"]["Hash"] | null;
+            manifest_hash: components["schemas"]["Hash"];
+            validation_state: components["schemas"]["BackupValidationState"];
+            compatibility_state: components["schemas"]["BackupCompatibilityState"];
+            source: components["schemas"]["BackupSourceIdentity"];
+            retention: string;
+            links: components["schemas"]["BackupLinks"];
+        };
+        BackupPage: {
+            items: components["schemas"]["BackupRecord"][];
+            next_cursor?: string | null;
+            retention: components["schemas"]["BackupRetentionPolicy"];
+        };
+        BackupRetentionPolicy: {
+            /** @default 10 */
+            daily_count: number;
+            /** @default 5 */
+            release_migration_count: number;
+            /** @constant */
+            manual_automatic_prune: false;
+            /** @constant */
+            restore_pre_automatic_prune: false;
+        };
+        DailyBackupWaiverRequest: {
+            failed_backup_job_id: components["schemas"]["UUIDv7"];
+            /** @constant */
+            confirmation: "CONTINUE_WITHOUT_BACKUP_TODAY";
+        };
+        DailyBackupRetryRequest: {
+            failed_backup_job_id: components["schemas"]["UUIDv7"];
+        };
+        DailyBackupWaiver: {
+            project_uuid: components["schemas"]["UUIDv7"];
+            /** Format: date */
+            local_date: string;
+            failed_backup_job_id: components["schemas"]["UUIDv7"];
+            /** Format: date-time */
+            confirmed_at: string;
+            replay: boolean;
+        };
+        CreateBackupRequest: {
+            /** @constant */
+            purpose: "manual";
+            /** @default manual */
+            reason: string;
+        };
+        BackupJobAccepted: {
+            job: components["schemas"]["Job"];
+            /** Format: uri-reference */
+            location: string;
+            /** @constant */
+            result_type: "backup";
+            result_id?: components["schemas"]["UUIDv7"] | null;
+            /** Format: uri-reference */
+            result_url: string;
+        };
+        /** @enum {string} */
+        RestoreTargetMode: "active" | "empty_selection";
+        CreateRestorePreflightRequest: {
+            backup_id: components["schemas"]["UUIDv7"];
+            target_mode: components["schemas"]["RestoreTargetMode"];
+            /** @description One-use native directory-selection token; required only for empty_selection. */
+            selection_token?: string;
+            /** @description One-use explicit project-registration migration token. */
+            registry_confirmation_token?: string;
+        };
+        RestoreConfirmationSummary: {
+            restore_pre_backup_required: boolean;
+            /** @constant */
+            maintenance_required: true;
+            migration_required: boolean;
+            /** @constant */
+            graph_pending: true;
+        };
+        RestorePreflight: {
+            /** @constant */
+            version: "restore-preflight-v1";
+            generation: components["schemas"]["Hash"];
+            backup: components["schemas"]["BackupRecord"];
+            target_mode: components["schemas"]["RestoreTargetMode"];
+            /** @enum {string} */
+            registry_state: "matched" | "migration_confirmation_required" | "confirmed";
+            /** @description One-use server-issued token returned only when explicit project-registration migration confirmation is required. */
+            registry_confirmation_token?: string;
+            free_space_sufficient: boolean;
+            writable: boolean;
+            maintenance_available: boolean;
+            confirmation: components["schemas"]["RestoreConfirmationSummary"];
+        };
+        CreateRestoreRequest: {
+            backup_id: components["schemas"]["UUIDv7"];
+            target_mode: components["schemas"]["RestoreTargetMode"];
+            /** @description One-use native directory-selection token; required only for empty_selection. */
+            selection_token?: string;
+            /** @description One-use explicit project-registration migration token. */
+            registry_confirmation_token?: string;
+            preflight_generation: components["schemas"]["Hash"];
+            /** @constant */
+            confirmation: "RESTORE";
+        };
+        RestoreJobAccepted: {
+            job: components["schemas"]["Job"];
+            /** Format: uri-reference */
+            location: string;
+            /** @constant */
+            result_type: "restore";
+            result_id?: components["schemas"]["UUIDv7"] | null;
+            /** Format: uri-reference */
+            result_url: string;
         };
         SimulationSource: {
             revision_id: components["schemas"]["UUIDv7"];
@@ -1845,8 +2112,29 @@ export interface components {
             max_bytes: number;
             max_files: number;
         };
+        /** @enum {string} */
+        BackupRootSelectionState: "default" | "custom";
+        /** @enum {string} */
+        BackupRootHealth: "healthy" | "unwritable" | "insufficient_space" | "unavailable" | "unknown";
         BackupDefaultSettings: {
             retention_days: number;
+            root_selection_state: components["schemas"]["BackupRootSelectionState"];
+            /** @default 10 */
+            daily_retention_count: number;
+            /** @default 5 */
+            release_migration_retention_count: number;
+            root_health: components["schemas"]["BackupRootHealth"];
+            backup_available?: boolean;
+            /** @enum {string} */
+            restore_maintenance_state?: "idle" | "preparing" | "maintenance" | "recovering" | "recovery_required";
+            recovery_summary?: string | null;
+            safe_actions?: ("retry" | "select_root" | "reset_default" | "inspect_recovery")[];
+        };
+        PatchBackupSettings: {
+            /** @constant */
+            use_default_root?: true;
+            daily_retention_count?: number;
+            release_migration_retention_count?: number;
         };
         SettingsResource: {
             schema_version: number;
@@ -1862,7 +2150,7 @@ export interface components {
             graph?: components["schemas"]["GraphSettings"];
             ai?: components["schemas"]["PatchAIProviderSettings"];
             logs?: components["schemas"]["LogSettings"];
-            backup?: components["schemas"]["BackupDefaultSettings"];
+            backup?: components["schemas"]["PatchBackupSettings"];
         };
         /** @enum {string} */
         SettingsApplyDisposition: "applied" | "reconnect_required" | "restart_required";
@@ -1911,6 +2199,16 @@ export interface components {
             release: components["schemas"]["ReleaseCapability"];
             graph: components["schemas"]["GraphRuntimeCapability"];
             ai: components["schemas"]["AIProviderCapability"];
+            backup: components["schemas"]["BackupRuntimeCapability"];
+        };
+        BackupRuntimeCapability: {
+            available: boolean;
+            root_health: components["schemas"]["BackupRootHealth"];
+            /** @enum {string} */
+            restore_state: "idle" | "preparing" | "maintenance" | "recovering" | "recovery_required";
+            recovery_required: boolean;
+            disabled_reasons: string[];
+            safe_actions: ("retry" | "settings" | "inspect_recovery")[];
         };
         RuntimeStatusResource: {
             /** @constant */
@@ -1989,7 +2287,7 @@ export interface components {
         };
         RuntimeAction: {
             /** @enum {string} */
-            id: "runtime.reprobe" | "graph.reconnect" | "graph.retry" | "job.cancel" | "provider.settings" | "credential.configure";
+            id: "runtime.reprobe" | "graph.reconnect" | "graph.retry" | "job.cancel" | "provider.settings" | "credential.configure" | "backup.retry" | "backup.settings" | "restore.inspect";
             /** @enum {string} */
             method: "POST" | "PATCH" | "PUT";
             uri: string;
@@ -2320,7 +2618,7 @@ export interface components {
             detail?: string;
             instance?: string;
             /** @enum {string} */
-            code: "INVALID_SELECTION" | "PROJECT_LOCKED" | "ACTIVE_PROJECT_CONFLICT" | "CLOSE_BLOCKED" | "UNSUPPORTED_KIND" | "UNSUPPORTED_SCHEMA" | "DUPLICATE_KEY" | "PRECONDITION_REQUIRED" | "REVISION_CONFLICT" | "ENTITY_REFERENCED" | "VALIDATION_FAILED" | "PROJECT_NOT_OPEN" | "INVALID_VALIDATION_REQUEST" | "INVALID_VALIDATION_SOURCE" | "INVALID_VALIDATION_SCOPE" | "INVALID_VALIDATION_TARGET" | "VALIDATION_SOURCE_NOT_FOUND" | "VALIDATION_RUN_NOT_FOUND" | "VALIDATION_STORAGE_FAILURE" | "REVISION_NOT_FOUND" | "REVISION_IMMUTABLE" | "DIFF_BASE_INVALID" | "RELEASE_POLICY_INVALID" | "RELEASE_CAPABILITY_DISABLED" | "RELEASE_PREFLIGHT_FAILED" | "RELEASE_BASE_CONFLICT" | "IDEMPOTENCY_CONFLICT" | "MANDATORY_BACKUP_FAILED" | "MIGRATION_BACKUP_REQUIRED" | "INVALID_CONFIRMATION" | "HISTORY_NOT_FOUND" | "STORAGE_FAILURE" | "SETTINGS_INVALID" | "SETTINGS_UNAVAILABLE" | "EXTERNAL_SERVICE_FAILURE" | "GRAPH_VALIDATION_REQUIRED" | "GRAPH_VALIDATION_BLOCKED" | "PROJECTOR_VERSION_UNAVAILABLE" | "GRAPH_CAPABILITY_UNAVAILABLE" | "BASE_SNAPSHOT_NOT_FOUND" | "BASE_SNAPSHOT_NOT_READY" | "CONTENT_HASH_MISMATCH" | "CONTENT_HASH_CONFLICT" | "PROVIDER_TASK_FAILED" | "GRAPH_RETRY_EXHAUSTED" | "GRAPH_RETRY_NOT_SAFE" | "GRAPH_STATUS_UNAVAILABLE" | "SIMULATION_CAPABILITY_UNAVAILABLE" | "SIMULATION_IDEMPOTENCY_REQUIRED" | "SIMULATION_INPUT_INVALID" | "SIMULATION_SEED_INVALID" | "SIMULATION_VALIDATION_REQUIRED" | "SIMULATION_SOURCE_INVALID" | "SIMULATION_SCENE_INVALID" | "SIMULATION_PARAMETER_INVALID" | "SIMULATION_METRIC_INVALID" | "SIMULATION_SAMPLE_INVALID" | "SIMULATION_BUDGET_INVALID" | "SIMULATION_IMPLEMENTATION_UNAVAILABLE" | "SIMULATION_VERIFICATION_TARGET_INVALID" | "SIMULATION_RUN_NOT_FOUND" | "SIMULATION_RUN_UNAVAILABLE" | "BUDGET_EXCEEDED" | "TIMEOUT" | "RECOVERY_MISMATCH" | "RECOVERY_UNAVAILABLE" | "RISK_IDEMPOTENCY_REQUIRED" | "RISK_COMMAND_INVALID" | "RISK_REVISION_INVALID" | "RISK_BASELINE_INVALID" | "RISK_POLICY_INVALID" | "THRESHOLD_NOT_CONFIGURED" | "THRESHOLD_INVALID" | "RISK_VALIDATION_INVALID" | "RISK_SIMULATION_INVALID" | "RISK_COHORT_INVALID" | "RISK_REQUIRED_METRIC_UNAVAILABLE" | "RISK_STALE_IDENTITY" | "RISK_REGISTRY_INCOMPATIBLE" | "RISK_RULE_CONTRACT_INVALID" | "RISK_DECISION_INVALID" | "RISK_REVIEW_NOT_FOUND" | "RISK_CANCELED" | "RISK_INTERRUPTED" | "AI_IDEMPOTENCY_REQUIRED" | "AI_PROVIDER_UNCONFIGURED" | "AI_CAPABILITY_UNAVAILABLE" | "AI_INPUT_INVALID" | "AI_EVIDENCE_UNAVAILABLE" | "AI_SNAPSHOT_IDENTITY_MISMATCH" | "AI_SNAPSHOT_INDEX_NOT_READY" | "AI_RETRIEVAL_UNAVAILABLE" | "AI_PROVIDER_FAILED" | "AI_PROVIDER_TIMEOUT" | "AI_OUTPUT_INVALID" | "AI_REPAIR_EXHAUSTED" | "AI_TOOL_POLICY_VIOLATION" | "AI_BUDGET_EXCEEDED" | "AI_PREVIEW_BLOCKED" | "AI_PATCH_NOT_FOUND" | "AI_PATCH_NOT_ACCEPTABLE" | "AI_PATCH_STALE" | "AI_DECISION_CONFLICT" | "AI_CANCELED" | "AI_INTERRUPTED" | "AI_CREDENTIAL_INVALID" | "AI_CREDENTIAL_STORE_FAILED";
+            code: "INVALID_SELECTION" | "PROJECT_LOCKED" | "ACTIVE_PROJECT_CONFLICT" | "CLOSE_BLOCKED" | "UNSUPPORTED_KIND" | "UNSUPPORTED_SCHEMA" | "DUPLICATE_KEY" | "PRECONDITION_REQUIRED" | "REVISION_CONFLICT" | "ENTITY_REFERENCED" | "VALIDATION_FAILED" | "PROJECT_NOT_OPEN" | "INVALID_VALIDATION_REQUEST" | "INVALID_VALIDATION_SOURCE" | "INVALID_VALIDATION_SCOPE" | "INVALID_VALIDATION_TARGET" | "VALIDATION_SOURCE_NOT_FOUND" | "VALIDATION_RUN_NOT_FOUND" | "VALIDATION_STORAGE_FAILURE" | "REVISION_NOT_FOUND" | "REVISION_IMMUTABLE" | "DIFF_BASE_INVALID" | "RELEASE_POLICY_INVALID" | "RELEASE_CAPABILITY_DISABLED" | "RELEASE_PREFLIGHT_FAILED" | "RELEASE_BASE_CONFLICT" | "IDEMPOTENCY_CONFLICT" | "DAILY_BACKUP_REQUIRED" | "DAILY_WAIVER_INVALID" | "MANDATORY_BACKUP_FAILED" | "MIGRATION_BACKUP_REQUIRED" | "BACKUP_ROOT_UNWRITABLE" | "BACKUP_SPACE_INSUFFICIENT" | "BACKUP_INTEGRITY_FAILED" | "BACKUP_CHECKSUM_FAILED" | "BACKUP_INCOMPLETE" | "BACKUP_NOT_FOUND" | "RESTORE_PROJECT_MISMATCH" | "RESTORE_SCHEMA_NEWER" | "RESTORE_TARGET_NOT_EMPTY" | "PROJECT_REGISTRY_CONFLICT" | "RESTORE_LOCKED" | "RESTORE_RECOVERY_REQUIRED" | "BACKUP_PATH_SECURITY" | "RESTORE_PREFLIGHT_STALE" | "INVALID_CONFIRMATION" | "HISTORY_NOT_FOUND" | "STORAGE_FAILURE" | "SETTINGS_INVALID" | "SETTINGS_UNAVAILABLE" | "EXTERNAL_SERVICE_FAILURE" | "GRAPH_VALIDATION_REQUIRED" | "GRAPH_VALIDATION_BLOCKED" | "PROJECTOR_VERSION_UNAVAILABLE" | "GRAPH_CAPABILITY_UNAVAILABLE" | "BASE_SNAPSHOT_NOT_FOUND" | "BASE_SNAPSHOT_NOT_READY" | "CONTENT_HASH_MISMATCH" | "CONTENT_HASH_CONFLICT" | "PROVIDER_TASK_FAILED" | "GRAPH_RETRY_EXHAUSTED" | "GRAPH_RETRY_NOT_SAFE" | "GRAPH_STATUS_UNAVAILABLE" | "SIMULATION_CAPABILITY_UNAVAILABLE" | "SIMULATION_IDEMPOTENCY_REQUIRED" | "SIMULATION_INPUT_INVALID" | "SIMULATION_SEED_INVALID" | "SIMULATION_VALIDATION_REQUIRED" | "SIMULATION_SOURCE_INVALID" | "SIMULATION_SCENE_INVALID" | "SIMULATION_PARAMETER_INVALID" | "SIMULATION_METRIC_INVALID" | "SIMULATION_SAMPLE_INVALID" | "SIMULATION_BUDGET_INVALID" | "SIMULATION_IMPLEMENTATION_UNAVAILABLE" | "SIMULATION_VERIFICATION_TARGET_INVALID" | "SIMULATION_RUN_NOT_FOUND" | "SIMULATION_RUN_UNAVAILABLE" | "BUDGET_EXCEEDED" | "TIMEOUT" | "RECOVERY_MISMATCH" | "RECOVERY_UNAVAILABLE" | "RISK_IDEMPOTENCY_REQUIRED" | "RISK_COMMAND_INVALID" | "RISK_REVISION_INVALID" | "RISK_BASELINE_INVALID" | "RISK_POLICY_INVALID" | "THRESHOLD_NOT_CONFIGURED" | "THRESHOLD_INVALID" | "RISK_VALIDATION_INVALID" | "RISK_SIMULATION_INVALID" | "RISK_COHORT_INVALID" | "RISK_REQUIRED_METRIC_UNAVAILABLE" | "RISK_STALE_IDENTITY" | "RISK_REGISTRY_INCOMPATIBLE" | "RISK_RULE_CONTRACT_INVALID" | "RISK_DECISION_INVALID" | "RISK_REVIEW_NOT_FOUND" | "RISK_CANCELED" | "RISK_INTERRUPTED" | "AI_IDEMPOTENCY_REQUIRED" | "AI_PROVIDER_UNCONFIGURED" | "AI_CAPABILITY_UNAVAILABLE" | "AI_INPUT_INVALID" | "AI_EVIDENCE_UNAVAILABLE" | "AI_SNAPSHOT_IDENTITY_MISMATCH" | "AI_SNAPSHOT_INDEX_NOT_READY" | "AI_RETRIEVAL_UNAVAILABLE" | "AI_PROVIDER_FAILED" | "AI_PROVIDER_TIMEOUT" | "AI_OUTPUT_INVALID" | "AI_REPAIR_EXHAUSTED" | "AI_TOOL_POLICY_VIOLATION" | "AI_BUDGET_EXCEEDED" | "AI_PREVIEW_BLOCKED" | "AI_PATCH_NOT_FOUND" | "AI_PATCH_NOT_ACCEPTABLE" | "AI_PATCH_STALE" | "AI_DECISION_CONFLICT" | "AI_CANCELED" | "AI_INTERRUPTED" | "AI_CREDENTIAL_INVALID" | "AI_CREDENTIAL_STORE_FAILED";
             retryable: boolean;
             request_id: string;
             entity_id?: components["schemas"]["UUIDv7"];
@@ -2354,6 +2652,8 @@ export interface components {
         DraftPatchID: components["schemas"]["UUIDv7"];
         ImpactAnalysisID: components["schemas"]["UUIDv7"];
         AIProviderName: "openai-compatible";
+        /** @description Opaque server-issued backup identity; never a filename or path. */
+        BackupID: components["schemas"]["UUIDv7"];
         /** @description Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. */
         IdempotencyKey: string;
         /** @description Required when graph-sync intent is retry; reuse returns the original retry Job and changed retry input conflicts. It is ignored for ensure. */
@@ -3193,6 +3493,205 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
+    listBackups: {
+        parameters: {
+            query?: {
+                /** @description Opaque stable continuation cursor. */
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stable backup inventory page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupPage"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    createBackup: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateBackupRequest"];
+            };
+        };
+        responses: {
+            /** @description Existing or newly admitted durable backup Job. */
+            202: {
+                headers: {
+                    Location: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupJobAccepted"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    confirmDailyBackupWaiver: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DailyBackupWaiverRequest"];
+            };
+        };
+        responses: {
+            /** @description Durable same-day waiver audit. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyBackupWaiver"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    retryDailyBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DailyBackupRetryRequest"];
+            };
+        };
+        responses: {
+            /** @description Succeeded replacement daily backup Job. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque server-issued backup identity; never a filename or path. */
+                backup_id: components["parameters"]["BackupID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Immutable backup result and validation projection. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupRecord"];
+                };
+            };
+            404: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    createRestorePreflight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRestorePreflightRequest"];
+            };
+        };
+        responses: {
+            /** @description Server-authoritative restore confirmation summary. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestorePreflight"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    createRestore: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRestoreRequest"];
+            };
+        };
+        responses: {
+            /** @description Existing or newly admitted durable restore Job. */
+            202: {
+                headers: {
+                    Location: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestoreJobAccepted"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
     createSimulationJob: {
         parameters: {
             query?: never;
@@ -3444,6 +3943,27 @@ export interface operations {
         };
         responses: {
             /** @description Updated settings and their deterministic application effects. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsUpdateResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    selectBackupRoot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated non-sensitive settings after the selected root is validated and applied. */
             200: {
                 headers: {
                     [name: string]: unknown;

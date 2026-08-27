@@ -152,6 +152,18 @@ func (s *Store) RequestCancellation(ctx context.Context, id domain.ID) (sharedjo
 	if record.Status.Terminal() || record.CancelGeneration > 0 {
 		return record, true, tx.Commit()
 	}
+	if record.Kind == "backup" {
+		var publicationStarted int
+		if queryErr := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM backup_commands WHERE job_id=? AND project_uuid=? AND publication_started_at IS NOT NULL)`, id, s.projectID).Scan(&publicationStarted); queryErr != nil {
+			return sharedjob.Record{}, false, queryErr
+		}
+		if publicationStarted != 0 {
+			// Publication is deliberately non-interruptible. Returning the
+			// unchanged record lets the unified endpoint report authoritative
+			// running state without recording a cancellation generation.
+			return record, true, tx.Commit()
+		}
+	}
 	if err = s.inject("shared-job-cancel-before-write"); err != nil {
 		return sharedjob.Record{}, false, err
 	}

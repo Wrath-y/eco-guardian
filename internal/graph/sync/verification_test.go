@@ -15,3 +15,30 @@ func TestVerifySnapshotRequiresExactCoreReadinessAndPreservesVectorDegradation(t
 		t.Fatalf("verification=%#v", blocked)
 	}
 }
+
+func TestRestoreFullRebuildNeverAcceptsNewerMissingOrWrongExternalSnapshot(t *testing.T) {
+	expected := SnapshotExpectation{Namespace: "project", Version: "restored-revision", ContentHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", NodeCount: 2, EdgeCount: 1}
+	exact := Snapshot{Namespace: expected.Namespace, Version: expected.Version, ContentHash: expected.ContentHash, NodeCount: 2, EdgeCount: 1, Status: "ready", QueryReady: true, Components: []Component{{Name: "graph", State: "ready"}, {Name: "fts", State: "ready"}}}
+	if result := VerifySnapshot(expected, exact); !result.Ready {
+		t.Fatalf("exact full rebuild was not ready: %#v", result)
+	}
+	for _, test := range []struct {
+		name   string
+		mutate func(*Snapshot)
+	}{
+		{name: "newer external active revision", mutate: func(value *Snapshot) { value.Version = "newer-revision" }},
+		{name: "missing namespace", mutate: func(value *Snapshot) { value.Namespace = "" }},
+		{name: "same revision wrong manifest hash", mutate: func(value *Snapshot) {
+			value.ContentHash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		}},
+		{name: "provider unavailable observation", mutate: func(value *Snapshot) { value.Status, value.QueryReady, value.Components = "", false, nil }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := exact
+			test.mutate(&candidate)
+			if result := VerifySnapshot(expected, candidate); result.Ready {
+				t.Fatalf("unsafe snapshot was accepted: %#v", candidate)
+			}
+		})
+	}
+}

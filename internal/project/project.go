@@ -22,6 +22,7 @@ var (
 	ErrActiveProject    = errors.New("an active project must be closed first")
 	ErrProjectLocked    = errors.New("project is locked by another process")
 	ErrCloseBlocked     = errors.New("project close is blocked")
+	ErrMaintenance      = errors.New("project is in exclusive maintenance")
 )
 
 type Clock interface{ Now() time.Time }
@@ -110,13 +111,14 @@ func (s *memoryTokens) Consume(token string) (string, error) {
 }
 
 type Manager struct {
-	mu      sync.Mutex
-	tokens  TokenStore
-	locker  Locker
-	factory ProjectFactory
-	guard   CloseGuard
-	recent  RecentProjects
-	active  *ActiveProject
+	mu          sync.Mutex
+	tokens      TokenStore
+	locker      Locker
+	factory     ProjectFactory
+	guard       CloseGuard
+	recent      RecentProjects
+	active      *ActiveProject
+	maintenance *maintenanceState
 }
 
 func NewManager(tokens TokenStore, locker Locker, factory ProjectFactory, guard CloseGuard, recent RecentProjects) *Manager {
@@ -170,7 +172,7 @@ func (m *Manager) OpenRecent(ctx context.Context, id domain.ID) (ProjectInfo, er
 func (m *Manager) install(ctx context.Context, token string, create bool) (ProjectInfo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.active != nil {
+	if m.active != nil || m.maintenance != nil {
 		return ProjectInfo{}, ErrActiveProject
 	}
 	directory, err := m.tokens.Consume(token)
@@ -214,16 +216,39 @@ func (m *Manager) Current() (ProjectInfo, bool) {
 func (m *Manager) ActiveHandle() (ProjectHandle, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.active == nil {
+	if m.active == nil || m.maintenance != nil || m.active.handle == nil {
 		return nil, false
 	}
 	return m.active.handle, true
+}
+
+// MaintenanceState is a read-only projection for runtime admission UI. It
+// exposes no path or handle and remains true while the active handle is
+// deliberately closed for restore replacement.
+func (m *Manager) MaintenanceState() (active, nonInterruptible bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.maintenance == nil {
+		return false, false
+	}
+	return true, m.maintenance.nonInterruptible
+}
+
+// RestoredTargetMaintenance identifies the no-active-project adoption window
+// without exposing its path or lock.
+func (m *Manager) RestoredTargetMaintenance() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.maintenance != nil && m.maintenance.restoredTarget
 }
 func (m *Manager) Close(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.active == nil {
 		return nil
+	}
+	if m.maintenance != nil {
+		return ErrMaintenance
 	}
 	if m.guard != nil {
 		if err := m.guard.Preflight(ctx); err != nil {
@@ -238,6 +263,165 @@ func (m *Manager) Close(ctx context.Context) error {
 		return err
 	}
 	m.active = nil
+	return nil
+}
+
+type maintenanceState struct {
+	projectID        domain.ID
+	nonInterruptible bool
+	restoredTarget   bool
+}
+
+// MaintenanceSession preserves the active OS lock while allowing the owning
+// restore coordinator to close and reopen the database handle exactly once.
+type MaintenanceSession struct {
+	manager   *Manager
+	projectID domain.ID
+	path      string
+	closed    bool
+}
+
+func (m *Manager) AcquireMaintenance(ctx context.Context, projectID domain.ID) (*MaintenanceSession, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.active == nil || m.active.ID != projectID || m.active.handle == nil || m.maintenance != nil {
+		return nil, ErrMaintenance
+	}
+	if m.guard != nil {
+		if err := m.guard.Preflight(ctx); err != nil {
+			return nil, err
+		}
+	}
+	m.maintenance = &maintenanceState{projectID: projectID}
+	return &MaintenanceSession{manager: m, projectID: projectID, path: m.active.Path}, nil
+}
+
+// AcquireRestoredTarget transfers an already validated and exclusively held
+// empty-directory lock into the single active-project lifecycle. The project
+// is not registered or exposed as active until Reopen verifies its UUID.
+func (m *Manager) AcquireRestoredTarget(ctx context.Context, projectID domain.ID, path string, lock Lock) (*MaintenanceSession, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if !projectID.Valid() || path == "" || lock == nil {
+		return nil, ErrMaintenance
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.active != nil || m.maintenance != nil {
+		return nil, ErrMaintenance
+	}
+	info := ProjectInfo{ID: projectID, Name: filepath.Base(path), Path: path}
+	m.active = &ActiveProject{ProjectInfo: info, lock: lock}
+	m.maintenance = &maintenanceState{projectID: projectID, restoredTarget: true}
+	return &MaintenanceSession{manager: m, projectID: projectID, path: path}, nil
+}
+
+func (session *MaintenanceSession) ProjectID() domain.ID { return session.projectID }
+func (session *MaintenanceSession) Path() string         { return session.path }
+
+func (session *MaintenanceSession) NonInterruptible() bool {
+	if session == nil || session.manager == nil {
+		return false
+	}
+	session.manager.mu.Lock()
+	defer session.manager.mu.Unlock()
+	return session.manager.maintenance != nil && session.manager.maintenance.projectID == session.projectID && session.manager.maintenance.nonInterruptible
+}
+
+func (session *MaintenanceSession) MarkNonInterruptible() error {
+	if session == nil || session.manager == nil {
+		return ErrMaintenance
+	}
+	session.manager.mu.Lock()
+	defer session.manager.mu.Unlock()
+	if session.manager.maintenance == nil || session.manager.maintenance.projectID != session.projectID {
+		return ErrMaintenance
+	}
+	session.manager.maintenance.nonInterruptible = true
+	return nil
+}
+
+func (session *MaintenanceSession) CloseConnections(ctx context.Context) error {
+	if session == nil || session.manager == nil {
+		return ErrMaintenance
+	}
+	session.manager.mu.Lock()
+	defer session.manager.mu.Unlock()
+	if session.manager.maintenance == nil || session.manager.maintenance.projectID != session.projectID || session.manager.active == nil {
+		return ErrMaintenance
+	}
+	if session.manager.active.handle == nil && session.manager.maintenance.restoredTarget {
+		return nil
+	}
+	if session.manager.active.handle == nil {
+		return ErrMaintenance
+	}
+	if preparer, ok := session.manager.active.handle.(interface{ PrepareRestoreClose(context.Context) error }); ok {
+		if err := preparer.PrepareRestoreClose(ctx); err != nil {
+			return err
+		}
+	}
+	if err := session.manager.active.handle.Close(); err != nil {
+		return err
+	}
+	session.manager.active.handle = nil
+	return nil
+}
+
+func (session *MaintenanceSession) Reopen(ctx context.Context) (ProjectHandle, error) {
+	if session == nil || session.manager == nil {
+		return nil, ErrMaintenance
+	}
+	session.manager.mu.Lock()
+	defer session.manager.mu.Unlock()
+	if session.manager.maintenance == nil || session.manager.maintenance.projectID != session.projectID || session.manager.active == nil || session.manager.active.handle != nil {
+		return nil, ErrMaintenance
+	}
+	handle, err := session.manager.factory.Open(ctx, session.path)
+	if err != nil {
+		return nil, err
+	}
+	if handle.ID() != session.projectID {
+		_ = handle.Close()
+		return nil, ErrMaintenance
+	}
+	if session.manager.maintenance.restoredTarget && session.manager.recent != nil {
+		if err = session.manager.recent.Record(session.manager.active.ProjectInfo); err != nil {
+			_ = handle.Close()
+			return nil, err
+		}
+	}
+	session.manager.active.handle = handle
+	return handle, nil
+}
+
+func (session *MaintenanceSession) Release() error {
+	if session == nil || session.manager == nil || session.closed {
+		return nil
+	}
+	session.manager.mu.Lock()
+	defer session.manager.mu.Unlock()
+	if session.manager.maintenance == nil || session.manager.maintenance.projectID != session.projectID || session.manager.active == nil {
+		return ErrMaintenance
+	}
+	if session.manager.active.handle == nil {
+		if !session.manager.maintenance.restoredTarget {
+			return ErrMaintenance
+		}
+		if err := session.manager.active.lock.Release(); err != nil {
+			return err
+		}
+		session.manager.active = nil
+		session.manager.maintenance = nil
+		session.closed = true
+		return nil
+	}
+	session.manager.maintenance = nil
+	session.closed = true
 	return nil
 }
 

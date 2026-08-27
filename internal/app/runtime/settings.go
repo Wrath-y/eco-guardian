@@ -103,7 +103,21 @@ func (s SettingsApplication) Update(ctx context.Context, patch SettingsPatch) (S
 		next.Logs = *patch.Logs
 	}
 	if patch.Backup != nil {
-		next.Backup = *patch.Backup
+		// Backup settings are patched field-by-field so the public retention
+		// resource cannot accidentally erase the server-owned native root.
+		if patch.Backup.RetentionDays != 0 {
+			next.Backup.RetentionDays = patch.Backup.RetentionDays
+		}
+		if patch.Backup.RootMode != "" {
+			next.Backup.RootMode = patch.Backup.RootMode
+			next.Backup.RootPath = patch.Backup.RootPath
+		}
+		if patch.Backup.DailyRetentionCount != 0 {
+			next.Backup.DailyRetentionCount = patch.Backup.DailyRetentionCount
+		}
+		if patch.Backup.ReleaseMigrationRetention != 0 {
+			next.Backup.ReleaseMigrationRetention = patch.Backup.ReleaseMigrationRetention
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return SettingsUpdate{}, err

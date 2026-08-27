@@ -281,6 +281,91 @@ paths:
       responses:
         '202': { description: Cancellation intent persisted for a registered Job; feature workers resolve it at their documented safe boundary, content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
         default: { $ref: '#/components/responses/Problem' }
+  /backups:
+    get:
+      operationId: listBackups
+      description: Lists filesystem-discovered backup artifacts for the active project in stable newest-first order. This operation is side-effect free.
+      parameters:
+        - { name: cursor, in: query, schema: { type: string }, description: Opaque stable continuation cursor. }
+        - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+      responses:
+        '200': { description: Stable backup inventory page., content: { application/json: { schema: { $ref: '#/components/schemas/BackupPage' } } } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      operationId: createBackup
+      description: Admits one manual project backup. Clients cannot supply a source or destination path.
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateBackupRequest' } } } }
+      responses:
+        '202':
+          description: Existing or newly admitted durable backup Job.
+          headers: { Location: { required: true, schema: { type: string, format: uri-reference } } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/BackupJobAccepted' } } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+  /backups/daily-waivers:
+    post:
+      operationId: confirmDailyBackupWaiver
+      description: Records an explicit same-day decision to continue ordinary editing after the bound daily backup Job failed. It never satisfies mandatory backup gates.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DailyBackupWaiverRequest' } } }
+      responses:
+        '200': { description: Durable same-day waiver audit., content: { application/json: { schema: { $ref: '#/components/schemas/DailyBackupWaiver' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /backups/daily-retries:
+    post:
+      operationId: retryDailyBackup
+      description: Replaces the bound failed same-day daily backup attempt and synchronously retries protection before the retained business mutation is resubmitted.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DailyBackupRetryRequest' } } }
+      responses:
+        '200': { description: Succeeded replacement daily backup Job., content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
+        default: { $ref: '#/components/responses/Problem' }
+  /backups/{backup_id}:
+    get:
+      operationId: getBackup
+      parameters: [ { $ref: '#/components/parameters/BackupID' } ]
+      responses:
+        '200': { description: Immutable backup result and validation projection., content: { application/json: { schema: { $ref: '#/components/schemas/BackupRecord' } } } }
+        '404': { $ref: '#/components/responses/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+  /restore-preflights:
+    post:
+      operationId: createRestorePreflight
+      description: Revalidates one inventory backup and server-owned target before any maintenance or mutation. The returned generation is bound to the final restore command.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateRestorePreflightRequest' } } } }
+      responses:
+        '200': { description: Server-authoritative restore confirmation summary., content: { application/json: { schema: { $ref: '#/components/schemas/RestorePreflight' } } } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+  /restores:
+    post:
+      operationId: createRestore
+      description: Admits the confirmed restore for exactly one fresh preflight. No arbitrary source or target path is accepted.
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateRestoreRequest' } } } }
+      responses:
+        '202':
+          description: Existing or newly admitted durable restore Job.
+          headers: { Location: { required: true, schema: { type: string, format: uri-reference } } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/RestoreJobAccepted' } } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
   /simulation-jobs:
     post:
       operationId: createSimulationJob
@@ -381,6 +466,13 @@ paths:
       responses:
         '200': { description: Updated settings and their deterministic application effects., content: { application/json: { schema: { $ref: '#/components/schemas/SettingsUpdateResult' } } } }
         default: { $ref: '#/components/responses/Problem' }
+  /settings/backup-root-selection:
+    post:
+      operationId: selectBackupRoot
+      description: Opens the native directory selector and atomically applies its one-use server-side selection token. No local path is returned to or accepted from the browser.
+      responses:
+        '200': { description: Updated non-sensitive settings after the selected root is validated and applied., content: { application/json: { schema: { $ref: '#/components/schemas/SettingsUpdateResult' } } } }
+        default: { $ref: '#/components/responses/Problem' }
   /settings/credentials/{provider}:
     put:
       operationId: putProviderCredential
@@ -442,6 +534,7 @@ components:
     DraftPatchID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     ImpactAnalysisID: { name: id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' } }
     AIProviderName: { name: provider, in: path, required: true, schema: { type: string, enum: [openai-compatible] } }
+    BackupID: { name: backup_id, in: path, required: true, schema: { $ref: '#/components/schemas/UUIDv7' }, description: Opaque server-issued backup identity; never a filename or path. }
     IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 256 }, description: Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict. }
     GraphRetryIdempotencyKey: { name: Idempotency-Key, in: header, required: false, schema: { type: string, minLength: 1, maxLength: 256 }, description: Required when graph-sync intent is retry; reuse returns the original retry Job and changed retry input conflicts. It is ignored for ensure. }
     RuntimeActionIdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$' }, description: Reuse for the same runtime action returns the original bounded action outcome without executing it again. }
@@ -1209,6 +1302,8 @@ components:
         progress: { type: integer, minimum: 0, maximum: 100 }
         warning: { type: [string, 'null'] }
         error: { type: [string, 'null'] }
+        retryable: { type: boolean }
+        recovery_required: { type: boolean }
         result_type: { type: [string, 'null'] }
         result_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
         result_url: { type: [string, 'null'], format: uri-reference }
@@ -1230,8 +1325,164 @@ components:
         result_url: { type: [string, 'null'], format: uri-reference }
         cancel_generation: { type: integer, minimum: 0, description: Monotonic persisted cancellation generation. }
         cancel_requested_at: { type: [string, 'null'], format: date-time, description: Time the current cancellation intent was recorded, if any. }
+        phase: { type: [string, 'null'], description: Latest persisted feature phase. }
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        warning: { type: [string, 'null'] }
+        error: { type: [string, 'null'] }
+        retryable: { type: boolean }
+        recovery_required: { type: boolean }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    BackupType: { type: string, enum: [manual, daily, migration, restore-pre, release] }
+    BackupValidationState: { type: string, enum: [valid, damaged, incomplete, missing] }
+    BackupCompatibilityState: { type: string, enum: [current, older, newer, unknown] }
+    BackupSourceIdentity:
+      type: object
+      additionalProperties: false
+      properties:
+        revision_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        release_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        migration_id: { type: [string, 'null'], maxLength: 128 }
+        caller_job_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        request_hash: { oneOf: [{ $ref: '#/components/schemas/Hash' }, { type: 'null' }] }
+    BackupLinks:
+      type: object
+      additionalProperties: false
+      required: [self]
+      properties:
+        self: { type: string, format: uri-reference }
+        job: { type: [string, 'null'], format: uri-reference }
+    BackupRecord:
+      type: object
+      additionalProperties: false
+      required: [backup_id, project_uuid, type, created_at, app_version, schema_version, db_bytes, db_sha256, manifest_hash, validation_state, compatibility_state, source, retention, links]
+      properties:
+        backup_id: { $ref: '#/components/schemas/UUIDv7' }
+        project_uuid: { $ref: '#/components/schemas/UUIDv7' }
+        type: { $ref: '#/components/schemas/BackupType' }
+        created_at: { type: string, format: date-time }
+        app_version: { type: [string, 'null'], minLength: 1, maxLength: 128 }
+        schema_version: { type: [integer, 'null'], minimum: 1 }
+        db_bytes: { type: [integer, 'null'], format: int64, minimum: 1 }
+        db_sha256: { oneOf: [{ $ref: '#/components/schemas/Hash' }, { type: 'null' }] }
+        manifest_hash: { $ref: '#/components/schemas/Hash' }
+        validation_state: { $ref: '#/components/schemas/BackupValidationState' }
+        compatibility_state: { $ref: '#/components/schemas/BackupCompatibilityState' }
+        source: { $ref: '#/components/schemas/BackupSourceIdentity' }
+        retention: { type: string, minLength: 1, maxLength: 256 }
+        links: { $ref: '#/components/schemas/BackupLinks' }
+    BackupPage:
+      type: object
+      additionalProperties: false
+      required: [items, retention]
+      properties:
+        items: { type: array, maxItems: 200, items: { $ref: '#/components/schemas/BackupRecord' } }
+        next_cursor: { type: [string, 'null'] }
+        retention: { $ref: '#/components/schemas/BackupRetentionPolicy' }
+    BackupRetentionPolicy:
+      type: object
+      additionalProperties: false
+      required: [daily_count, release_migration_count, manual_automatic_prune, restore_pre_automatic_prune]
+      properties:
+        daily_count: { type: integer, minimum: 1, default: 10 }
+        release_migration_count: { type: integer, minimum: 1, default: 5 }
+        manual_automatic_prune: { type: boolean, const: false }
+        restore_pre_automatic_prune: { type: boolean, const: false }
+    DailyBackupWaiverRequest:
+      type: object
+      additionalProperties: false
+      required: [failed_backup_job_id, confirmation]
+      properties:
+        failed_backup_job_id: { $ref: '#/components/schemas/UUIDv7' }
+        confirmation: { type: string, const: CONTINUE_WITHOUT_BACKUP_TODAY }
+    DailyBackupRetryRequest:
+      type: object
+      additionalProperties: false
+      required: [failed_backup_job_id]
+      properties:
+        failed_backup_job_id: { $ref: '#/components/schemas/UUIDv7' }
+    DailyBackupWaiver:
+      type: object
+      additionalProperties: false
+      required: [project_uuid, local_date, failed_backup_job_id, confirmed_at, replay]
+      properties:
+        project_uuid: { $ref: '#/components/schemas/UUIDv7' }
+        local_date: { type: string, format: date }
+        failed_backup_job_id: { $ref: '#/components/schemas/UUIDv7' }
+        confirmed_at: { type: string, format: date-time }
+        replay: { type: boolean }
+    CreateBackupRequest:
+      type: object
+      additionalProperties: false
+      required: [purpose]
+      properties:
+        purpose: { type: string, const: manual }
+        reason: { type: string, minLength: 1, maxLength: 128, default: manual }
+    BackupJobAccepted:
+      type: object
+      additionalProperties: false
+      required: [job, location, result_type, result_url]
+      properties:
+        job: { $ref: '#/components/schemas/Job' }
+        location: { type: string, format: uri-reference }
+        result_type: { type: string, const: backup }
+        result_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        result_url: { type: string, format: uri-reference }
+    RestoreTargetMode: { type: string, enum: [active, empty_selection] }
+    CreateRestorePreflightRequest:
+      type: object
+      additionalProperties: false
+      required: [backup_id, target_mode]
+      properties:
+        backup_id: { $ref: '#/components/schemas/UUIDv7' }
+        target_mode: { $ref: '#/components/schemas/RestoreTargetMode' }
+        selection_token: { type: string, minLength: 32, maxLength: 256, description: One-use native directory-selection token; required only for empty_selection. }
+        registry_confirmation_token: { type: string, minLength: 32, maxLength: 256, description: One-use explicit project-registration migration token. }
+    RestoreConfirmationSummary:
+      type: object
+      additionalProperties: false
+      required: [restore_pre_backup_required, maintenance_required, migration_required, graph_pending]
+      properties:
+        restore_pre_backup_required: { type: boolean }
+        maintenance_required: { type: boolean, const: true }
+        migration_required: { type: boolean }
+        graph_pending: { type: boolean, const: true }
+    RestorePreflight:
+      type: object
+      additionalProperties: false
+      required: [version, generation, backup, target_mode, registry_state, free_space_sufficient, writable, maintenance_available, confirmation]
+      properties:
+        version: { type: string, const: restore-preflight-v1 }
+        generation: { $ref: '#/components/schemas/Hash' }
+        backup: { $ref: '#/components/schemas/BackupRecord' }
+        target_mode: { $ref: '#/components/schemas/RestoreTargetMode' }
+        registry_state: { type: string, enum: [matched, migration_confirmation_required, confirmed] }
+        registry_confirmation_token: { type: string, minLength: 32, maxLength: 256, description: One-use server-issued token returned only when explicit project-registration migration confirmation is required. }
+        free_space_sufficient: { type: boolean }
+        writable: { type: boolean }
+        maintenance_available: { type: boolean }
+        confirmation: { $ref: '#/components/schemas/RestoreConfirmationSummary' }
+    CreateRestoreRequest:
+      type: object
+      additionalProperties: false
+      required: [backup_id, target_mode, preflight_generation, confirmation]
+      properties:
+        backup_id: { $ref: '#/components/schemas/UUIDv7' }
+        target_mode: { $ref: '#/components/schemas/RestoreTargetMode' }
+        selection_token: { type: string, minLength: 32, maxLength: 256, description: One-use native directory-selection token; required only for empty_selection. }
+        registry_confirmation_token: { type: string, minLength: 32, maxLength: 256, description: One-use explicit project-registration migration token. }
+        preflight_generation: { $ref: '#/components/schemas/Hash' }
+        confirmation: { type: string, const: RESTORE }
+    RestoreJobAccepted:
+      type: object
+      additionalProperties: false
+      required: [job, location, result_type, result_url]
+      properties:
+        job: { $ref: '#/components/schemas/Job' }
+        location: { type: string, format: uri-reference }
+        result_type: { type: string, const: restore }
+        result_id: { oneOf: [{ $ref: '#/components/schemas/UUIDv7' }, { type: 'null' }] }
+        result_url: { type: string, format: uri-reference }
     SimulationSource:
       oneOf:
         - type: object
@@ -1708,12 +1959,30 @@ components:
       properties:
         max_bytes: { type: integer, format: int64, minimum: 65536, maximum: 1073741824 }
         max_files: { type: integer, minimum: 1, maximum: 20 }
+    BackupRootSelectionState: { type: string, enum: [default, custom] }
+    BackupRootHealth: { type: string, enum: [healthy, unwritable, insufficient_space, unavailable, unknown] }
     BackupDefaultSettings:
       type: object
       additionalProperties: false
-      required: [retention_days]
+      required: [retention_days, root_selection_state, daily_retention_count, release_migration_retention_count, root_health]
       properties:
         retention_days: { type: integer, minimum: 0, maximum: 3650 }
+        root_selection_state: { $ref: '#/components/schemas/BackupRootSelectionState' }
+        daily_retention_count: { type: integer, minimum: 1, maximum: 1000, default: 10 }
+        release_migration_retention_count: { type: integer, minimum: 1, maximum: 1000, default: 5 }
+        root_health: { $ref: '#/components/schemas/BackupRootHealth' }
+        backup_available: { type: boolean }
+        restore_maintenance_state: { type: string, enum: [idle, preparing, maintenance, recovering, recovery_required] }
+        recovery_summary: { type: [string, 'null'], maxLength: 256 }
+        safe_actions: { type: array, items: { type: string, enum: [retry, select_root, reset_default, inspect_recovery] } }
+    PatchBackupSettings:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        use_default_root: { type: boolean, const: true }
+        daily_retention_count: { type: integer, minimum: 1, maximum: 1000 }
+        release_migration_retention_count: { type: integer, minimum: 1, maximum: 1000 }
     SettingsResource:
       type: object
       additionalProperties: false
@@ -1735,7 +2004,7 @@ components:
         graph: { $ref: '#/components/schemas/GraphSettings' }
         ai: { $ref: '#/components/schemas/PatchAIProviderSettings' }
         logs: { $ref: '#/components/schemas/LogSettings' }
-        backup: { $ref: '#/components/schemas/BackupDefaultSettings' }
+        backup: { $ref: '#/components/schemas/PatchBackupSettings' }
     SettingsApplyDisposition: { type: string, enum: [applied, reconnect_required, restart_required] }
     SettingsApplyEffect:
       type: object
@@ -1790,12 +2059,24 @@ components:
         limits: { $ref: '#/components/schemas/AIBudgetLimits' }
     RuntimeCapabilities:
       type: object
-      required: [release, graph, ai]
+      required: [release, graph, ai, backup]
       description: Safe runtime availability projection. It deliberately omits credential material and client-computed Gate pass state.
       properties:
         release: { $ref: '#/components/schemas/ReleaseCapability' }
         graph: { $ref: '#/components/schemas/GraphRuntimeCapability' }
         ai: { $ref: '#/components/schemas/AIProviderCapability' }
+        backup: { $ref: '#/components/schemas/BackupRuntimeCapability' }
+    BackupRuntimeCapability:
+      type: object
+      additionalProperties: false
+      required: [available, root_health, restore_state, recovery_required, disabled_reasons, safe_actions]
+      properties:
+        available: { type: boolean }
+        root_health: { $ref: '#/components/schemas/BackupRootHealth' }
+        restore_state: { type: string, enum: [idle, preparing, maintenance, recovering, recovery_required] }
+        recovery_required: { type: boolean }
+        disabled_reasons: { type: array, items: { type: string, minLength: 1, maxLength: 128 } }
+        safe_actions: { type: array, items: { type: string, enum: [retry, settings, inspect_recovery] } }
     RuntimeStatusResource:
       type: object
       additionalProperties: false
@@ -1883,7 +2164,7 @@ components:
       additionalProperties: false
       required: [id, method, uri, idempotency_required]
       properties:
-        id: { type: string, enum: [runtime.reprobe, graph.reconnect, graph.retry, job.cancel, provider.settings, credential.configure] }
+        id: { type: string, enum: [runtime.reprobe, graph.reconnect, graph.retry, job.cancel, provider.settings, credential.configure, backup.retry, backup.settings, restore.inspect] }
         method: { type: string, enum: [POST, PATCH, PUT] }
         uri: { type: string, pattern: '^/api/v1/', maxLength: 256 }
         idempotency_required: { type: boolean }
@@ -2250,7 +2531,7 @@ components:
         status: { type: integer }
         detail: { type: string }
         instance: { type: string }
-        code: { type: string, enum: [INVALID_SELECTION, PROJECT_LOCKED, ACTIVE_PROJECT_CONFLICT, CLOSE_BLOCKED, UNSUPPORTED_KIND, UNSUPPORTED_SCHEMA, DUPLICATE_KEY, PRECONDITION_REQUIRED, REVISION_CONFLICT, ENTITY_REFERENCED, VALIDATION_FAILED, PROJECT_NOT_OPEN, INVALID_VALIDATION_REQUEST, INVALID_VALIDATION_SOURCE, INVALID_VALIDATION_SCOPE, INVALID_VALIDATION_TARGET, VALIDATION_SOURCE_NOT_FOUND, VALIDATION_RUN_NOT_FOUND, VALIDATION_STORAGE_FAILURE, REVISION_NOT_FOUND, REVISION_IMMUTABLE, DIFF_BASE_INVALID, RELEASE_POLICY_INVALID, RELEASE_CAPABILITY_DISABLED, RELEASE_PREFLIGHT_FAILED, RELEASE_BASE_CONFLICT, IDEMPOTENCY_CONFLICT, MANDATORY_BACKUP_FAILED, MIGRATION_BACKUP_REQUIRED, INVALID_CONFIRMATION, HISTORY_NOT_FOUND, STORAGE_FAILURE, SETTINGS_INVALID, SETTINGS_UNAVAILABLE, EXTERNAL_SERVICE_FAILURE, GRAPH_VALIDATION_REQUIRED, GRAPH_VALIDATION_BLOCKED, PROJECTOR_VERSION_UNAVAILABLE, GRAPH_CAPABILITY_UNAVAILABLE, BASE_SNAPSHOT_NOT_FOUND, BASE_SNAPSHOT_NOT_READY, CONTENT_HASH_MISMATCH, CONTENT_HASH_CONFLICT, PROVIDER_TASK_FAILED, GRAPH_RETRY_EXHAUSTED, GRAPH_RETRY_NOT_SAFE, GRAPH_STATUS_UNAVAILABLE, SIMULATION_CAPABILITY_UNAVAILABLE, SIMULATION_IDEMPOTENCY_REQUIRED, SIMULATION_INPUT_INVALID, SIMULATION_SEED_INVALID, SIMULATION_VALIDATION_REQUIRED, SIMULATION_SOURCE_INVALID, SIMULATION_SCENE_INVALID, SIMULATION_PARAMETER_INVALID, SIMULATION_METRIC_INVALID, SIMULATION_SAMPLE_INVALID, SIMULATION_BUDGET_INVALID, SIMULATION_IMPLEMENTATION_UNAVAILABLE, SIMULATION_VERIFICATION_TARGET_INVALID, SIMULATION_RUN_NOT_FOUND, SIMULATION_RUN_UNAVAILABLE, BUDGET_EXCEEDED, TIMEOUT, RECOVERY_MISMATCH, RECOVERY_UNAVAILABLE, RISK_IDEMPOTENCY_REQUIRED, RISK_COMMAND_INVALID, RISK_REVISION_INVALID, RISK_BASELINE_INVALID, RISK_POLICY_INVALID, THRESHOLD_NOT_CONFIGURED, THRESHOLD_INVALID, RISK_VALIDATION_INVALID, RISK_SIMULATION_INVALID, RISK_COHORT_INVALID, RISK_REQUIRED_METRIC_UNAVAILABLE, RISK_STALE_IDENTITY, RISK_REGISTRY_INCOMPATIBLE, RISK_RULE_CONTRACT_INVALID, RISK_DECISION_INVALID, RISK_REVIEW_NOT_FOUND, RISK_CANCELED, RISK_INTERRUPTED, AI_IDEMPOTENCY_REQUIRED, AI_PROVIDER_UNCONFIGURED, AI_CAPABILITY_UNAVAILABLE, AI_INPUT_INVALID, AI_EVIDENCE_UNAVAILABLE, AI_SNAPSHOT_IDENTITY_MISMATCH, AI_SNAPSHOT_INDEX_NOT_READY, AI_RETRIEVAL_UNAVAILABLE, AI_PROVIDER_FAILED, AI_PROVIDER_TIMEOUT, AI_OUTPUT_INVALID, AI_REPAIR_EXHAUSTED, AI_TOOL_POLICY_VIOLATION, AI_BUDGET_EXCEEDED, AI_PREVIEW_BLOCKED, AI_PATCH_NOT_FOUND, AI_PATCH_NOT_ACCEPTABLE, AI_PATCH_STALE, AI_DECISION_CONFLICT, AI_CANCELED, AI_INTERRUPTED, AI_CREDENTIAL_INVALID, AI_CREDENTIAL_STORE_FAILED] }
+        code: { type: string, enum: [INVALID_SELECTION, PROJECT_LOCKED, ACTIVE_PROJECT_CONFLICT, CLOSE_BLOCKED, UNSUPPORTED_KIND, UNSUPPORTED_SCHEMA, DUPLICATE_KEY, PRECONDITION_REQUIRED, REVISION_CONFLICT, ENTITY_REFERENCED, VALIDATION_FAILED, PROJECT_NOT_OPEN, INVALID_VALIDATION_REQUEST, INVALID_VALIDATION_SOURCE, INVALID_VALIDATION_SCOPE, INVALID_VALIDATION_TARGET, VALIDATION_SOURCE_NOT_FOUND, VALIDATION_RUN_NOT_FOUND, VALIDATION_STORAGE_FAILURE, REVISION_NOT_FOUND, REVISION_IMMUTABLE, DIFF_BASE_INVALID, RELEASE_POLICY_INVALID, RELEASE_CAPABILITY_DISABLED, RELEASE_PREFLIGHT_FAILED, RELEASE_BASE_CONFLICT, IDEMPOTENCY_CONFLICT, DAILY_BACKUP_REQUIRED, DAILY_WAIVER_INVALID, MANDATORY_BACKUP_FAILED, MIGRATION_BACKUP_REQUIRED, BACKUP_ROOT_UNWRITABLE, BACKUP_SPACE_INSUFFICIENT, BACKUP_INTEGRITY_FAILED, BACKUP_CHECKSUM_FAILED, BACKUP_INCOMPLETE, BACKUP_NOT_FOUND, RESTORE_PROJECT_MISMATCH, RESTORE_SCHEMA_NEWER, RESTORE_TARGET_NOT_EMPTY, PROJECT_REGISTRY_CONFLICT, RESTORE_LOCKED, RESTORE_RECOVERY_REQUIRED, BACKUP_PATH_SECURITY, RESTORE_PREFLIGHT_STALE, INVALID_CONFIRMATION, HISTORY_NOT_FOUND, STORAGE_FAILURE, SETTINGS_INVALID, SETTINGS_UNAVAILABLE, EXTERNAL_SERVICE_FAILURE, GRAPH_VALIDATION_REQUIRED, GRAPH_VALIDATION_BLOCKED, PROJECTOR_VERSION_UNAVAILABLE, GRAPH_CAPABILITY_UNAVAILABLE, BASE_SNAPSHOT_NOT_FOUND, BASE_SNAPSHOT_NOT_READY, CONTENT_HASH_MISMATCH, CONTENT_HASH_CONFLICT, PROVIDER_TASK_FAILED, GRAPH_RETRY_EXHAUSTED, GRAPH_RETRY_NOT_SAFE, GRAPH_STATUS_UNAVAILABLE, SIMULATION_CAPABILITY_UNAVAILABLE, SIMULATION_IDEMPOTENCY_REQUIRED, SIMULATION_INPUT_INVALID, SIMULATION_SEED_INVALID, SIMULATION_VALIDATION_REQUIRED, SIMULATION_SOURCE_INVALID, SIMULATION_SCENE_INVALID, SIMULATION_PARAMETER_INVALID, SIMULATION_METRIC_INVALID, SIMULATION_SAMPLE_INVALID, SIMULATION_BUDGET_INVALID, SIMULATION_IMPLEMENTATION_UNAVAILABLE, SIMULATION_VERIFICATION_TARGET_INVALID, SIMULATION_RUN_NOT_FOUND, SIMULATION_RUN_UNAVAILABLE, BUDGET_EXCEEDED, TIMEOUT, RECOVERY_MISMATCH, RECOVERY_UNAVAILABLE, RISK_IDEMPOTENCY_REQUIRED, RISK_COMMAND_INVALID, RISK_REVISION_INVALID, RISK_BASELINE_INVALID, RISK_POLICY_INVALID, THRESHOLD_NOT_CONFIGURED, THRESHOLD_INVALID, RISK_VALIDATION_INVALID, RISK_SIMULATION_INVALID, RISK_COHORT_INVALID, RISK_REQUIRED_METRIC_UNAVAILABLE, RISK_STALE_IDENTITY, RISK_REGISTRY_INCOMPATIBLE, RISK_RULE_CONTRACT_INVALID, RISK_DECISION_INVALID, RISK_REVIEW_NOT_FOUND, RISK_CANCELED, RISK_INTERRUPTED, AI_IDEMPOTENCY_REQUIRED, AI_PROVIDER_UNCONFIGURED, AI_CAPABILITY_UNAVAILABLE, AI_INPUT_INVALID, AI_EVIDENCE_UNAVAILABLE, AI_SNAPSHOT_IDENTITY_MISMATCH, AI_SNAPSHOT_INDEX_NOT_READY, AI_RETRIEVAL_UNAVAILABLE, AI_PROVIDER_FAILED, AI_PROVIDER_TIMEOUT, AI_OUTPUT_INVALID, AI_REPAIR_EXHAUSTED, AI_TOOL_POLICY_VIOLATION, AI_BUDGET_EXCEEDED, AI_PREVIEW_BLOCKED, AI_PATCH_NOT_FOUND, AI_PATCH_NOT_ACCEPTABLE, AI_PATCH_STALE, AI_DECISION_CONFLICT, AI_CANCELED, AI_INTERRUPTED, AI_CREDENTIAL_INVALID, AI_CREDENTIAL_STORE_FAILED] }
         retryable: { type: boolean }
         request_id: { type: string }
         entity_id: { $ref: '#/components/schemas/UUIDv7' }

@@ -86,10 +86,56 @@ func TestOpenAPIContainsAllHandlerOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	contract := string(raw)
-	for _, id := range []string{"selectProjectDirectory", "openProject", "listRecentProjects", "openRecentProject", "getCurrentProject", "closeProject", "getEntitySchema", "listEntities", "createEntity", "getEntity", "patchEntity", "deleteEntity", "createValidationRun", "getValidationRun", "listRevisions", "createRevision", "getRevision", "getRevisionDiff", "ensureGraphSync", "getGraphStatus", "listReleasePolicies", "createReleasePolicy", "listReleases", "createRelease", "getRelease", "getJob", "streamJobEvents", "cancelJob", "createSimulationJob", "getSimulationRun", "createRiskReview", "getRiskReview", "createAIDesignJob", "getDraftPatch", "acceptDraftPatch", "discardDraftPatch", "getSettings", "patchSettings", "putProviderCredential", "deleteProviderCredential", "getRuntimeStatus", "getRuntimeCapabilities"} {
+	for _, id := range []string{"selectProjectDirectory", "openProject", "listRecentProjects", "openRecentProject", "getCurrentProject", "closeProject", "getEntitySchema", "listEntities", "createEntity", "getEntity", "patchEntity", "deleteEntity", "createValidationRun", "getValidationRun", "listRevisions", "createRevision", "getRevision", "getRevisionDiff", "ensureGraphSync", "getGraphStatus", "listReleasePolicies", "createReleasePolicy", "listReleases", "createRelease", "getRelease", "getJob", "streamJobEvents", "cancelJob", "listBackups", "createBackup", "getBackup", "createRestorePreflight", "createRestore", "createSimulationJob", "getSimulationRun", "createRiskReview", "getRiskReview", "createAIDesignJob", "getDraftPatch", "acceptDraftPatch", "discardDraftPatch", "getSettings", "patchSettings", "putProviderCredential", "deleteProviderCredential", "getRuntimeStatus", "getRuntimeCapabilities"} {
 		if !strings.Contains(contract, "operationId: "+id) {
 			t.Errorf("OpenAPI missing handler operation %s", id)
 		}
+	}
+}
+
+func TestOpenAPIContainsPathFreeBackupRestoreContractsAndFrozenErrors(t *testing.T) {
+	raw, err := os.ReadFile("../../api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract := string(raw)
+	for _, schema := range []string{"BackupRecord", "BackupPage", "CreateBackupRequest", "BackupJobAccepted", "CreateRestorePreflightRequest", "RestorePreflight", "CreateRestoreRequest", "RestoreJobAccepted", "BackupRuntimeCapability", "PatchBackupSettings"} {
+		if !strings.Contains(contract, "    "+schema+":") {
+			t.Errorf("OpenAPI missing backup/restore schema %s", schema)
+		}
+	}
+	for _, code := range []string{"BACKUP_ROOT_UNWRITABLE", "BACKUP_SPACE_INSUFFICIENT", "BACKUP_INTEGRITY_FAILED", "BACKUP_CHECKSUM_FAILED", "BACKUP_INCOMPLETE", "BACKUP_NOT_FOUND", "RESTORE_PROJECT_MISMATCH", "RESTORE_SCHEMA_NEWER", "RESTORE_TARGET_NOT_EMPTY", "PROJECT_REGISTRY_CONFLICT", "RESTORE_LOCKED", "MANDATORY_BACKUP_FAILED", "RESTORE_RECOVERY_REQUIRED", "BACKUP_PATH_SECURITY", "RESTORE_PREFLIGHT_STALE", "IDEMPOTENCY_CONFLICT"} {
+		if !strings.Contains(contract, code) {
+			t.Errorf("OpenAPI missing backup/restore problem code %s", code)
+		}
+	}
+	for _, schema := range []string{"CreateBackupRequest", "CreateRestorePreflightRequest", "CreateRestoreRequest", "PatchBackupSettings"} {
+		start := strings.Index(contract, "    "+schema+":")
+		if start < 0 {
+			continue
+		}
+		end := strings.Index(contract[start+5:], "\n    ")
+		if end < 0 {
+			end = len(contract) - start
+		} else {
+			end += 5
+		}
+		section := contract[start : start+end]
+		for _, forbidden := range []string{"source_path", "target_path", "file_path", "database_path"} {
+			if strings.Contains(section, forbidden) {
+				t.Errorf("%s exposes client-controlled %s", schema, forbidden)
+			}
+		}
+	}
+	problems, err := os.ReadFile("../../api/fixtures/backup-v1/problems.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Problems []riskdto.Problem `json:"problems"`
+	}
+	if err = json.Unmarshal(problems, &fixture); err != nil || len(fixture.Problems) != 16 {
+		t.Fatalf("backup problem fixtures=%d err=%v", len(fixture.Problems), err)
 	}
 }
 

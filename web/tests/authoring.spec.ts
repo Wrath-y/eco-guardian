@@ -69,6 +69,38 @@ describe('structured authoring forms', () => {
     expect(screen.queryByText('当前 FULL 校验通过。')).toBeNull()
   })
 
+  it('retains the form after daily backup failure and requires an explicit same-day waiver', async () => {
+    const failedJobID = '01948c1e-0000-7000-8000-000000000020'
+    let entityPosts = 0
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/schemas/')) return Promise.resolve(new Response(JSON.stringify({ kind: 'tag', schema_id: 'urn:eco:schema:tag:1', schema: {} }), { status: 200 }))
+      if (url.endsWith('/daily-waivers')) return Promise.resolve(new Response(JSON.stringify({ project_uuid: '01948c1e-0000-7000-8000-000000000021', local_date: '2026-08-26', failed_backup_job_id: failedJobID, confirmed_at: new Date().toISOString(), replay: false }), { status: 200 }))
+      if (init?.method === 'POST') {
+        entityPosts++
+        if (entityPosts === 1) return Promise.resolve(new Response(JSON.stringify({ code: 'DAILY_BACKUP_REQUIRED', title: 'Daily backup failed', details: { failed_backup_job_id: failedJobID, state: 'awaiting_waiver' } }), { status: 409 }))
+        return Promise.resolve(new Response(JSON.stringify({ entity: { id: '01948c1e-0000-7000-8000-000000000022', kind: 'tag', key: 'fire', name: 'Fire', payload: { category: 'element', parent_tag_ids: [] }, extensions: {} }, revision: { validation: { run_id: '01948c1e-0000-7000-8000-000000000023', scope: 'LOCAL', error: 0, block: 0, warning: 0, info: 0 } } }), { status: 201 }))
+      }
+      return Promise.resolve(new Response(null, { status: 404 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/projects', component: { template: '<main />' } }, { path: '/config/:kind/:id', component: EntityEditorView }] })
+    await router.push('/config/tag/new'); await router.isReady()
+    render({ template: '<RouterView />' }, { global: { plugins: [router] } })
+    await fireEvent.update(await screen.findByLabelText('Key'), 'fire')
+    await fireEvent.update(screen.getByLabelText('名称'), 'Fire')
+    await fireEvent.update(document.querySelector('[data-field-path="/payload/category"]') as HTMLInputElement, 'element')
+    await fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(await screen.findByRole('heading', { name: '今日编辑尚未受备份保护' })).toBeTruthy()
+    expect(screen.getByDisplayValue('fire')).toBeTruthy()
+    expect(screen.getByText(/系统不会自动接受 waiver/)).toBeTruthy()
+    await fireEvent.click(screen.getByRole('button', { name: '明确继续：今天无恢复点' }))
+    expect(await screen.findByText(/2026-08-26 已明确选择无恢复点继续编辑/)).toBeTruthy()
+    expect(await screen.findByText(/保存成功/)).toBeTruthy()
+    const waiver = fetchMock.mock.calls.find(([input]) => String(input).endsWith('/daily-waivers'))
+    expect(JSON.parse(String(waiver?.[1]?.body))).toEqual({ failed_backup_job_id: failedJobID, confirmation: 'CONTINUE_WITHOUT_BACKUP_TODAY' })
+  })
+
   it('renders an unknown extension as a read-only warning', async () => {
     vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve(new Response(JSON.stringify(url.includes('/schemas/') ? { kind: 'tag', schema_id: 'urn:eco:schema:tag:1', schema: {} } : {
       id: '01948c1e-0000-7000-8000-000000000000', kind: 'tag', key: 'fire', name: 'Fire', tag_ids: [], status: 'active', schema_version: 1,

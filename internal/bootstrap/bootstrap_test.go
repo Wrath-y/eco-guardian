@@ -31,6 +31,7 @@ import (
 	runtimerecovery "github.com/zouyi/eco-guardian/internal/app/runtime/recovery"
 	"github.com/zouyi/eco-guardian/internal/domain"
 	"github.com/zouyi/eco-guardian/internal/httpapi"
+	sharedjob "github.com/zouyi/eco-guardian/internal/job"
 	"github.com/zouyi/eco-guardian/internal/packageinfo"
 	"github.com/zouyi/eco-guardian/internal/platform/appdir"
 	"github.com/zouyi/eco-guardian/internal/project"
@@ -141,6 +142,9 @@ func TestCompositionStartsAppliedServicesAndClosesInOwnershipOrder(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, ok := process.Coordinator.Ports.Recovery.(stagedStartupRecovery); !ok {
+		t.Fatalf("restore recovery is not owned by the single staged startup coordinator: %T", process.Coordinator.Ports.Recovery)
+	}
 	worker.host = process.Host
 	token, _, err := process.Projects.IssueSelection(context.Background(), pathSelector(projectPath))
 	if err != nil {
@@ -165,6 +169,7 @@ func TestCompositionStartsAppliedServicesAndClosesInOwnershipOrder(t *testing.T)
 	for _, route := range []string{
 		"GET /api/v1/settings", "POST /api/v1/projects", "POST /api/v1/revisions",
 		"POST /api/v1/simulation-jobs", "POST /api/v1/ai-design-jobs", "GET /api/v1/runtime/status",
+		"GET /api/v1/backups", "POST /api/v1/backups", "POST /api/v1/restore-preflights", "POST /api/v1/restores",
 	} {
 		if !routes[route] {
 			t.Fatalf("composition omitted route %s", route)
@@ -726,5 +731,33 @@ func TestRunHelpDoesNotResolvePlatformOrStartRuntime(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "--preferred-port") || !strings.Contains(output.String(), "command line > environment") {
 		t.Fatalf("help=%q", output.String())
+	}
+}
+
+func TestBackupRuntimeCloseGuardBlocksOnlyNonterminalBackupRestoreJobs(t *testing.T) {
+	registry, err := domain.NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened, projectID, err := store.Create(context.Background(), t.TempDir(), registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	runtime := &backupRuntime{activeStore: opened}
+	hash := strings.Repeat("a", 64)
+	job, _, err := opened.CreateOrGet(context.Background(), sharedjob.Request{ProjectID: projectID, Kind: "backup", InputHash: hash, IdempotencyKey: "close-guard", RequestHash: hash})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = runtime.Preflight(context.Background()); !errors.Is(err, project.ErrCloseBlocked) {
+		t.Fatalf("queued backup did not block close: %v", err)
+	}
+	job, _, err = opened.Transition(context.Background(), job.ID, sharedjob.Queued, sharedjob.Failed, nil, 0)
+	if err != nil || job.Status != sharedjob.Failed {
+		t.Fatalf("job=%#v err=%v", job, err)
+	}
+	if err = runtime.Preflight(context.Background()); err != nil {
+		t.Fatalf("terminal backup blocked close: %v", err)
 	}
 }

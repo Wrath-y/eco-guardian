@@ -25,7 +25,7 @@ import (
 )
 
 const databaseName = "project.db"
-const currentSchemaVersion = 21
+const currentSchemaVersion = 22
 
 func DBSchemaVersion() int { return currentSchemaVersion }
 
@@ -61,7 +61,7 @@ func (e BackupEvidence) Valid() bool {
 }
 
 type MigrationBackup interface {
-	Backup(context.Context, string, domain.ID) (BackupEvidence, error)
+	Backup(context.Context, *Store, string, domain.ID) (BackupEvidence, error)
 }
 
 type SchemaTooNewError struct{ DatabaseVersion, SupportedVersion int }
@@ -85,6 +85,8 @@ type Store struct {
 	path              string
 	registry          *domain.Registry
 	writes            sync.Mutex
+	admissionMu       sync.RWMutex
+	businessAdmission func(context.Context) error
 	now               func() time.Time
 	projectID         domain.ID
 	graphVersion      versioningrevision.VersionEntry
@@ -92,6 +94,36 @@ type Store struct {
 	riskVersion       versioningrevision.VersionEntry
 	afterRevision     func(context.Context, domain.RevisionSummary)
 	failStage         func(string) error // test-only transaction fault injector
+}
+
+var ErrBusinessAdmissionRegistered = errors.New("business write admission is already registered")
+
+const localPreflightRetryLimit = 16
+
+// RegisterBusinessWriteAdmission installs the single pre-transaction guard.
+// System repositories do not call this hook, preventing backup Job/event/audit
+// writes from recursively triggering another backup.
+func (s *Store) RegisterBusinessWriteAdmission(admit func(context.Context) error) error {
+	if admit == nil {
+		return ErrBusinessAdmissionRegistered
+	}
+	s.admissionMu.Lock()
+	defer s.admissionMu.Unlock()
+	if s.businessAdmission != nil {
+		return ErrBusinessAdmissionRegistered
+	}
+	s.businessAdmission = admit
+	return nil
+}
+
+func (s *Store) admitBusinessWrite(ctx context.Context) error {
+	s.admissionMu.RLock()
+	admit := s.businessAdmission
+	s.admissionMu.RUnlock()
+	if admit == nil {
+		return nil
+	}
+	return admit(ctx)
 }
 
 // RegisterGraphVersionContributor is startup composition glue. Its entry is
@@ -227,6 +259,10 @@ func OpenWithMigrationBackup(ctx context.Context, dir string, registry *domain.R
 		s.Close()
 		return nil, "", fmt.Errorf("%w: %v", ErrProjectInvalid, err)
 	}
+	// The pre-migration Online Backup adapter reads through this already-open
+	// Store, so expose the verified immutable project identity before invoking
+	// it. No migration or business write has occurred at this point.
+	s.projectID = id
 	if version > currentSchemaVersion {
 		s.Close()
 		return nil, "", &SchemaTooNewError{DatabaseVersion: version, SupportedVersion: currentSchemaVersion}
@@ -246,7 +282,7 @@ func OpenWithMigrationBackup(ctx context.Context, dir string, registry *domain.R
 				s.Close()
 				return nil, "", ErrMigrationBackupRequired
 			}
-			evidence, backupErr := backup.Backup(ctx, dir, id)
+			evidence, backupErr := backup.Backup(ctx, s, dir, id)
 			if backupErr != nil || !evidence.Valid() {
 				s.Close()
 				return nil, "", fmt.Errorf("%w: %v", ErrMigrationBackupRequired, backupErr)
@@ -257,7 +293,6 @@ func OpenWithMigrationBackup(ctx context.Context, dir string, registry *domain.R
 			return nil, "", fmt.Errorf("%w: %v", ErrProjectInvalid, err)
 		}
 	}
-	s.projectID = id
 	if err = verifyMigrationSteps(ctx, s.db); err != nil {
 		s.Close()
 		return nil, "", fmt.Errorf("%w: %v", ErrProjectInvalid, err)
@@ -318,6 +353,11 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 		if err := applyMigrationV4(ctx, tx); err != nil {
 			return err
 		}
+		if hook != nil {
+			if err := hook("release-audit-v4"); err != nil {
+				return err
+			}
+		}
 		version = 4
 	}
 	if version == 4 {
@@ -335,11 +375,21 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 		if err := applyMigrationV6(ctx, tx); err != nil {
 			return err
 		}
+		if hook != nil {
+			if err := hook("graph-checkpoints-v6"); err != nil {
+				return err
+			}
+		}
 		version = 6
 	}
 	if version == 6 {
 		if err := applyMigrationV7(ctx, tx); err != nil {
 			return err
+		}
+		if hook != nil {
+			if err := hook("graph-sync-indexes-v7"); err != nil {
+				return err
+			}
 		}
 		version = 7
 	}
@@ -347,11 +397,21 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 		if err := applyMigrationV8(ctx, tx); err != nil {
 			return err
 		}
+		if hook != nil {
+			if err := hook("graph-migration-checksums-v8"); err != nil {
+				return err
+			}
+		}
 		version = 8
 	}
 	if version == 8 {
 		if err := applyMigrationV9(ctx, tx); err != nil {
 			return err
+		}
+		if hook != nil {
+			if err := hook("graph-job-evidence-v9"); err != nil {
+				return err
+			}
 		}
 		version = 9
 	}
@@ -359,11 +419,21 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 		if err := applyMigrationV10(ctx, tx); err != nil {
 			return err
 		}
+		if hook != nil {
+			if err := hook("shared-job-cancellation-v10"); err != nil {
+				return err
+			}
+		}
 		version = 10
 	}
 	if version == 10 {
 		if err := applyMigrationV11(ctx, tx); err != nil {
 			return err
+		}
+		if hook != nil {
+			if err := hook("simulation-scenarios-v11"); err != nil {
+				return err
+			}
 		}
 		version = 11
 	}
@@ -371,11 +441,21 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 		if err := applyMigrationV12(ctx, tx); err != nil {
 			return err
 		}
+		if hook != nil {
+			if err := hook("simulation-runs-v12"); err != nil {
+				return err
+			}
+		}
 		version = 12
 	}
 	if version == 12 {
 		if err := applyMigrationV13(ctx, tx); err != nil {
 			return err
+		}
+		if hook != nil {
+			if err := hook("simulation-job-materializations-v13"); err != nil {
+				return err
+			}
 		}
 		version = 13
 	}
@@ -383,17 +463,32 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 		if err := applyMigrationV14(ctx, tx); err != nil {
 			return err
 		}
+		if hook != nil {
+			if err := hook("simulation-run-implementations-v14"); err != nil {
+				return err
+			}
+		}
 		version = 14
 	}
 	if version == 14 {
 		if err := applyMigrationV15(ctx, tx); err != nil {
 			return err
 		}
+		if hook != nil {
+			if err := hook("simulation-verification-intents-v15"); err != nil {
+				return err
+			}
+		}
 		version = 15
 	}
 	if version == 15 {
 		if err := applyMigrationV16(ctx, tx); err != nil {
 			return err
+		}
+		if hook != nil {
+			if err := hook("balance-risk-assessment-v16"); err != nil {
+				return err
+			}
 		}
 		version = 16
 	}
@@ -451,6 +546,17 @@ func applyMigrationSteps(ctx context.Context, tx *sql.Tx, version int, hook func
 			}
 		}
 		version = 21
+	}
+	if version == 21 {
+		if err := applyMigrationV22(ctx, tx); err != nil {
+			return err
+		}
+		if hook != nil {
+			if err := hook("backup-restore-v22"); err != nil {
+				return err
+			}
+		}
+		version = 22
 	}
 	if version != currentSchemaVersion {
 		return fmt.Errorf("unsupported schema version %d", version)
@@ -665,6 +771,17 @@ func applyMigrationV21(ctx context.Context, tx *sql.Tx) error {
 	return recordMigrationChecksums(ctx, tx)
 }
 
+func applyMigrationV22(ctx context.Context, tx *sql.Tx) error {
+	body, err := root.Assets.ReadFile("migrations/0022_backup_restore.sql")
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, string(body)); err != nil {
+		return err
+	}
+	return recordMigrationChecksums(ctx, tx)
+}
+
 func seedRiskStarterThreshold(ctx context.Context, tx *sql.Tx) error {
 	starter := riskthreshold.StarterFixtureV1()
 	body, err := starter.Body.CanonicalJSON()
@@ -720,6 +837,7 @@ func migrationStepChecksums() (map[string]string, error) {
 		"ai-patch-decisions-v19":              "migrations/0019_ai_patch_decisions.sql",
 		"ai-preview-facts-v20":                "migrations/0020_ai_preview_facts.sql",
 		"dependency-impact-v21":               "migrations/0021_dependency_impact.sql",
+		"backup-restore-v22":                  "migrations/0022_backup_restore.sql",
 	}
 	checksums := make(map[string]string, len(files))
 	for stepID, path := range files {
@@ -927,6 +1045,21 @@ func open(path string, registry *domain.Registry) (*Store, error) {
 func (s *Store) Close() error         { return s.db.Close() }
 func (s *Store) ProjectID() domain.ID { return s.projectID }
 
+// PrepareRestoreClose serializes behind all Store-owned writes and truncates
+// the active WAL before the project manager closes every pooled connection.
+func (s *Store) PrepareRestoreClose(ctx context.Context) error {
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	var busy, logPages, checkpointed int
+	if err := s.db.QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).Scan(&busy, &logPages, &checkpointed); err != nil {
+		return err
+	}
+	if busy != 0 || logPages != checkpointed {
+		return errors.New("restore checkpoint could not reach a safe boundary")
+	}
+	return nil
+}
+
 func (s *Store) Get(ctx context.Context, kind domain.EntityKind, id domain.ID) (domain.Entity, error) {
 	var raw []byte
 	err := s.db.QueryRowContext(ctx, `SELECT b.json FROM working_entities w JOIN entity_blobs b ON b.hash=w.blob_hash WHERE w.id=? AND w.kind=?`, id, kind).Scan(&raw)
@@ -1036,7 +1169,10 @@ func (s *Store) Patch(ctx context.Context, kind domain.EntityKind, id domain.ID,
 	if e != nil {
 		return domain.Entity{}, domain.RevisionSummary{}, e
 	}
-	for attempt := 0; attempt < 2; attempt++ {
+	if e = s.admitBusinessWrite(ctx); e != nil {
+		return domain.Entity{}, domain.RevisionSummary{}, e
+	}
+	for attempt := 0; attempt < localPreflightRetryLimit; attempt++ {
 		preflight, preflightErr := s.preflightLocal(ctx, next)
 		if preflightErr != nil {
 			return domain.Entity{}, domain.RevisionSummary{}, preflightErr
@@ -1071,7 +1207,7 @@ func (s *Store) Patch(ctx context.Context, kind domain.EntityKind, id domain.ID,
 			_ = tx.Rollback()
 		}
 		s.writes.Unlock()
-		if errors.Is(txErr, errLocalPreflightChanged) && attempt == 0 {
+		if errors.Is(txErr, errLocalPreflightChanged) && attempt+1 < localPreflightRetryLimit {
 			continue
 		}
 		if txErr == nil {
@@ -1093,6 +1229,9 @@ func (s *Store) validateProspective(entity domain.Entity) (domain.Entity, error)
 	return normalized, nil
 }
 func (s *Store) Delete(ctx context.Context, kind domain.EntityKind, id domain.ID, version int64) (domain.Entity, domain.RevisionSummary, error) {
+	if err := s.admitBusinessWrite(ctx); err != nil {
+		return domain.Entity{}, domain.RevisionSummary{}, err
+	}
 	s.writes.Lock()
 	tx, e := s.db.BeginTx(ctx, nil)
 	if e != nil {
@@ -1142,7 +1281,10 @@ func (s *Store) Delete(ctx context.Context, kind domain.EntityKind, id domain.ID
 }
 
 func (s *Store) save(ctx context.Context, e domain.Entity, create bool) (domain.Entity, domain.RevisionSummary, error) {
-	for attempt := 0; attempt < 2; attempt++ {
+	if err := s.admitBusinessWrite(ctx); err != nil {
+		return domain.Entity{}, domain.RevisionSummary{}, err
+	}
+	for attempt := 0; attempt < localPreflightRetryLimit; attempt++ {
 		preflight, err := s.preflightLocal(ctx, e)
 		if err != nil {
 			return domain.Entity{}, domain.RevisionSummary{}, err
@@ -1170,7 +1312,7 @@ func (s *Store) save(ctx context.Context, e domain.Entity, create bool) (domain.
 			_ = tx.Rollback()
 		}
 		s.writes.Unlock()
-		if errors.Is(err, errLocalPreflightChanged) && attempt == 0 {
+		if errors.Is(err, errLocalPreflightChanged) && attempt+1 < localPreflightRetryLimit {
 			continue
 		}
 		if err == nil {

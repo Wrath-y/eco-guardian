@@ -12,7 +12,7 @@ func TestDefaultActionRegistryIsClosedAndDeterministic(t *testing.T) {
 	for index := range descriptors {
 		ids[index] = descriptors[index].ID
 	}
-	want := []string{ActionCredentialConfigure, ActionGraphReconnect, ActionGraphRetry, ActionJobCancel, ActionProviderSettings, ActionRuntimeReprobe}
+	want := []string{ActionBackupRetry, ActionBackupSettings, ActionCredentialConfigure, ActionGraphReconnect, ActionGraphRetry, ActionJobCancel, ActionProviderSettings, ActionRuntimeReprobe}
 	if !reflect.DeepEqual(ids, want) {
 		t.Fatalf("ids=%v want=%v", ids, want)
 	}
@@ -36,6 +36,9 @@ func TestActionResolutionEnforcesServerPreconditionsAndIdempotency(t *testing.T)
 		t.Fatalf("action=%#v err=%v", action, err)
 	}
 	if _, err = registry.Resolve(ActionProviderSettings, map[string]bool{"settings_writable": true}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = registry.Resolve(ActionBackupRetry, map[string]bool{"backup_retryable": true}, "backup-retry-1"); err != nil {
 		t.Fatal(err)
 	}
 }

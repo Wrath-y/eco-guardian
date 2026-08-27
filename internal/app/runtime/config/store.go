@@ -82,6 +82,24 @@ func Validate(settings Settings) error {
 	if settings.Backup.RetentionDays < 0 || settings.Backup.RetentionDays > 3650 {
 		return ValidationError{Field: "backup.retention_days", Message: "must be between 0 and 3650"}
 	}
+	if settings.Backup.RootMode != BackupRootDefault && settings.Backup.RootMode != BackupRootCustom {
+		return ValidationError{Field: "backup.root_mode", Message: "must be default or custom"}
+	}
+	if settings.Backup.RootMode == BackupRootDefault && settings.Backup.RootPath != "" {
+		return ValidationError{Field: "backup.root_path", Message: "must be empty for the default root"}
+	}
+	if settings.Backup.RootMode == BackupRootCustom {
+		clean := filepath.Clean(settings.Backup.RootPath)
+		if settings.Backup.RootPath == "" || !filepath.IsAbs(settings.Backup.RootPath) || clean != settings.Backup.RootPath || strings.ContainsRune(settings.Backup.RootPath, '\x00') {
+			return ValidationError{Field: "backup.root_path", Message: "must be an absolute canonical native selection"}
+		}
+	}
+	if settings.Backup.DailyRetentionCount < 1 || settings.Backup.DailyRetentionCount > 1000 {
+		return ValidationError{Field: "backup.daily_retention_count", Message: "must be between 1 and 1000"}
+	}
+	if settings.Backup.ReleaseMigrationRetention < 1 || settings.Backup.ReleaseMigrationRetention > 1000 {
+		return ValidationError{Field: "backup.release_migration_retention_count", Message: "must be between 1 and 1000"}
+	}
 	return nil
 }
 
@@ -154,6 +172,35 @@ func decodeWithMigration(data []byte) (Settings, bool, error) {
 	case SchemaVersion:
 		settings, err := DecodeStrict(data)
 		return settings, false, err
+	case 1:
+		// V1 owned the same machine settings document but exposed only the
+		// legacy runtime-log retention value for backup configuration.
+		var legacy struct {
+			SchemaVersion  int             `json:"schema_version"`
+			Browser        Browser         `json:"browser"`
+			RecentProjects []RecentProject `json:"recent_projects"`
+			Package        Package         `json:"package"`
+			Graph          Graph           `json:"graph"`
+			AI             AIReference     `json:"ai"`
+			Logs           LogPolicy       `json:"logs"`
+			Backup         struct {
+				RetentionDays int `json:"retention_days"`
+			} `json:"backup"`
+		}
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&legacy); err != nil {
+			return Settings{}, false, fmt.Errorf("decode v1 settings: %w", err)
+		}
+		settings := Default()
+		settings.Browser = legacy.Browser
+		settings.RecentProjects = legacy.RecentProjects
+		settings.Package = legacy.Package
+		settings.Graph = legacy.Graph
+		settings.AI = legacy.AI
+		settings.Logs = legacy.Logs
+		settings.Backup.RetentionDays = legacy.Backup.RetentionDays
+		return settings, true, nil
 	case 0:
 		var legacy struct {
 			SchemaVersion   int  `json:"schema_version"`

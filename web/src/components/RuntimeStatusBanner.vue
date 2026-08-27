@@ -31,7 +31,7 @@ const ageLabel = computed(() => runtime.observationAgeMS === undefined ? '尚未
 
 function icon(state: string) { return state === 'available' || state === 'healthy' ? '✓' : state === 'degraded' ? '!' : '×' }
 function stateText(state: string) { return state === 'available' || state === 'healthy' ? '可用' : state === 'degraded' ? '降级' : '不可用' }
-function actionLabel(action: RuntimeAction) { return ({ 'runtime.reprobe': '重新探测', 'graph.reconnect': '重新连接', 'graph.retry': '重试 Graph', 'job.cancel': '取消 Job', 'provider.settings': 'Provider 设置', 'credential.configure': '配置凭据' } as Record<string, string>)[action.id] }
+function actionLabel(action: RuntimeAction) { return ({ 'runtime.reprobe': '重新探测', 'graph.reconnect': '重新连接', 'graph.retry': '重试 Graph', 'job.cancel': '取消 Job', 'provider.settings': 'Provider 设置', 'credential.configure': '配置凭据', 'backup.retry': '重试备份', 'backup.settings': '备份设置', 'restore.inspect': '查看恢复状态' } as Record<string, string>)[action.id] ?? action.id }
 async function run(action: RuntimeAction) {
   actionMessage.value = ''
   try { await runtime.execute(action); actionMessage.value = `${actionLabel(action)}已提交。` } catch { actionMessage.value = runtime.error }
@@ -62,7 +62,8 @@ onUnmounted(() => runtime.stopPolling())
       <p>仍可使用：{{ unaffected.length ? unaffected.map(item => item.id).join('、') : '当前无已确认可用能力' }}。</p>
       <div class="runtime-actions">
         <template v-for="action in actions" :key="`${action.id}:${action.uri}`">
-          <RouterLink v-if="action.id === 'provider.settings' || action.id === 'credential.configure'" to="/settings">{{ actionLabel(action) }}</RouterLink>
+          <RouterLink v-if="action.id === 'provider.settings' || action.id === 'credential.configure' || action.id === 'backup.settings'" to="/settings">{{ actionLabel(action) }}</RouterLink>
+          <RouterLink v-else-if="action.id === 'restore.inspect'" to="/backups">{{ actionLabel(action) }}</RouterLink>
           <button v-else type="button" :disabled="runtime.reconnecting || !runtime.currentAction(action)" @click="run(action)">{{ actionLabel(action) }}</button>
         </template>
       </div>

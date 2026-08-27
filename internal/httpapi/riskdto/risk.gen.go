@@ -383,13 +383,13 @@ func (e AIProviderCapabilityState) Valid() bool {
 
 // Defines values for AcceptDraftPatchResultPublished.
 const (
-	False AcceptDraftPatchResultPublished = false
+	AcceptDraftPatchResultPublishedFalse AcceptDraftPatchResultPublished = false
 )
 
 // Valid indicates whether the value is a known member of the AcceptDraftPatchResultPublished enum.
 func (e AcceptDraftPatchResultPublished) Valid() bool {
 	switch e {
-	case False:
+	case AcceptDraftPatchResultPublishedFalse:
 		return true
 	default:
 		return false
@@ -417,6 +417,285 @@ func (e AttributePayloadValueType) Valid() bool {
 	}
 }
 
+// Defines values for BackupCompatibilityState.
+const (
+	BackupCompatibilityStateCurrent BackupCompatibilityState = "current"
+	BackupCompatibilityStateNewer   BackupCompatibilityState = "newer"
+	BackupCompatibilityStateOlder   BackupCompatibilityState = "older"
+	BackupCompatibilityStateUnknown BackupCompatibilityState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the BackupCompatibilityState enum.
+func (e BackupCompatibilityState) Valid() bool {
+	switch e {
+	case BackupCompatibilityStateCurrent:
+		return true
+	case BackupCompatibilityStateNewer:
+		return true
+	case BackupCompatibilityStateOlder:
+		return true
+	case BackupCompatibilityStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackupDefaultSettingsRestoreMaintenanceState.
+const (
+	BackupDefaultSettingsRestoreMaintenanceStateIdle             BackupDefaultSettingsRestoreMaintenanceState = "idle"
+	BackupDefaultSettingsRestoreMaintenanceStateMaintenance      BackupDefaultSettingsRestoreMaintenanceState = "maintenance"
+	BackupDefaultSettingsRestoreMaintenanceStatePreparing        BackupDefaultSettingsRestoreMaintenanceState = "preparing"
+	BackupDefaultSettingsRestoreMaintenanceStateRecovering       BackupDefaultSettingsRestoreMaintenanceState = "recovering"
+	BackupDefaultSettingsRestoreMaintenanceStateRecoveryRequired BackupDefaultSettingsRestoreMaintenanceState = "recovery_required"
+)
+
+// Valid indicates whether the value is a known member of the BackupDefaultSettingsRestoreMaintenanceState enum.
+func (e BackupDefaultSettingsRestoreMaintenanceState) Valid() bool {
+	switch e {
+	case BackupDefaultSettingsRestoreMaintenanceStateIdle:
+		return true
+	case BackupDefaultSettingsRestoreMaintenanceStateMaintenance:
+		return true
+	case BackupDefaultSettingsRestoreMaintenanceStatePreparing:
+		return true
+	case BackupDefaultSettingsRestoreMaintenanceStateRecovering:
+		return true
+	case BackupDefaultSettingsRestoreMaintenanceStateRecoveryRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackupDefaultSettingsSafeActions.
+const (
+	BackupDefaultSettingsSafeActionsInspectRecovery BackupDefaultSettingsSafeActions = "inspect_recovery"
+	BackupDefaultSettingsSafeActionsResetDefault    BackupDefaultSettingsSafeActions = "reset_default"
+	BackupDefaultSettingsSafeActionsRetry           BackupDefaultSettingsSafeActions = "retry"
+	BackupDefaultSettingsSafeActionsSelectRoot      BackupDefaultSettingsSafeActions = "select_root"
+)
+
+// Valid indicates whether the value is a known member of the BackupDefaultSettingsSafeActions enum.
+func (e BackupDefaultSettingsSafeActions) Valid() bool {
+	switch e {
+	case BackupDefaultSettingsSafeActionsInspectRecovery:
+		return true
+	case BackupDefaultSettingsSafeActionsResetDefault:
+		return true
+	case BackupDefaultSettingsSafeActionsRetry:
+		return true
+	case BackupDefaultSettingsSafeActionsSelectRoot:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackupJobAcceptedResultType.
+const (
+	Backup BackupJobAcceptedResultType = "backup"
+)
+
+// Valid indicates whether the value is a known member of the BackupJobAcceptedResultType enum.
+func (e BackupJobAcceptedResultType) Valid() bool {
+	switch e {
+	case Backup:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackupRetentionPolicyManualAutomaticPrune.
+const (
+	BackupRetentionPolicyManualAutomaticPruneFalse BackupRetentionPolicyManualAutomaticPrune = false
+)
+
+// Valid indicates whether the value is a known member of the BackupRetentionPolicyManualAutomaticPrune enum.
+func (e BackupRetentionPolicyManualAutomaticPrune) Valid() bool {
+	switch e {
+	case BackupRetentionPolicyManualAutomaticPruneFalse:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackupRetentionPolicyRestorePreAutomaticPrune.
+const (
+	BackupRetentionPolicyRestorePreAutomaticPruneFalse BackupRetentionPolicyRestorePreAutomaticPrune = false
+)
+
+// Valid indicates whether the value is a known member of the BackupRetentionPolicyRestorePreAutomaticPrune enum.
+func (e BackupRetentionPolicyRestorePreAutomaticPrune) Valid() bool {
+	switch e {
+	case BackupRetentionPolicyRestorePreAutomaticPruneFalse:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackupRootHealth.
+const (
+	BackupRootHealthHealthy           BackupRootHealth = "healthy"
+	BackupRootHealthInsufficientSpace BackupRootHealth = "insufficient_space"
+	BackupRootHealthUnavailable       BackupRootHealth = "unavailable"
+	BackupRootHealthUnknown           BackupRootHealth = "unknown"
+	BackupRootHealthUnwritable        BackupRootHealth = "unwritable"
+)
+
+// Valid indicates whether the value is a known member of the BackupRootHealth enum.
+func (e BackupRootHealth) Valid() bool {
+	switch e {
+	case BackupRootHealthHealthy:
+		return true
+	case BackupRootHealthInsufficientSpace:
+		return true
+	case BackupRootHealthUnavailable:
+		return true
+	case BackupRootHealthUnknown:
+		return true
+	case BackupRootHealthUnwritable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackupRootSelectionState.
+const (
+	Custom  BackupRootSelectionState = "custom"
+	Default BackupRootSelectionState = "default"
+)
+
+// Valid indicates whether the value is a known member of the BackupRootSelectionState enum.
+func (e BackupRootSelectionState) Valid() bool {
+	switch e {
+	case Custom:
+		return true
+	case Default:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackupRuntimeCapabilityRestoreState.
+const (
+	BackupRuntimeCapabilityRestoreStateIdle             BackupRuntimeCapabilityRestoreState = "idle"
+	BackupRuntimeCapabilityRestoreStateMaintenance      BackupRuntimeCapabilityRestoreState = "maintenance"
+	BackupRuntimeCapabilityRestoreStatePreparing        BackupRuntimeCapabilityRestoreState = "preparing"
+	BackupRuntimeCapabilityRestoreStateRecovering       BackupRuntimeCapabilityRestoreState = "recovering"
+	BackupRuntimeCapabilityRestoreStateRecoveryRequired BackupRuntimeCapabilityRestoreState = "recovery_required"
+)
+
+// Valid indicates whether the value is a known member of the BackupRuntimeCapabilityRestoreState enum.
+func (e BackupRuntimeCapabilityRestoreState) Valid() bool {
+	switch e {
+	case BackupRuntimeCapabilityRestoreStateIdle:
+		return true
+	case BackupRuntimeCapabilityRestoreStateMaintenance:
+		return true
+	case BackupRuntimeCapabilityRestoreStatePreparing:
+		return true
+	case BackupRuntimeCapabilityRestoreStateRecovering:
+		return true
+	case BackupRuntimeCapabilityRestoreStateRecoveryRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackupRuntimeCapabilitySafeActions.
+const (
+	BackupRuntimeCapabilitySafeActionsInspectRecovery BackupRuntimeCapabilitySafeActions = "inspect_recovery"
+	BackupRuntimeCapabilitySafeActionsRetry           BackupRuntimeCapabilitySafeActions = "retry"
+	BackupRuntimeCapabilitySafeActionsSettings        BackupRuntimeCapabilitySafeActions = "settings"
+)
+
+// Valid indicates whether the value is a known member of the BackupRuntimeCapabilitySafeActions enum.
+func (e BackupRuntimeCapabilitySafeActions) Valid() bool {
+	switch e {
+	case BackupRuntimeCapabilitySafeActionsInspectRecovery:
+		return true
+	case BackupRuntimeCapabilitySafeActionsRetry:
+		return true
+	case BackupRuntimeCapabilitySafeActionsSettings:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackupType.
+const (
+	BackupTypeDaily      BackupType = "daily"
+	BackupTypeManual     BackupType = "manual"
+	BackupTypeMigration  BackupType = "migration"
+	BackupTypeRelease    BackupType = "release"
+	BackupTypeRestorePre BackupType = "restore-pre"
+)
+
+// Valid indicates whether the value is a known member of the BackupType enum.
+func (e BackupType) Valid() bool {
+	switch e {
+	case BackupTypeDaily:
+		return true
+	case BackupTypeManual:
+		return true
+	case BackupTypeMigration:
+		return true
+	case BackupTypeRelease:
+		return true
+	case BackupTypeRestorePre:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackupValidationState.
+const (
+	Damaged    BackupValidationState = "damaged"
+	Incomplete BackupValidationState = "incomplete"
+	Missing    BackupValidationState = "missing"
+	Valid      BackupValidationState = "valid"
+)
+
+// Valid indicates whether the value is a known member of the BackupValidationState enum.
+func (e BackupValidationState) Valid() bool {
+	switch e {
+	case Damaged:
+		return true
+	case Incomplete:
+		return true
+	case Missing:
+		return true
+	case Valid:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreateBackupRequestPurpose.
+const (
+	CreateBackupRequestPurposeManual CreateBackupRequestPurpose = "manual"
+)
+
+// Valid indicates whether the value is a known member of the CreateBackupRequestPurpose enum.
+func (e CreateBackupRequestPurpose) Valid() bool {
+	switch e {
+	case CreateBackupRequestPurposeManual:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreateCheckpointRevisionKind.
 const (
 	Checkpoint CreateCheckpointRevisionKind = "checkpoint"
@@ -426,6 +705,21 @@ const (
 func (e CreateCheckpointRevisionKind) Valid() bool {
 	switch e {
 	case Checkpoint:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreateRestoreRequestConfirmation.
+const (
+	RESTORE CreateRestoreRequestConfirmation = "RESTORE"
+)
+
+// Valid indicates whether the value is a known member of the CreateRestoreRequestConfirmation enum.
+func (e CreateRestoreRequestConfirmation) Valid() bool {
+	switch e {
+	case RESTORE:
 		return true
 	default:
 		return false
@@ -444,6 +738,21 @@ func (e CredentialSource) Valid() bool {
 	case CredentialManager:
 		return true
 	case Environment:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DailyBackupWaiverRequestConfirmation.
+const (
+	CONTINUEWITHOUTBACKUPTODAY DailyBackupWaiverRequestConfirmation = "CONTINUE_WITHOUT_BACKUP_TODAY"
+)
+
+// Valid indicates whether the value is a known member of the DailyBackupWaiverRequestConfirmation enum.
+func (e DailyBackupWaiverRequestConfirmation) Valid() bool {
+	switch e {
+	case CONTINUEWITHOUTBACKUPTODAY:
 		return true
 	default:
 		return false
@@ -1317,6 +1626,21 @@ func (e PackageSettingsMode) Valid() bool {
 	}
 }
 
+// Defines values for PatchBackupSettingsUseDefaultRoot.
+const (
+	PatchBackupSettingsUseDefaultRootTrue PatchBackupSettingsUseDefaultRoot = true
+)
+
+// Valid indicates whether the value is a known member of the PatchBackupSettingsUseDefaultRoot enum.
+func (e PatchBackupSettingsUseDefaultRoot) Valid() bool {
+	switch e {
+	case PatchBackupSettingsUseDefaultRootTrue:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProblemCode.
 const (
 	ProblemCodeACTIVEPROJECTCONFLICT               ProblemCode = "ACTIVE_PROJECT_CONFLICT"
@@ -1343,12 +1667,21 @@ const (
 	ProblemCodeAISNAPSHOTIDENTITYMISMATCH          ProblemCode = "AI_SNAPSHOT_IDENTITY_MISMATCH"
 	ProblemCodeAISNAPSHOTINDEXNOTREADY             ProblemCode = "AI_SNAPSHOT_INDEX_NOT_READY"
 	ProblemCodeAITOOLPOLICYVIOLATION               ProblemCode = "AI_TOOL_POLICY_VIOLATION"
+	ProblemCodeBACKUPCHECKSUMFAILED                ProblemCode = "BACKUP_CHECKSUM_FAILED"
+	ProblemCodeBACKUPINCOMPLETE                    ProblemCode = "BACKUP_INCOMPLETE"
+	ProblemCodeBACKUPINTEGRITYFAILED               ProblemCode = "BACKUP_INTEGRITY_FAILED"
+	ProblemCodeBACKUPNOTFOUND                      ProblemCode = "BACKUP_NOT_FOUND"
+	ProblemCodeBACKUPPATHSECURITY                  ProblemCode = "BACKUP_PATH_SECURITY"
+	ProblemCodeBACKUPROOTUNWRITABLE                ProblemCode = "BACKUP_ROOT_UNWRITABLE"
+	ProblemCodeBACKUPSPACEINSUFFICIENT             ProblemCode = "BACKUP_SPACE_INSUFFICIENT"
 	ProblemCodeBASESNAPSHOTNOTFOUND                ProblemCode = "BASE_SNAPSHOT_NOT_FOUND"
 	ProblemCodeBASESNAPSHOTNOTREADY                ProblemCode = "BASE_SNAPSHOT_NOT_READY"
 	ProblemCodeBUDGETEXCEEDED                      ProblemCode = "BUDGET_EXCEEDED"
 	ProblemCodeCLOSEBLOCKED                        ProblemCode = "CLOSE_BLOCKED"
 	ProblemCodeCONTENTHASHCONFLICT                 ProblemCode = "CONTENT_HASH_CONFLICT"
 	ProblemCodeCONTENTHASHMISMATCH                 ProblemCode = "CONTENT_HASH_MISMATCH"
+	ProblemCodeDAILYBACKUPREQUIRED                 ProblemCode = "DAILY_BACKUP_REQUIRED"
+	ProblemCodeDAILYWAIVERINVALID                  ProblemCode = "DAILY_WAIVER_INVALID"
 	ProblemCodeDIFFBASEINVALID                     ProblemCode = "DIFF_BASE_INVALID"
 	ProblemCodeDUPLICATEKEY                        ProblemCode = "DUPLICATE_KEY"
 	ProblemCodeENTITYREFERENCED                    ProblemCode = "ENTITY_REFERENCED"
@@ -1373,6 +1706,7 @@ const (
 	ProblemCodePROJECTLOCKED                       ProblemCode = "PROJECT_LOCKED"
 	ProblemCodePROJECTNOTOPEN                      ProblemCode = "PROJECT_NOT_OPEN"
 	ProblemCodePROJECTORVERSIONUNAVAILABLE         ProblemCode = "PROJECTOR_VERSION_UNAVAILABLE"
+	ProblemCodePROJECTREGISTRYCONFLICT             ProblemCode = "PROJECT_REGISTRY_CONFLICT"
 	ProblemCodePROVIDERTASKFAILED                  ProblemCode = "PROVIDER_TASK_FAILED"
 	ProblemCodeRECOVERYMISMATCH                    ProblemCode = "RECOVERY_MISMATCH"
 	ProblemCodeRECOVERYUNAVAILABLE                 ProblemCode = "RECOVERY_UNAVAILABLE"
@@ -1380,6 +1714,12 @@ const (
 	ProblemCodeRELEASECAPABILITYDISABLED           ProblemCode = "RELEASE_CAPABILITY_DISABLED"
 	ProblemCodeRELEASEPOLICYINVALID                ProblemCode = "RELEASE_POLICY_INVALID"
 	ProblemCodeRELEASEPREFLIGHTFAILED              ProblemCode = "RELEASE_PREFLIGHT_FAILED"
+	ProblemCodeRESTORELOCKED                       ProblemCode = "RESTORE_LOCKED"
+	ProblemCodeRESTOREPREFLIGHTSTALE               ProblemCode = "RESTORE_PREFLIGHT_STALE"
+	ProblemCodeRESTOREPROJECTMISMATCH              ProblemCode = "RESTORE_PROJECT_MISMATCH"
+	ProblemCodeRESTORERECOVERYREQUIRED             ProblemCode = "RESTORE_RECOVERY_REQUIRED"
+	ProblemCodeRESTORESCHEMANEWER                  ProblemCode = "RESTORE_SCHEMA_NEWER"
+	ProblemCodeRESTORETARGETNOTEMPTY               ProblemCode = "RESTORE_TARGET_NOT_EMPTY"
 	ProblemCodeREVISIONCONFLICT                    ProblemCode = "REVISION_CONFLICT"
 	ProblemCodeREVISIONIMMUTABLE                   ProblemCode = "REVISION_IMMUTABLE"
 	ProblemCodeREVISIONNOTFOUND                    ProblemCode = "REVISION_NOT_FOUND"
@@ -1479,6 +1819,20 @@ func (e ProblemCode) Valid() bool {
 		return true
 	case ProblemCodeAITOOLPOLICYVIOLATION:
 		return true
+	case ProblemCodeBACKUPCHECKSUMFAILED:
+		return true
+	case ProblemCodeBACKUPINCOMPLETE:
+		return true
+	case ProblemCodeBACKUPINTEGRITYFAILED:
+		return true
+	case ProblemCodeBACKUPNOTFOUND:
+		return true
+	case ProblemCodeBACKUPPATHSECURITY:
+		return true
+	case ProblemCodeBACKUPROOTUNWRITABLE:
+		return true
+	case ProblemCodeBACKUPSPACEINSUFFICIENT:
+		return true
 	case ProblemCodeBASESNAPSHOTNOTFOUND:
 		return true
 	case ProblemCodeBASESNAPSHOTNOTREADY:
@@ -1490,6 +1844,10 @@ func (e ProblemCode) Valid() bool {
 	case ProblemCodeCONTENTHASHCONFLICT:
 		return true
 	case ProblemCodeCONTENTHASHMISMATCH:
+		return true
+	case ProblemCodeDAILYBACKUPREQUIRED:
+		return true
+	case ProblemCodeDAILYWAIVERINVALID:
 		return true
 	case ProblemCodeDIFFBASEINVALID:
 		return true
@@ -1539,6 +1897,8 @@ func (e ProblemCode) Valid() bool {
 		return true
 	case ProblemCodePROJECTORVERSIONUNAVAILABLE:
 		return true
+	case ProblemCodePROJECTREGISTRYCONFLICT:
+		return true
 	case ProblemCodePROVIDERTASKFAILED:
 		return true
 	case ProblemCodeRECOVERYMISMATCH:
@@ -1552,6 +1912,18 @@ func (e ProblemCode) Valid() bool {
 	case ProblemCodeRELEASEPOLICYINVALID:
 		return true
 	case ProblemCodeRELEASEPREFLIGHTFAILED:
+		return true
+	case ProblemCodeRESTORELOCKED:
+		return true
+	case ProblemCodeRESTOREPREFLIGHTSTALE:
+		return true
+	case ProblemCodeRESTOREPROJECTMISMATCH:
+		return true
+	case ProblemCodeRESTORERECOVERYREQUIRED:
+		return true
+	case ProblemCodeRESTORESCHEMANEWER:
+		return true
+	case ProblemCodeRESTORETARGETNOTEMPTY:
 		return true
 	case ProblemCodeREVISIONCONFLICT:
 		return true
@@ -1767,6 +2139,87 @@ func (e ReleasePolicyDefinitionThresholdEnabled) Valid() bool {
 	}
 }
 
+// Defines values for RestoreConfirmationSummaryGraphPending.
+const (
+	RestoreConfirmationSummaryGraphPendingTrue RestoreConfirmationSummaryGraphPending = true
+)
+
+// Valid indicates whether the value is a known member of the RestoreConfirmationSummaryGraphPending enum.
+func (e RestoreConfirmationSummaryGraphPending) Valid() bool {
+	switch e {
+	case RestoreConfirmationSummaryGraphPendingTrue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RestoreConfirmationSummaryMaintenanceRequired.
+const (
+	RestoreConfirmationSummaryMaintenanceRequiredTrue RestoreConfirmationSummaryMaintenanceRequired = true
+)
+
+// Valid indicates whether the value is a known member of the RestoreConfirmationSummaryMaintenanceRequired enum.
+func (e RestoreConfirmationSummaryMaintenanceRequired) Valid() bool {
+	switch e {
+	case RestoreConfirmationSummaryMaintenanceRequiredTrue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RestoreJobAcceptedResultType.
+const (
+	Restore RestoreJobAcceptedResultType = "restore"
+)
+
+// Valid indicates whether the value is a known member of the RestoreJobAcceptedResultType enum.
+func (e RestoreJobAcceptedResultType) Valid() bool {
+	switch e {
+	case Restore:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RestorePreflightRegistryState.
+const (
+	Confirmed                     RestorePreflightRegistryState = "confirmed"
+	Matched                       RestorePreflightRegistryState = "matched"
+	MigrationConfirmationRequired RestorePreflightRegistryState = "migration_confirmation_required"
+)
+
+// Valid indicates whether the value is a known member of the RestorePreflightRegistryState enum.
+func (e RestorePreflightRegistryState) Valid() bool {
+	switch e {
+	case Confirmed:
+		return true
+	case Matched:
+		return true
+	case MigrationConfirmationRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RestorePreflightVersion.
+const (
+	RestorePreflightV1 RestorePreflightVersion = "restore-preflight-v1"
+)
+
+// Valid indicates whether the value is a known member of the RestorePreflightVersion enum.
+func (e RestorePreflightVersion) Valid() bool {
+	switch e {
+	case RestorePreflightV1:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RestoreReleaseRevisionKind.
 const (
 	RestoreRelease RestoreReleaseRevisionKind = "restore_release"
@@ -1776,6 +2229,24 @@ const (
 func (e RestoreReleaseRevisionKind) Valid() bool {
 	switch e {
 	case RestoreRelease:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RestoreTargetMode.
+const (
+	RestoreTargetModeActive         RestoreTargetMode = "active"
+	RestoreTargetModeEmptySelection RestoreTargetMode = "empty_selection"
+)
+
+// Valid indicates whether the value is a known member of the RestoreTargetMode enum.
+func (e RestoreTargetMode) Valid() bool {
+	switch e {
+	case RestoreTargetModeActive:
+		return true
+	case RestoreTargetModeEmptySelection:
 		return true
 	default:
 		return false
@@ -2279,17 +2750,24 @@ func (e RiskThresholdEntryDirection) Valid() bool {
 
 // Defines values for RuntimeActionId.
 const (
+	BackupRetry         RuntimeActionId = "backup.retry"
+	BackupSettings      RuntimeActionId = "backup.settings"
 	CredentialConfigure RuntimeActionId = "credential.configure"
 	GraphReconnect      RuntimeActionId = "graph.reconnect"
 	GraphRetry          RuntimeActionId = "graph.retry"
 	JobCancel           RuntimeActionId = "job.cancel"
 	ProviderSettings    RuntimeActionId = "provider.settings"
+	RestoreInspect      RuntimeActionId = "restore.inspect"
 	RuntimeReprobe      RuntimeActionId = "runtime.reprobe"
 )
 
 // Valid indicates whether the value is a known member of the RuntimeActionId enum.
 func (e RuntimeActionId) Valid() bool {
 	switch e {
+	case BackupRetry:
+		return true
+	case BackupSettings:
+		return true
 	case CredentialConfigure:
 		return true
 	case GraphReconnect:
@@ -2299,6 +2777,8 @@ func (e RuntimeActionId) Valid() bool {
 	case JobCancel:
 		return true
 	case ProviderSettings:
+		return true
+	case RestoreInspect:
 		return true
 	case RuntimeReprobe:
 		return true
@@ -3188,10 +3668,125 @@ type AttributePayload_Default struct {
 // AttributePayloadValueType defines model for AttributePayload.ValueType.
 type AttributePayloadValueType string
 
+// BackupCompatibilityState defines model for BackupCompatibilityState.
+type BackupCompatibilityState string
+
 // BackupDefaultSettings defines model for BackupDefaultSettings.
 type BackupDefaultSettings struct {
-	RetentionDays int `json:"retention_days"`
+	BackupAvailable                *bool                                         `json:"backup_available,omitempty"`
+	DailyRetentionCount            int                                           `json:"daily_retention_count"`
+	RecoverySummary                *string                                       `json:"recovery_summary,omitempty"`
+	ReleaseMigrationRetentionCount int                                           `json:"release_migration_retention_count"`
+	RestoreMaintenanceState        *BackupDefaultSettingsRestoreMaintenanceState `json:"restore_maintenance_state,omitempty"`
+	RetentionDays                  int                                           `json:"retention_days"`
+	RootHealth                     BackupRootHealth                              `json:"root_health"`
+	RootSelectionState             BackupRootSelectionState                      `json:"root_selection_state"`
+	SafeActions                    *[]BackupDefaultSettingsSafeActions           `json:"safe_actions,omitempty"`
 }
+
+// BackupDefaultSettingsRestoreMaintenanceState defines model for BackupDefaultSettings.RestoreMaintenanceState.
+type BackupDefaultSettingsRestoreMaintenanceState string
+
+// BackupDefaultSettingsSafeActions defines model for BackupDefaultSettings.SafeActions.
+type BackupDefaultSettingsSafeActions string
+
+// BackupJobAccepted defines model for BackupJobAccepted.
+type BackupJobAccepted struct {
+	Job        Job                         `json:"job"`
+	Location   string                      `json:"location"`
+	ResultId   *UUIDv7                     `json:"result_id,omitempty"`
+	ResultType BackupJobAcceptedResultType `json:"result_type"`
+	ResultUrl  string                      `json:"result_url"`
+}
+
+// BackupJobAcceptedResultType defines model for BackupJobAccepted.ResultType.
+type BackupJobAcceptedResultType string
+
+// BackupLinks defines model for BackupLinks.
+type BackupLinks struct {
+	Job  *string `json:"job,omitempty"`
+	Self string  `json:"self"`
+}
+
+// BackupPage defines model for BackupPage.
+type BackupPage struct {
+	Items      []BackupRecord        `json:"items"`
+	NextCursor *string               `json:"next_cursor,omitempty"`
+	Retention  BackupRetentionPolicy `json:"retention"`
+}
+
+// BackupRecord defines model for BackupRecord.
+type BackupRecord struct {
+	AppVersion *string `json:"app_version"`
+
+	// BackupId Server allocated UUIDv7.
+	BackupId           UUIDv7                   `json:"backup_id"`
+	CompatibilityState BackupCompatibilityState `json:"compatibility_state"`
+	CreatedAt          time.Time                `json:"created_at"`
+	DbBytes            *int64                   `json:"db_bytes"`
+	DbSha256           *Hash                    `json:"db_sha256"`
+	Links              BackupLinks              `json:"links"`
+	ManifestHash       Hash                     `json:"manifest_hash"`
+
+	// ProjectUuid Server allocated UUIDv7.
+	ProjectUuid     UUIDv7                `json:"project_uuid"`
+	Retention       string                `json:"retention"`
+	SchemaVersion   *int                  `json:"schema_version"`
+	Source          BackupSourceIdentity  `json:"source"`
+	Type            BackupType            `json:"type"`
+	ValidationState BackupValidationState `json:"validation_state"`
+}
+
+// BackupRetentionPolicy defines model for BackupRetentionPolicy.
+type BackupRetentionPolicy struct {
+	DailyCount               int                                           `json:"daily_count"`
+	ManualAutomaticPrune     BackupRetentionPolicyManualAutomaticPrune     `json:"manual_automatic_prune"`
+	ReleaseMigrationCount    int                                           `json:"release_migration_count"`
+	RestorePreAutomaticPrune BackupRetentionPolicyRestorePreAutomaticPrune `json:"restore_pre_automatic_prune"`
+}
+
+// BackupRetentionPolicyManualAutomaticPrune defines model for BackupRetentionPolicy.ManualAutomaticPrune.
+type BackupRetentionPolicyManualAutomaticPrune bool
+
+// BackupRetentionPolicyRestorePreAutomaticPrune defines model for BackupRetentionPolicy.RestorePreAutomaticPrune.
+type BackupRetentionPolicyRestorePreAutomaticPrune bool
+
+// BackupRootHealth defines model for BackupRootHealth.
+type BackupRootHealth string
+
+// BackupRootSelectionState defines model for BackupRootSelectionState.
+type BackupRootSelectionState string
+
+// BackupRuntimeCapability defines model for BackupRuntimeCapability.
+type BackupRuntimeCapability struct {
+	Available        bool                                 `json:"available"`
+	DisabledReasons  []string                             `json:"disabled_reasons"`
+	RecoveryRequired bool                                 `json:"recovery_required"`
+	RestoreState     BackupRuntimeCapabilityRestoreState  `json:"restore_state"`
+	RootHealth       BackupRootHealth                     `json:"root_health"`
+	SafeActions      []BackupRuntimeCapabilitySafeActions `json:"safe_actions"`
+}
+
+// BackupRuntimeCapabilityRestoreState defines model for BackupRuntimeCapability.RestoreState.
+type BackupRuntimeCapabilityRestoreState string
+
+// BackupRuntimeCapabilitySafeActions defines model for BackupRuntimeCapability.SafeActions.
+type BackupRuntimeCapabilitySafeActions string
+
+// BackupSourceIdentity defines model for BackupSourceIdentity.
+type BackupSourceIdentity struct {
+	CallerJobId *UUIDv7 `json:"caller_job_id,omitempty"`
+	MigrationId *string `json:"migration_id,omitempty"`
+	ReleaseId   *UUIDv7 `json:"release_id,omitempty"`
+	RequestHash *Hash   `json:"request_hash,omitempty"`
+	RevisionId  *UUIDv7 `json:"revision_id,omitempty"`
+}
+
+// BackupType defines model for BackupType.
+type BackupType string
+
+// BackupValidationState defines model for BackupValidationState.
+type BackupValidationState string
 
 // BrowserSettings defines model for BrowserSettings.
 type BrowserSettings struct {
@@ -3228,6 +3823,15 @@ type CreateAIDesignJobRequest struct {
 	RequestedBudget *AIBudgetLimits `json:"requested_budget,omitempty"`
 	Scenes          []string        `json:"scenes"`
 }
+
+// CreateBackupRequest defines model for CreateBackupRequest.
+type CreateBackupRequest struct {
+	Purpose CreateBackupRequestPurpose `json:"purpose"`
+	Reason  *string                    `json:"reason,omitempty"`
+}
+
+// CreateBackupRequestPurpose defines model for CreateBackupRequest.Purpose.
+type CreateBackupRequestPurpose string
 
 // CreateCheckpointRevision defines model for CreateCheckpointRevision.
 type CreateCheckpointRevision struct {
@@ -3277,6 +3881,37 @@ type CreateReleaseRequest struct {
 	VersionManifestHash Hash   `json:"version_manifest_hash"`
 }
 
+// CreateRestorePreflightRequest defines model for CreateRestorePreflightRequest.
+type CreateRestorePreflightRequest struct {
+	// BackupId Server allocated UUIDv7.
+	BackupId UUIDv7 `json:"backup_id"`
+
+	// RegistryConfirmationToken One-use explicit project-registration migration token.
+	RegistryConfirmationToken *string `json:"registry_confirmation_token,omitempty"`
+
+	// SelectionToken One-use native directory-selection token; required only for empty_selection.
+	SelectionToken *string           `json:"selection_token,omitempty"`
+	TargetMode     RestoreTargetMode `json:"target_mode"`
+}
+
+// CreateRestoreRequest defines model for CreateRestoreRequest.
+type CreateRestoreRequest struct {
+	// BackupId Server allocated UUIDv7.
+	BackupId            UUIDv7                           `json:"backup_id"`
+	Confirmation        CreateRestoreRequestConfirmation `json:"confirmation"`
+	PreflightGeneration Hash                             `json:"preflight_generation"`
+
+	// RegistryConfirmationToken One-use explicit project-registration migration token.
+	RegistryConfirmationToken *string `json:"registry_confirmation_token,omitempty"`
+
+	// SelectionToken One-use native directory-selection token; required only for empty_selection.
+	SelectionToken *string           `json:"selection_token,omitempty"`
+	TargetMode     RestoreTargetMode `json:"target_mode"`
+}
+
+// CreateRestoreRequestConfirmation defines model for CreateRestoreRequest.Confirmation.
+type CreateRestoreRequestConfirmation string
+
 // CreateRevisionRequest defines model for CreateRevisionRequest.
 type CreateRevisionRequest struct {
 	union json.RawMessage
@@ -3316,6 +3951,36 @@ type CurrentWorkingPrecondition struct {
 	// RevisionId Server allocated UUIDv7.
 	RevisionId UUIDv7 `json:"revision_id"`
 }
+
+// DailyBackupRetryRequest defines model for DailyBackupRetryRequest.
+type DailyBackupRetryRequest struct {
+	// FailedBackupJobId Server allocated UUIDv7.
+	FailedBackupJobId UUIDv7 `json:"failed_backup_job_id"`
+}
+
+// DailyBackupWaiver defines model for DailyBackupWaiver.
+type DailyBackupWaiver struct {
+	ConfirmedAt time.Time `json:"confirmed_at"`
+
+	// FailedBackupJobId Server allocated UUIDv7.
+	FailedBackupJobId UUIDv7             `json:"failed_backup_job_id"`
+	LocalDate         openapi_types.Date `json:"local_date"`
+
+	// ProjectUuid Server allocated UUIDv7.
+	ProjectUuid UUIDv7 `json:"project_uuid"`
+	Replay      bool   `json:"replay"`
+}
+
+// DailyBackupWaiverRequest defines model for DailyBackupWaiverRequest.
+type DailyBackupWaiverRequest struct {
+	Confirmation DailyBackupWaiverRequestConfirmation `json:"confirmation"`
+
+	// FailedBackupJobId Server allocated UUIDv7.
+	FailedBackupJobId UUIDv7 `json:"failed_backup_job_id"`
+}
+
+// DailyBackupWaiverRequestConfirmation defines model for DailyBackupWaiverRequest.Confirmation.
+type DailyBackupWaiverRequestConfirmation string
 
 // DecimalString Canonical finite decimal128 string.
 type DecimalString = string
@@ -3988,6 +4653,7 @@ type Job struct {
 	// CancelRequestedAt Time the current cancellation intent was recorded
 	CancelRequestedAt *time.Time `json:"cancel_requested_at,omitempty"`
 	CreatedAt         time.Time  `json:"created_at"`
+	Error             *string    `json:"error,omitempty"`
 	EventsUrl         string     `json:"events_url"`
 
 	// Id Server allocated UUIDv7.
@@ -3997,17 +4663,24 @@ type Job struct {
 	Kind               string `json:"kind"`
 	LatestEventOrdinal *int   `json:"latest_event_ordinal,omitempty"`
 
+	// Phase Latest persisted feature phase.
+	Phase *string `json:"phase,omitempty"`
+
 	// PollAfterMs Polling fallback cadence when SSE is unavailable.
-	PollAfterMs int     `json:"poll_after_ms"`
-	RequestHash Hash    `json:"request_hash"`
-	ResultId    *UUIDv7 `json:"result_id,omitempty"`
-	ResultType  *string `json:"result_type,omitempty"`
-	ResultUrl   *string `json:"result_url,omitempty"`
+	PollAfterMs      int     `json:"poll_after_ms"`
+	Progress         *int    `json:"progress,omitempty"`
+	RecoveryRequired *bool   `json:"recovery_required,omitempty"`
+	RequestHash      Hash    `json:"request_hash"`
+	ResultId         *UUIDv7 `json:"result_id,omitempty"`
+	ResultType       *string `json:"result_type,omitempty"`
+	ResultUrl        *string `json:"result_url,omitempty"`
+	Retryable        *bool   `json:"retryable,omitempty"`
 
 	// RevisionId Server allocated UUIDv7.
 	RevisionId UUIDv7     `json:"revision_id"`
 	Status     JobStatus  `json:"status"`
 	UpdatedAt  *time.Time `json:"updated_at,omitempty"`
+	Warning    *string    `json:"warning,omitempty"`
 }
 
 // JobStatus defines model for JobStatus.
@@ -4073,10 +4746,20 @@ type PatchAIProviderSettings struct {
 	RequestTimeoutSeconds int    `json:"request_timeout_seconds"`
 }
 
+// PatchBackupSettings defines model for PatchBackupSettings.
+type PatchBackupSettings struct {
+	DailyRetentionCount            *int                               `json:"daily_retention_count,omitempty"`
+	ReleaseMigrationRetentionCount *int                               `json:"release_migration_retention_count,omitempty"`
+	UseDefaultRoot                 *PatchBackupSettingsUseDefaultRoot `json:"use_default_root,omitempty"`
+}
+
+// PatchBackupSettingsUseDefaultRoot defines model for PatchBackupSettings.UseDefaultRoot.
+type PatchBackupSettingsUseDefaultRoot bool
+
 // PatchSettingsRequest defines model for PatchSettingsRequest.
 type PatchSettingsRequest struct {
 	Ai      *PatchAIProviderSettings `json:"ai,omitempty"`
-	Backup  *BackupDefaultSettings   `json:"backup,omitempty"`
+	Backup  *PatchBackupSettings     `json:"backup,omitempty"`
 	Browser *BrowserSettings         `json:"browser,omitempty"`
 	Graph   *GraphSettings           `json:"graph,omitempty"`
 	Logs    *LogSettings             `json:"logs,omitempty"`
@@ -4292,6 +4975,54 @@ type ReleaseScene struct {
 	Seed         *int            `json:"seed,omitempty"`
 }
 
+// RestoreConfirmationSummary defines model for RestoreConfirmationSummary.
+type RestoreConfirmationSummary struct {
+	GraphPending             RestoreConfirmationSummaryGraphPending        `json:"graph_pending"`
+	MaintenanceRequired      RestoreConfirmationSummaryMaintenanceRequired `json:"maintenance_required"`
+	MigrationRequired        bool                                          `json:"migration_required"`
+	RestorePreBackupRequired bool                                          `json:"restore_pre_backup_required"`
+}
+
+// RestoreConfirmationSummaryGraphPending defines model for RestoreConfirmationSummary.GraphPending.
+type RestoreConfirmationSummaryGraphPending bool
+
+// RestoreConfirmationSummaryMaintenanceRequired defines model for RestoreConfirmationSummary.MaintenanceRequired.
+type RestoreConfirmationSummaryMaintenanceRequired bool
+
+// RestoreJobAccepted defines model for RestoreJobAccepted.
+type RestoreJobAccepted struct {
+	Job        Job                          `json:"job"`
+	Location   string                       `json:"location"`
+	ResultId   *UUIDv7                      `json:"result_id,omitempty"`
+	ResultType RestoreJobAcceptedResultType `json:"result_type"`
+	ResultUrl  string                       `json:"result_url"`
+}
+
+// RestoreJobAcceptedResultType defines model for RestoreJobAccepted.ResultType.
+type RestoreJobAcceptedResultType string
+
+// RestorePreflight defines model for RestorePreflight.
+type RestorePreflight struct {
+	Backup               BackupRecord               `json:"backup"`
+	Confirmation         RestoreConfirmationSummary `json:"confirmation"`
+	FreeSpaceSufficient  bool                       `json:"free_space_sufficient"`
+	Generation           Hash                       `json:"generation"`
+	MaintenanceAvailable bool                       `json:"maintenance_available"`
+
+	// RegistryConfirmationToken One-use server-issued token returned only when explicit project-registration migration confirmation is required.
+	RegistryConfirmationToken *string                       `json:"registry_confirmation_token,omitempty"`
+	RegistryState             RestorePreflightRegistryState `json:"registry_state"`
+	TargetMode                RestoreTargetMode             `json:"target_mode"`
+	Version                   RestorePreflightVersion       `json:"version"`
+	Writable                  bool                          `json:"writable"`
+}
+
+// RestorePreflightRegistryState defines model for RestorePreflight.RegistryState.
+type RestorePreflightRegistryState string
+
+// RestorePreflightVersion defines model for RestorePreflight.Version.
+type RestorePreflightVersion string
+
 // RestoreReleaseRevision defines model for RestoreReleaseRevision.
 type RestoreReleaseRevision struct {
 	CurrentWorking CurrentWorkingPrecondition `json:"current_working"`
@@ -4303,6 +5034,9 @@ type RestoreReleaseRevision struct {
 
 // RestoreReleaseRevisionKind defines model for RestoreReleaseRevision.Kind.
 type RestoreReleaseRevisionKind string
+
+// RestoreTargetMode defines model for RestoreTargetMode.
+type RestoreTargetMode string
 
 // RevisionDetail defines model for RevisionDetail.
 type RevisionDetail struct {
@@ -4771,7 +5505,8 @@ type RuntimeBuildIdentityPackageMode string
 
 // RuntimeCapabilities Safe runtime availability projection. It deliberately omits credential material and client-computed Gate pass state.
 type RuntimeCapabilities struct {
-	Ai AIProviderCapability `json:"ai"`
+	Ai     AIProviderCapability    `json:"ai"`
+	Backup BackupRuntimeCapability `json:"backup"`
 
 	// Graph Server-authoritative Graph provider health and compatibility. Graph release readiness remains a Gate result for an exact candidate revision.
 	Graph   GraphRuntimeCapability `json:"graph"`
@@ -5222,6 +5957,9 @@ type WorkingValidationSource struct {
 // AIProviderName defines model for AIProviderName.
 type AIProviderName string
 
+// BackupID Server allocated UUIDv7.
+type BackupID = UUIDv7
+
 // DraftPatchID Server allocated UUIDv7.
 type DraftPatchID = UUIDv7
 
@@ -5272,6 +6010,19 @@ type ValidationRunID = UUIDv7
 
 // CreateAIDesignJobParams defines parameters for CreateAIDesignJob.
 type CreateAIDesignJobParams struct {
+	// IdempotencyKey Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict.
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ListBackupsParams defines parameters for ListBackups.
+type ListBackupsParams struct {
+	// Cursor Opaque stable continuation cursor.
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// CreateBackupParams defines parameters for CreateBackup.
+type CreateBackupParams struct {
 	// IdempotencyKey Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict.
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
@@ -5353,6 +6104,12 @@ type CreateReleaseParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// CreateRestoreParams defines parameters for CreateRestore.
+type CreateRestoreParams struct {
+	// IdempotencyKey Reuse with byte-equivalent canonical input returns the original Job; changed input returns idempotency conflict.
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
 // ListRevisionsParams defines parameters for ListRevisions.
 type ListRevisionsParams struct {
 	// Cursor Opaque stable continuation cursor.
@@ -5405,6 +6162,15 @@ type CreateSimulationJobParams struct {
 // CreateAIDesignJobJSONRequestBody defines body for CreateAIDesignJob for application/json ContentType.
 type CreateAIDesignJobJSONRequestBody = CreateAIDesignJobRequest
 
+// CreateBackupJSONRequestBody defines body for CreateBackup for application/json ContentType.
+type CreateBackupJSONRequestBody = CreateBackupRequest
+
+// RetryDailyBackupJSONRequestBody defines body for RetryDailyBackup for application/json ContentType.
+type RetryDailyBackupJSONRequestBody = DailyBackupRetryRequest
+
+// ConfirmDailyBackupWaiverJSONRequestBody defines body for ConfirmDailyBackupWaiver for application/json ContentType.
+type ConfirmDailyBackupWaiverJSONRequestBody = DailyBackupWaiverRequest
+
 // AcceptDraftPatchJSONRequestBody defines body for AcceptDraftPatch for application/json ContentType.
 type AcceptDraftPatchJSONRequestBody = AcceptDraftPatchRequest
 
@@ -5434,6 +6200,12 @@ type CreateReleasePolicyJSONRequestBody = CreateReleasePolicyRequest
 
 // CreateReleaseJSONRequestBody defines body for CreateRelease for application/json ContentType.
 type CreateReleaseJSONRequestBody = CreateReleaseRequest
+
+// CreateRestorePreflightJSONRequestBody defines body for CreateRestorePreflight for application/json ContentType.
+type CreateRestorePreflightJSONRequestBody = CreateRestorePreflightRequest
+
+// CreateRestoreJSONRequestBody defines body for CreateRestore for application/json ContentType.
+type CreateRestoreJSONRequestBody = CreateRestoreRequest
 
 // CreateRevisionJSONRequestBody defines body for CreateRevision for application/json ContentType.
 type CreateRevisionJSONRequestBody = CreateRevisionRequest

@@ -85,6 +85,46 @@ func TestValidationCapacityFixtures(t *testing.T) {
 	})
 }
 
+func TestRevisionHistoryCapacityUsesBoundedPagesAtTwoHundredRevisions(t *testing.T) {
+	store := newStore(t)
+	ctx := context.Background()
+	entity, _, err := store.Create(ctx, domain.KindTag, tagDraft("revision_capacity"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := 1; index < 200; index++ {
+		name, marshalErr := json.Marshal(fmt.Sprintf("Revision %03d", index+1))
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		entity, _, err = store.Patch(ctx, domain.KindTag, entity.ID, entity.EntityVersion, domain.EntityPatch{"name": name})
+		if err != nil {
+			t.Fatalf("revision %d: %v", index+1, err)
+		}
+	}
+	seen := map[domain.ID]bool{}
+	cursor := ""
+	for {
+		page, listErr := store.ListRevisionRecords(ctx, cursor, 50)
+		if listErr != nil || len(page.Items) == 0 || len(page.Items) > 50 {
+			t.Fatalf("page items=%d cursor=%q err=%v", len(page.Items), cursor, listErr)
+		}
+		for _, record := range page.Items {
+			if seen[record.Metadata.RevisionID] {
+				t.Fatalf("duplicate revision across pages: %s", record.Metadata.RevisionID)
+			}
+			seen[record.Metadata.RevisionID] = true
+		}
+		if page.NextCursor == "" {
+			break
+		}
+		cursor = page.NextCursor
+	}
+	if len(seen) != 200 {
+		t.Fatalf("revision history count=%d want=200", len(seen))
+	}
+}
+
 func seedCapacityFixture(t *testing.T, s *Store, count int) {
 	t.Helper()
 	tx, err := s.db.Begin()

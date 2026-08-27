@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import RuntimeStatusBanner from '@/components/RuntimeStatusBanner.vue'
+import MaintenanceOverlay from '@/components/MaintenanceOverlay.vue'
 import RuntimeSettingsView from '@/views/RuntimeSettingsView.vue'
 import { useRuntimeStore, type RuntimeStatus } from '@/stores/runtime'
 
@@ -29,7 +30,7 @@ const settings = {
   schema_version: 1, browser: { auto_open: true }, package: { mode: 'lightweight' },
   graph: { mode: 'external', endpoint: 'http://127.0.0.1:43124', health_timeout_seconds: 5, startup_timeout_seconds: 20, restart_limit: 3 },
   ai: { enabled: true, endpoint: 'http://127.0.0.1:11434/v1', model: 'fixture', request_timeout_seconds: 60, allow_cloud: false, endpoint_classification: 'loopback', credential_present: true },
-  logs: { max_bytes: 5242880, max_files: 5 }, backup: { retention_days: 30 },
+  logs: { max_bytes: 5242880, max_files: 5 }, backup: { retention_days: 30, root_selection_state: 'custom', daily_retention_count: 10, release_migration_retention_count: 5, root_health: 'healthy' },
 } as const
 
 describe('runtime status store and global UI', () => {
@@ -78,6 +79,19 @@ describe('runtime status store and global UI', () => {
     render(RuntimeStatusBanner, { global: { plugins: [createPinia()], stubs: { RouterLink: { template: '<a><slot /></a>' } } } })
     expect(await screen.findByText(`Eco：${ecoText}`)).toBeTruthy()
   })
+
+  it('keeps the global maintenance overlay until server-authoritative restore state clears', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useRuntimeStore()
+    store.runtimeCapabilities = { backup: { available: false, root_health: 'healthy', restore_state: 'maintenance', recovery_required: false, disabled_reasons: ['RESTORE_REPLACEMENT_NON_INTERRUPTIBLE'], safe_actions: ['inspect_recovery'] } } as typeof store.runtimeCapabilities
+    render(MaintenanceOverlay, { global: { plugins: [pinia], stubs: { RouterLink: { template: '<a href="#"><slot /></a>' } } } })
+    expect(await screen.findByRole('alertdialog')).toBeTruthy()
+    expect(screen.getByText(/不能取消、修改、切换或关闭项目/)).toBeTruthy()
+    expect(screen.getByRole('link', { name: '查看恢复与 Job 状态' })).toBeTruthy()
+    store.runtimeCapabilities = { ...store.runtimeCapabilities!, backup: { ...store.runtimeCapabilities!.backup, restore_state: 'idle', available: true, disabled_reasons: [], safe_actions: [] } }
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+  })
 })
 
 describe('runtime settings UI', () => {
@@ -92,5 +106,25 @@ describe('runtime settings UI', () => {
     const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH')?.[1]
     expect(String(patch?.body)).not.toMatch(/credential|password|secret|token/i)
     expect(screen.getByText(/凭据状态：已配置/)).toBeTruthy()
+  })
+
+  it('selects and resets the backup root without exposing a path input', async () => {
+    const selected = { ...settings, backup: { ...settings.backup, root_selection_state: 'custom' as const } }
+    const reset = { ...settings, backup: { ...settings.backup, root_selection_state: 'default' as const } }
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const uri = String(input)
+      if (uri.endsWith('/backup-root-selection')) return Promise.resolve(new Response(JSON.stringify({ settings: selected, effects: [{ field: 'backup.root', disposition: 'applied' }] }), { status: 200 }))
+      if (init?.method === 'PATCH') return Promise.resolve(new Response(JSON.stringify({ settings: reset, effects: [{ field: 'backup.root', disposition: 'applied' }] }), { status: 200 }))
+      return Promise.resolve(new Response(JSON.stringify(settings), { status: 200 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(RuntimeSettingsView, { global: { plugins: [createPinia()], stubs: { RouterLink: { template: '<a><slot /></a>' } } } })
+    await fireEvent.click(await screen.findByRole('button', { name: '选择自定义备份目录' }))
+    expect(await screen.findByText('自定义备份根已验证并应用。')).toBeTruthy()
+    await fireEvent.click(screen.getByRole('button', { name: '恢复默认备份目录' }))
+    expect(await screen.findByText('已恢复默认备份根。')).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: /备份.*路径|备份.*目录/ })).toBeNull()
+    const rootRequest = fetchMock.mock.calls.find(([input]) => String(input).endsWith('/backup-root-selection'))
+    expect(rootRequest?.[1]?.body).toBeUndefined()
   })
 })

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -17,8 +18,10 @@ import (
 	"github.com/zouyi/eco-guardian/internal/domain"
 	sharedjob "github.com/zouyi/eco-guardian/internal/job"
 	"github.com/zouyi/eco-guardian/internal/validation"
+	versioning "github.com/zouyi/eco-guardian/internal/versioning"
 	versioningdiff "github.com/zouyi/eco-guardian/internal/versioning/diff"
 	versioningpolicy "github.com/zouyi/eco-guardian/internal/versioning/policy"
+	versioningrelease "github.com/zouyi/eco-guardian/internal/versioning/release"
 	versioningrevision "github.com/zouyi/eco-guardian/internal/versioning/revision"
 )
 
@@ -34,7 +37,7 @@ func (catalog policyCatalog) SupportsCapabilityContract(requirement versioningpo
 	return catalog[requirement.CapabilityID+"/"+requirement.GateID+"/"+requirement.ContractVersion]
 }
 
-func (f *fakeMigrationBackup) Backup(context.Context, string, domain.ID) (BackupEvidence, error) {
+func (f *fakeMigrationBackup) Backup(context.Context, *Store, string, domain.ID) (BackupEvidence, error) {
 	f.calls++
 	return f.evidence, f.err
 }
@@ -264,6 +267,10 @@ func TestPopulatedOlderProjectRequiresVerifiedBackupBeforeMigration(t *testing.T
 	if _, _, err = OpenWithMigrationBackup(context.Background(), dir, registry, invalid); !errors.Is(err, ErrMigrationBackupRequired) {
 		t.Fatalf("invalid integrity err=%v", err)
 	}
+	failed := &fakeMigrationBackup{err: errors.New("injected backup failure")}
+	if _, _, err = OpenWithMigrationBackup(context.Background(), dir, registry, failed); err == nil {
+		t.Fatal("failed migration backup unexpectedly allowed schema writes")
+	}
 	store, openedID, err := OpenWithMigrationBackup(context.Background(), dir, registry, backup)
 	if err != nil {
 		t.Fatal(err)
@@ -294,7 +301,16 @@ func TestMigrationStepsRollbackAndReplayWithoutDuplicates(t *testing.T) {
 	if _, err = db.Exec(`INSERT INTO project_meta(id,db_schema_version,created_at) VALUES(?,?,?)`, mustID(t), 1, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 		t.Fatal(err)
 	}
-	for _, failedStep := range []string{"validation-v2", "versioning-v3", "graph-sync-v5", "ai-design-persistence-v17", "ai-generation-immutability-v18", "ai-patch-decisions-v19", "ai-preview-facts-v20"} {
+	checksums, err := migrationStepChecksums()
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedSteps := make([]string, 0, len(checksums))
+	for step := range checksums {
+		failedSteps = append(failedSteps, step)
+	}
+	sort.Strings(failedSteps)
+	for _, failedStep := range failedSteps {
 		tx, txErr := db.BeginTx(context.Background(), nil)
 		if txErr != nil {
 			t.Fatal(txErr)
@@ -330,6 +346,91 @@ func TestMigrationStepsRollbackAndReplayWithoutDuplicates(t *testing.T) {
 	var count int
 	if err = db.QueryRow(`SELECT count(*) FROM schema_migration_steps`).Scan(&count); err != nil || count != currentSchemaVersion-1 {
 		t.Fatalf("migration steps=%d err=%v", count, err)
+	}
+}
+
+func TestV21ToV22MigrationPreservesEntitiesRevisionsReleasesReportsAndJobs(t *testing.T) {
+	registry, err := domain.NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := t.TempDir()
+	store, projectID, err := Create(context.Background(), directory, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entity, revision, err := store.Create(context.Background(), domain.KindTag, tagDraft("preserved_v22"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := versioningpolicy.Definition{Samples: 1, ThresholdID: "threshold", ThresholdOn: true, Scenes: []versioningpolicy.Scene{{ID: "scene", Required: true, Metrics: []versioningpolicy.Metric{{ID: "metric", Required: true}}}}, Capabilities: []versioningpolicy.CapabilityRequirement{{CapabilityID: "backup", GateID: "mandatory", ContractVersion: "1"}}}
+	policy, err := store.CreatePolicy(context.Background(), definition, policyCatalog{"backup/mandatory/1": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseJob, _, err := store.CreateOrGetReleaseJob(context.Background(), versioningrelease.JobRequest{ProjectID: projectID, RevisionID: revision.ID, InputHash: revision.ConfigHash, IdempotencyKey: "preserved-release", RequestHash: strings.Repeat("a", 64)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, swapped, transitionErr := store.TransitionReleaseJob(context.Background(), releaseJob.ID, versioningrelease.JobQueued, versioningrelease.JobRunning, nil); transitionErr != nil || !swapped {
+		t.Fatalf("release job transition swapped=%v err=%v", swapped, transitionErr)
+	}
+	manifest := []byte(`{"gates":["backup"]}`)
+	intentID := mustID(t)
+	now := time.Now().UTC()
+	intent := versioningrelease.Intent{ID: intentID, JobID: releaseJob.ID, CandidateRevisionID: revision.ID, PolicyID: policy.ID, GateManifest: manifest, GateManifestHash: versioning.SHA256(manifest), Backup: versioningrelease.BackupEvidence{Online: true, IntegrityChecked: true, Checksum: strings.Repeat("b", 64)}, RequestHash: releaseJob.RequestHash, IdempotencyKey: releaseJob.IdempotencyKey, Phase: versioningrelease.IntentRecorded, CreatedAt: now, UpdatedAt: now}
+	if _, _, err = store.CreateIntent(context.Background(), intent); err != nil {
+		t.Fatal(err)
+	}
+	if _, swapped, err := store.TransitionIntent(context.Background(), intentID, versioningrelease.IntentRecorded, versioningrelease.IntentGraphActivating, "task", ""); err != nil || !swapped {
+		t.Fatalf("graph activating swapped=%v err=%v", swapped, err)
+	}
+	if _, swapped, err := store.TransitionIntent(context.Background(), intentID, versioningrelease.IntentGraphActivating, versioningrelease.IntentGraphActivated, "task", ""); err != nil || !swapped {
+		t.Fatalf("graph activated swapped=%v err=%v", swapped, err)
+	}
+	release, _, err := store.CommitActivatedIntent(context.Background(), intentID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	impactJob, _, report := impactFixture(t, store, "preserved-v22")
+	if _, _, err = store.Seal(context.Background(), report); err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{
+		`DROP TABLE restore_graph_invalidations`, `DROP TABLE restore_reconciliation`, `DROP TABLE daily_backup_waivers`,
+		`DROP TABLE daily_backup_admission`, `DROP TABLE backup_artifact_audit`, `DROP TABLE backup_commands`,
+		`DELETE FROM schema_migration_steps WHERE step_id='backup-restore-v22'`, `UPDATE project_meta SET db_schema_version=21`,
+	} {
+		if _, err = store.db.Exec(statement); err != nil {
+			t.Fatalf("prepare v21 %q: %v", statement, err)
+		}
+	}
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	backup := &fakeMigrationBackup{evidence: BackupEvidence{Online: true, IntegrityChecked: true, Checksum: strings.Repeat("c", 64)}}
+	reopened, reopenedID, err := OpenWithMigrationBackup(context.Background(), directory, registry, backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if reopenedID != projectID || backup.calls != 1 {
+		t.Fatalf("project=%s backup calls=%d", reopenedID, backup.calls)
+	}
+	if preserved, getErr := reopened.Get(context.Background(), entity.Kind, entity.ID); getErr != nil || preserved.EntityVersion != entity.EntityVersion {
+		t.Fatalf("entity=%#v err=%v", preserved, getErr)
+	}
+	if preserved, getErr := reopened.GetRevisionRecord(context.Background(), revision.ID); getErr != nil || preserved.Metadata.RevisionID != revision.ID {
+		t.Fatalf("revision=%#v err=%v", preserved, getErr)
+	}
+	if preserved, getErr := reopened.GetReleaseRecord(context.Background(), release.ID); getErr != nil || preserved.ID != release.ID || preserved.IntentID != intentID {
+		t.Fatalf("release=%#v err=%v", preserved, getErr)
+	}
+	if preserved, getErr := reopened.GetImpactReport(context.Background(), report.ID); getErr != nil || preserved.ResultHash != report.ResultHash {
+		t.Fatalf("report=%#v err=%v", preserved, getErr)
+	}
+	if preserved, getErr := reopened.GetJob(context.Background(), impactJob.ID); getErr != nil || preserved.ID != impactJob.ID || preserved.RequestHash != impactJob.RequestHash {
+		t.Fatalf("job=%#v err=%v", preserved, getErr)
 	}
 }
 

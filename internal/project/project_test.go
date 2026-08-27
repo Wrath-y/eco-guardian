@@ -93,6 +93,53 @@ func TestManagerAcquiresCreatesAndClosesInOrder(t *testing.T) {
 	}
 }
 
+func TestMaintenanceKeepsOSLockBlocksOrdinaryAccessAndReopensSameIdentity(t *testing.T) {
+	id, _ := domain.NewID()
+	lock := &fakeLock{}
+	handle := &fakeHandle{id: id}
+	tokens := NewTokenStore(time.Hour, nil)
+	directory := t.TempDir()
+	token, _, _ := tokens.Issue(directory)
+	manager := NewManager(tokens, fakeLocker{lock: lock}, fakeFactory{handle: handle}, NoJobs{}, nil)
+	if _, err := manager.Create(context.Background(), token); err != nil {
+		t.Fatal(err)
+	}
+	maintenance, err := manager.AcquireMaintenance(context.Background(), id)
+	if err != nil || maintenance.Path() != directory {
+		t.Fatalf("maintenance=%#v err=%v", maintenance, err)
+	}
+	if _, active := manager.ActiveHandle(); active {
+		t.Fatal("maintenance exposed active handle")
+	}
+	if active, nonInterruptible := manager.MaintenanceState(); !active || nonInterruptible {
+		t.Fatalf("maintenance projection=%v/%v", active, nonInterruptible)
+	}
+	if err = manager.Close(context.Background()); !errors.Is(err, ErrMaintenance) || lock.released {
+		t.Fatalf("close=%v lock=%#v", err, lock)
+	}
+	if err = maintenance.MarkNonInterruptible(); err != nil || !maintenance.NonInterruptible() {
+		t.Fatalf("non-interruptible=%v err=%v", maintenance.NonInterruptible(), err)
+	}
+	if active, nonInterruptible := manager.MaintenanceState(); !active || !nonInterruptible {
+		t.Fatalf("non-interruptible projection=%v/%v", active, nonInterruptible)
+	}
+	if err = maintenance.CloseConnections(context.Background()); err != nil || !handle.closed || lock.released {
+		t.Fatalf("close connections=%v handle=%#v lock=%#v", err, handle, lock)
+	}
+	if _, err = maintenance.Reopen(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err = maintenance.Release(); err != nil {
+		t.Fatal(err)
+	}
+	if _, active := manager.ActiveHandle(); !active || lock.released {
+		t.Fatalf("active=%v lock=%#v", active, lock)
+	}
+	if active, nonInterruptible := manager.MaintenanceState(); active || nonInterruptible {
+		t.Fatalf("terminal maintenance projection=%v/%v", active, nonInterruptible)
+	}
+}
+
 func TestManagerFailureCleansLockAndBlockedCloseKeepsActive(t *testing.T) {
 	id, _ := domain.NewID()
 	lock := &fakeLock{}

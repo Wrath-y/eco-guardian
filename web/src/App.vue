@@ -1,15 +1,25 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import MaintenanceOverlay from '@/components/MaintenanceOverlay.vue'
 import RuntimeStatusBanner from '@/components/RuntimeStatusBanner.vue'
+import { useRuntimeStore } from '@/stores/runtime'
+
+const runtime = useRuntimeStore()
+const maintenanceBlocked = computed(() => ['maintenance', 'recovering', 'recovery_required'].includes(runtime.runtimeCapabilities?.backup.restore_state ?? 'idle'))
 </script>
 <template>
   <main>
     <RuntimeStatusBanner />
-    <nav aria-label="主导航">
-      <RouterLink to="/projects">项目</RouterLink>
-      <RouterLink to="/settings">运行设置</RouterLink>
-      <RouterLink to="/impact">影响分析</RouterLink>
-    </nav>
-    <RouterView />
+    <div :inert="maintenanceBlocked || undefined" :aria-hidden="maintenanceBlocked || undefined">
+      <nav aria-label="主导航">
+        <RouterLink to="/projects">项目</RouterLink>
+        <RouterLink to="/settings">运行设置</RouterLink>
+        <RouterLink to="/backups">备份与恢复</RouterLink>
+        <RouterLink to="/impact">影响分析</RouterLink>
+      </nav>
+      <RouterView />
+    </div>
+    <MaintenanceOverlay />
   </main>
 </template>
 <style>

@@ -19,6 +19,7 @@ import (
 	"github.com/zouyi/eco-guardian/internal/project"
 	"github.com/zouyi/eco-guardian/internal/risk/orchestration"
 	store "github.com/zouyi/eco-guardian/internal/storage/sqlite"
+	versioninggate "github.com/zouyi/eco-guardian/internal/versioning/gate"
 	versioningpolicy "github.com/zouyi/eco-guardian/internal/versioning/policy"
 	versioningrelease "github.com/zouyi/eco-guardian/internal/versioning/release"
 	versioningrevision "github.com/zouyi/eco-guardian/internal/versioning/revision"
@@ -26,10 +27,22 @@ import (
 
 type VersionServiceProvider func() app.VersioningService
 type AICapabilityProvider func(context.Context) aiprovider.Capability
+type BackupRuntimeCapabilityProvider func(context.Context) BackupRuntimeCapability
+
+type BackupRuntimeCapability struct {
+	Available        bool
+	RootHealth       string
+	RestoreState     string
+	RecoveryRequired bool
+	DisabledReasons  []string
+	SafeActions      []string
+}
+
 type VersionHandler struct {
 	service   VersionServiceProvider
 	graph     GraphSyncServiceProvider
 	ai        AICapabilityProvider
+	backup    BackupRuntimeCapabilityProvider
 	resolvers []DurableResolver
 }
 
@@ -75,6 +88,10 @@ func NewVersionHandlerWithGraph(service VersionServiceProvider, graph GraphSyncS
 // the release and Graph capability projections.
 func (h *VersionHandler) RegisterAICapabilityProvider(provider AICapabilityProvider) {
 	h.ai = provider
+}
+
+func (h *VersionHandler) RegisterBackupCapabilityProvider(provider BackupRuntimeCapabilityProvider) {
+	h.backup = provider
 }
 
 // RegisterDurableResolver composes another capability into the shared Job
@@ -617,17 +634,23 @@ func graphEventJSON(event graphsync.GraphJobEvent) gin.H {
 	return response
 }
 func (h *VersionHandler) capability(c *gin.Context) {
-	s := h.current(c)
-	if s == nil {
-		return
+	releaseCapability := versioninggate.ReleaseCapability{Enabled: false, Reasons: []versioninggate.DisabledReason{{CapabilityID: "release", GateID: "project", Reason: "required gate is unregistered"}}}
+	graph := app.GraphRuntimeStatusApplication{}.GraphRuntimeStatus(c.Request.Context())
+	var s app.VersioningService
+	if h != nil && h.service != nil {
+		s = h.service()
 	}
-	capability, err := s.ReleaseCapability(c.Request.Context())
-	if err != nil {
-		problem(c, http.StatusServiceUnavailable, "EXTERNAL_SERVICE_FAILURE", "Runtime capability is unavailable")
-		return
+	if s != nil {
+		var err error
+		releaseCapability, err = s.ReleaseCapability(c.Request.Context())
+		if err != nil {
+			problem(c, http.StatusServiceUnavailable, "EXTERNAL_SERVICE_FAILURE", "Runtime capability is unavailable")
+			return
+		}
+		graph = s.GraphRuntimeCapability(c.Request.Context())
 	}
-	reasons := make([]gin.H, 0, len(capability.Reasons))
-	for _, reason := range capability.Reasons {
+	reasons := make([]gin.H, 0, len(releaseCapability.Reasons))
+	for _, reason := range releaseCapability.Reasons {
 		code := "UNAVAILABLE"
 		if strings.Contains(reason.Reason, "unregistered") {
 			code = "MISSING"
@@ -637,12 +660,15 @@ func (h *VersionHandler) capability(c *gin.Context) {
 		}
 		reasons = append(reasons, gin.H{"capability_id": reason.CapabilityID, "gate_id": reason.GateID, "code": code, "detail": nullable(reason.Reason)})
 	}
-	graph := s.GraphRuntimeCapability(c.Request.Context())
 	ai := defaultAICapability()
 	if h.ai != nil {
 		ai = h.ai(c.Request.Context())
 	}
-	c.JSON(http.StatusOK, gin.H{"release": gin.H{"enabled": capability.Enabled, "disabled_reasons": reasons}, "graph": gin.H{"available": graph.Available, "compatible": graph.Compatible, "required_capabilities": graph.RequiredCapabilities, "degradations": graph.Degradations, "disabled_reasons": graph.Reasons, "release_disabled_reasons": graph.Reasons, "observed_at": graph.ObservedAt}, "ai": aiCapabilityJSON(ai)})
+	backup := BackupRuntimeCapability{RootHealth: "unknown", RestoreState: "idle", DisabledReasons: []string{"BACKUP_UNAVAILABLE"}, SafeActions: []string{"retry", "settings"}}
+	if h.backup != nil {
+		backup = h.backup(c.Request.Context())
+	}
+	c.JSON(http.StatusOK, gin.H{"release": gin.H{"enabled": releaseCapability.Enabled, "disabled_reasons": reasons}, "graph": gin.H{"available": graph.Available, "compatible": graph.Compatible, "required_capabilities": graph.RequiredCapabilities, "degradations": graph.Degradations, "disabled_reasons": graph.Reasons, "release_disabled_reasons": graph.Reasons, "observed_at": graph.ObservedAt}, "ai": aiCapabilityJSON(ai), "backup": gin.H{"available": backup.Available, "root_health": backup.RootHealth, "restore_state": backup.RestoreState, "recovery_required": backup.RecoveryRequired, "disabled_reasons": backup.DisabledReasons, "safe_actions": backup.SafeActions}})
 }
 
 func defaultAICapability() aiprovider.Capability {

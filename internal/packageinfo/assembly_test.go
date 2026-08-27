@@ -173,7 +173,7 @@ func embeddedInventoryFixture() map[string]string {
 		"web/dist/index.html": digest, "web/dist/assets/index.js": digest, "web/dist/assets/index.css": digest,
 		"compiled/templates/dsl/dsl-v1.ebnf": digest, "compiled/templates/risk/risk-threshold-starter-v1.json": digest,
 	}
-	for index := 1; index <= 20; index++ {
+	for index := 1; index <= 22; index++ {
 		result[fmt.Sprintf("migrations/%04d_fixture.sql", index)] = digest
 	}
 	for _, name := range []string{

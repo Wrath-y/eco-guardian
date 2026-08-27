@@ -434,14 +434,21 @@ type runtimeCapabilityConvergence struct {
 	settings    *runtimeconfig.Store
 	credentials aiprovider.CredentialResolver
 	projects    *project.Manager
+	backups     *backupRuntime
 }
 
 func (convergence runtimeCapabilityConvergence) ConvergeCapabilities(ctx context.Context) (appruntime.CapabilityConvergence, error) {
 	now := time.Now().UTC()
 	observations := map[string]capability.Observation{}
-	for _, id := range []string{capability.ObservationLocalEditing, capability.ObservationValidation, capability.ObservationRevision, capability.ObservationSimulation, capability.ObservationBackup, capability.ObservationImpact} {
+	for _, id := range []string{capability.ObservationLocalEditing, capability.ObservationValidation, capability.ObservationRevision, capability.ObservationSimulation, capability.ObservationImpact} {
 		observations[id] = capability.ModuleObservation(id, capability.Available, 1, now)
 	}
+	backup := convergence.backups.Capability(ctx)
+	backupState := capability.Unavailable
+	if backup.Available {
+		backupState = capability.Available
+	}
+	observations[capability.ObservationBackup] = capability.ModuleObservation(capability.ObservationBackup, backupState, 1, now, backup.DisabledReasons...)
 	_, health := convergence.graph.Snapshot()
 	if health.Generation == 0 {
 		observations[capability.ObservationGraphSync] = capability.ModuleObservation(capability.ObservationGraphSync, capability.Unavailable, 1, now, "GRAPH_UNAVAILABLE")

@@ -19,6 +19,8 @@ const (
 	ActionJobCancel           = "job.cancel"
 	ActionProviderSettings    = "provider.settings"
 	ActionCredentialConfigure = "credential.configure"
+	ActionBackupRetry         = "backup.retry"
+	ActionBackupSettings      = "backup.settings"
 )
 
 type ActionDescriptor struct {
@@ -37,6 +39,8 @@ var closedActions = map[string]ActionDescriptor{
 	ActionJobCancel:           {Action: Action{ID: ActionJobCancel, Method: "POST", URI: "/api/v1/jobs/{job_id}/cancel", IdempotencyRequired: true}, Preconditions: []string{"job_nonterminal"}},
 	ActionProviderSettings:    {Action: Action{ID: ActionProviderSettings, Method: "PATCH", URI: "/api/v1/settings", IdempotencyRequired: false}, Preconditions: []string{"settings_writable"}},
 	ActionCredentialConfigure: {Action: Action{ID: ActionCredentialConfigure, Method: "PUT", URI: "/api/v1/settings/credentials/{provider}", IdempotencyRequired: false}, Preconditions: []string{"provider_supported"}},
+	ActionBackupRetry:         {Action: Action{ID: ActionBackupRetry, Method: "POST", URI: "/api/v1/runtime/reprobe", IdempotencyRequired: true}, Preconditions: []string{"backup_retryable"}},
+	ActionBackupSettings:      {Action: Action{ID: ActionBackupSettings, Method: "PATCH", URI: "/api/v1/settings", IdempotencyRequired: false}, Preconditions: []string{"settings_writable"}},
 }
 
 func DefaultActionRegistry() *ActionRegistry {

@@ -26,6 +26,24 @@ func TestStoreLoadsDefaultsAndMigratesV0(t *testing.T) {
 	}
 }
 
+func TestStoreMigratesV1WithoutLosingExistingMachineSettings(t *testing.T) {
+	store := NewStore(filepath.Join(t.TempDir(), "settings.json"))
+	v1 := `{"schema_version":1,"browser":{"auto_open":false},"recent_projects":[{"path":"C:\\\\fixture","label":"Fixture"}],"package":{"mode":"lightweight"},"graph":{"mode":"disabled","endpoint":"","executable":"","health_timeout_seconds":7,"startup_timeout_seconds":30,"restart_limit":2},"ai":{"enabled":false,"endpoint":"","model":"","request_timeout_seconds":90,"allow_cloud":false},"logs":{"max_bytes":1048576,"max_files":3},"backup":{"retention_days":42}}`
+	if err := os.WriteFile(store.Path(), []byte(v1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings, migrated, err := store.Load()
+	if err != nil || !migrated {
+		t.Fatalf("migrated=%v err=%v settings=%#v", migrated, err, settings)
+	}
+	if settings.SchemaVersion != SchemaVersion || settings.Browser.AutoOpen || settings.Package.Mode != PackageLightweight || settings.Backup.RetentionDays != 42 {
+		t.Fatalf("v1 values were not preserved: %#v", settings)
+	}
+	if settings.Backup.RootMode != BackupRootDefault || settings.Backup.DailyRetentionCount != 10 || settings.Backup.ReleaseMigrationRetention != 5 {
+		t.Fatalf("v2 backup defaults missing: %#v", settings.Backup)
+	}
+}
+
 func TestStoreRejectsCorruptAndUnknownVersion(t *testing.T) {
 	store := NewStore(filepath.Join(t.TempDir(), "settings.json"))
 	for _, contents := range [][]byte{[]byte(`{`), []byte(`{"schema_version":9}`)} {

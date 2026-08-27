@@ -114,7 +114,7 @@ func inspectEmbeddedInventory(digests map[string]string) error {
 		"api/openapi.yaml", "api/package-manifest.schema.json", "web/dist/index.html",
 		"compiled/templates/dsl/dsl-v1.ebnf", "compiled/templates/risk/risk-threshold-starter-v1.json",
 	}
-	for index := 1; index <= 20; index++ {
+	for index := 1; index <= 22; index++ {
 		required = append(required, fmt.Sprintf("migrations/%04d_", index))
 	}
 	for _, name := range []string{
@@ -156,9 +156,13 @@ func inspectEmbeddedInventory(digests map[string]string) error {
 
 func forbiddenArtifactName(name string, component ComponentKind) bool {
 	lower := strings.ToLower(filepath.ToSlash(name))
+	base := filepath.Base(lower)
+	if base == "project.db" || strings.HasSuffix(base, ".ecobackup") || strings.HasPrefix(base, ".eco-restore-") || base == "recovery-bypass.json" {
+		return true
+	}
 	for _, segment := range strings.Split(lower, "/") {
 		switch segment {
-		case ".env", "credential", "credentials", "credential.json", "credentials.json", "secret", "secrets", "secret.json", "secrets.json", "api-key", "api_key", "llm", "chat-model", "large-language-model", "generative-model":
+		case ".env", "credential", "credentials", "credential.json", "credentials.json", "secret", "secrets", "secret.json", "secrets.json", "api-key", "api_key", "llm", "chat-model", "large-language-model", "generative-model", "backups", "logs", "testdata", "tools":
 			return true
 		}
 	}

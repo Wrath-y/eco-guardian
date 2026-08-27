@@ -8,7 +8,9 @@ import (
 	"io"
 )
 
-const SchemaVersion = 1
+// SchemaVersion 2 adds the native-selected backup root and count-based
+// retention policy. Version 1 remains readable through Store.Load.
+const SchemaVersion = 2
 
 type PackageMode string
 
@@ -79,8 +81,22 @@ type LogPolicy struct {
 	MaxFiles int   `json:"max_files"`
 }
 
+type BackupRootMode string
+
+const (
+	BackupRootDefault BackupRootMode = "default"
+	BackupRootCustom  BackupRootMode = "custom"
+)
+
 type BackupDefaults struct {
-	RetentionDays int `json:"retention_days"`
+	// RetentionDays is retained for the runtime-log backup policy introduced by
+	// the settings owner. Project database artifact retention is count based and
+	// uses the two fields below.
+	RetentionDays             int            `json:"retention_days"`
+	RootMode                  BackupRootMode `json:"root_mode"`
+	RootPath                  string         `json:"root_path,omitempty"`
+	DailyRetentionCount       int            `json:"daily_retention_count"`
+	ReleaseMigrationRetention int            `json:"release_migration_retention_count"`
 }
 
 func Default() Settings {
@@ -94,9 +110,14 @@ func Default() Settings {
 			StartupTimeoutSeconds: 20,
 			RestartLimit:          3,
 		},
-		AI:     AIReference{RequestTimeoutSeconds: 120},
-		Logs:   LogPolicy{MaxBytes: 5 << 20, MaxFiles: 5},
-		Backup: BackupDefaults{RetentionDays: 30},
+		AI:   AIReference{RequestTimeoutSeconds: 120},
+		Logs: LogPolicy{MaxBytes: 5 << 20, MaxFiles: 5},
+		Backup: BackupDefaults{
+			RetentionDays:             30,
+			RootMode:                  BackupRootDefault,
+			DailyRetentionCount:       10,
+			ReleaseMigrationRetention: 5,
+		},
 	}
 }
 

@@ -93,7 +93,7 @@ func TestVersionHandlerDelegatesPolicyCapabilityAndReleaseCommands(t *testing.T)
 	}
 	capabilityResponse := httptest.NewRecorder()
 	engine.ServeHTTP(capabilityResponse, httptest.NewRequest(http.MethodGet, "/api/v1/runtime/capabilities", nil))
-	if capabilityResponse.Code != http.StatusOK || !strings.Contains(capabilityResponse.Body.String(), "MISSING") || !strings.Contains(capabilityResponse.Body.String(), "GRAPH_PROVIDER_NOT_CONFIGURED") || !strings.Contains(capabilityResponse.Body.String(), "AI_PROVIDER_UNCONFIGURED") || !strings.Contains(capabilityResponse.Body.String(), "max_format_repairs") {
+	if capabilityResponse.Code != http.StatusOK || !strings.Contains(capabilityResponse.Body.String(), "MISSING") || !strings.Contains(capabilityResponse.Body.String(), "GRAPH_PROVIDER_NOT_CONFIGURED") || !strings.Contains(capabilityResponse.Body.String(), "AI_PROVIDER_UNCONFIGURED") || !strings.Contains(capabilityResponse.Body.String(), "max_format_repairs") || !strings.Contains(capabilityResponse.Body.String(), `"backup":{"available":false`) {
 		t.Fatalf("capability response=%d body=%s", capabilityResponse.Code, capabilityResponse.Body.String())
 	}
 
@@ -147,6 +147,50 @@ func TestUnavailableAICapabilityDoesNotChangeReleaseOrGraphCapabilities(t *testi
 	ai := failed["ai"].(map[string]any)
 	if ai["state"] != "unavailable" || !strings.Contains(failedResponse.Body.String(), aiprovider.ReasonProviderUnavailable) {
 		t.Fatalf("AI failure was not isolated: %s", failedResponse.Body.String())
+	}
+}
+
+func TestBackupCapabilityIsServerObservedAndIndependentFromGraphAndAI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &fakeVersionService{capability: versioninggate.ReleaseCapability{Enabled: true}}
+	handler := NewVersionHandler(func() app.VersioningService { return service })
+	handler.RegisterAICapabilityProvider(func(context.Context) aiprovider.Capability {
+		return aiprovider.Capability{State: aiprovider.CapabilityUnavailable, Reasons: []string{aiprovider.ReasonProviderUnavailable}}
+	})
+	handler.RegisterBackupCapabilityProvider(func(context.Context) BackupRuntimeCapability {
+		return BackupRuntimeCapability{Available: true, RootHealth: "healthy", RestoreState: "idle", DisabledReasons: []string{}, SafeActions: []string{}}
+	})
+	engine := gin.New()
+	handler.Register(engine)
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/runtime/capabilities", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	backup := payload["backup"].(map[string]any)
+	graph := payload["graph"].(map[string]any)
+	ai := payload["ai"].(map[string]any)
+	if backup["available"] != true || backup["root_health"] != "healthy" || graph["available"] != false || ai["state"] != "unavailable" {
+		t.Fatalf("capabilities=%v", payload)
+	}
+}
+
+func TestBackupCapabilityRemainsReadableWhileProjectHandleIsInMaintenance(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewVersionHandler(func() app.VersioningService { return nil })
+	handler.RegisterBackupCapabilityProvider(func(context.Context) BackupRuntimeCapability {
+		return BackupRuntimeCapability{RootHealth: "healthy", RestoreState: "maintenance", DisabledReasons: []string{"RESTORE_REPLACEMENT_NON_INTERRUPTIBLE"}, SafeActions: []string{"inspect_recovery"}}
+	})
+	engine := gin.New()
+	handler.Register(engine)
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/runtime/capabilities", nil))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"restore_state":"maintenance"`) || !strings.Contains(response.Body.String(), "RESTORE_REPLACEMENT_NON_INTERRUPTIBLE") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

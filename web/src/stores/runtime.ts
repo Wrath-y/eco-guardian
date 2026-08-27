@@ -4,11 +4,13 @@ import type { components } from '@/api/generated'
 
 export type RuntimeStatus = components['schemas']['RuntimeStatusResource']
 export type RuntimeAction = components['schemas']['RuntimeAction']
+export type RuntimeCapabilities = components['schemas']['RuntimeCapabilities']
 
 type Problem = Partial<components['schemas']['Problem']>
 
 export const useRuntimeStore = defineStore('runtime', () => {
   const status = ref<RuntimeStatus>()
+  const runtimeCapabilities = ref<RuntimeCapabilities>()
   const loading = ref(false)
   const reconnecting = ref(false)
   const error = ref('')
@@ -26,12 +28,16 @@ export const useRuntimeStore = defineStore('runtime', () => {
     if (loading.value) return status.value
     loading.value = true
     try {
-      const response = await fetch('/api/v1/runtime/status', { headers: { Accept: 'application/json' } })
+      const [response, capabilitiesResponse] = await Promise.all([
+        fetch('/api/v1/runtime/status', { headers: { Accept: 'application/json' } }),
+        fetch('/api/v1/runtime/capabilities', { headers: { Accept: 'application/json' } }),
+      ])
       if (!response.ok) {
         const problem = await response.json().catch(() => null) as Problem | null
         throw new Error(problem?.title || '无法读取运行状态')
       }
       status.value = await response.json() as RuntimeStatus
+      if (capabilitiesResponse.ok) runtimeCapabilities.value = await capabilitiesResponse.json() as RuntimeCapabilities
       receivedAt.value = Date.now()
       error.value = ''
       return status.value
@@ -87,5 +93,5 @@ export const useRuntimeStore = defineStore('runtime', () => {
     }
   }
 
-  return { status, loading, reconnecting, error, receivedAt, observationAgeMS, pollingCadenceMS, refresh, startPolling, stopPolling, execute, currentAction }
+  return { status, runtimeCapabilities, loading, reconnecting, error, receivedAt, observationAgeMS, pollingCadenceMS, refresh, startPolling, stopPolling, execute, currentAction }
 })

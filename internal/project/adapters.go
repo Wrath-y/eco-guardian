@@ -57,12 +57,17 @@ type SQLiteFactory struct {
 	RecoveryStages          *RecoveryStages
 	Recover                 func(context.Context, *store.Store) error
 	AfterRevision           func(context.Context, *store.Store, domain.RevisionSummary)
+	MigrationBackup         store.MigrationBackup
+	ConfigureBackup         func(context.Context, *store.Store) error
 }
 type sqliteHandle struct{ store *store.Store }
 
 func (h *sqliteHandle) Close() error        { return h.store.Close() }
 func (h *sqliteHandle) ID() domain.ID       { return h.store.ProjectID() }
 func (h *sqliteHandle) Store() *store.Store { return h.store }
+func (h *sqliteHandle) PrepareRestoreClose(ctx context.Context) error {
+	return h.store.PrepareRestoreClose(ctx)
+}
 func (f SQLiteFactory) Create(ctx context.Context, dir string) (ProjectHandle, error) {
 	s, _, err := store.Create(ctx, dir, f.Registry)
 	if err != nil {
@@ -72,16 +77,28 @@ func (f SQLiteFactory) Create(ctx context.Context, dir string) (ProjectHandle, e
 		_ = s.Close()
 		return nil, err
 	}
+	if f.ConfigureBackup != nil {
+		if err = f.ConfigureBackup(ctx, s); err != nil {
+			_ = s.Close()
+			return nil, err
+		}
+	}
 	return &sqliteHandle{s}, nil
 }
 func (f SQLiteFactory) Open(ctx context.Context, dir string) (ProjectHandle, error) {
-	s, _, err := store.Open(dir, f.Registry)
+	s, _, err := store.OpenWithMigrationBackup(ctx, dir, f.Registry, f.MigrationBackup)
 	if err != nil {
 		return nil, err
 	}
 	if err = f.configureGraphVersion(s); err != nil {
 		_ = s.Close()
 		return nil, err
+	}
+	if f.ConfigureBackup != nil {
+		if err = f.ConfigureBackup(ctx, s); err != nil {
+			_ = s.Close()
+			return nil, err
+		}
 	}
 	if f.RecoveryStages != nil {
 		if err = f.RecoveryStages.Recover(ctx, s); err != nil {

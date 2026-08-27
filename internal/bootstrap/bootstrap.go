@@ -23,11 +23,18 @@ import (
 	runtimeconfig "github.com/zouyi/eco-guardian/internal/app/runtime/config"
 	runtimediagnostics "github.com/zouyi/eco-guardian/internal/app/runtime/diagnostics"
 	runtimerecovery "github.com/zouyi/eco-guardian/internal/app/runtime/recovery"
+	backupfs "github.com/zouyi/eco-guardian/internal/backup/filesystem"
+	backupintegration "github.com/zouyi/eco-guardian/internal/backup/integration"
+	"github.com/zouyi/eco-guardian/internal/backup/restorefs"
+	"github.com/zouyi/eco-guardian/internal/backup/restorejournal"
+	"github.com/zouyi/eco-guardian/internal/backup/rootconfig"
 	"github.com/zouyi/eco-guardian/internal/buildinfo"
 	"github.com/zouyi/eco-guardian/internal/domain"
+	"github.com/zouyi/eco-guardian/internal/graph/projector"
 	"github.com/zouyi/eco-guardian/internal/httpapi"
 	"github.com/zouyi/eco-guardian/internal/packageinfo"
 	"github.com/zouyi/eco-guardian/internal/platform/appdir"
+	"github.com/zouyi/eco-guardian/internal/platform/backuproot"
 	platformbrowser "github.com/zouyi/eco-guardian/internal/platform/browser"
 	"github.com/zouyi/eco-guardian/internal/platform/credential"
 	"github.com/zouyi/eco-guardian/internal/project"
@@ -99,6 +106,7 @@ type Process struct {
 // Build resolves machine adapters and registers all currently applied core
 // HTTP/application seams. Optional module workers are supplied through ports.
 func Build(options BuildOptions) (*Process, error) {
+	pathsProvided := options.Paths.Root != ""
 	paths := options.Paths
 	if paths.Root == "" {
 		var err error
@@ -130,18 +138,46 @@ func Build(options BuildOptions) (*Process, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load domain registry: %w", err)
 	}
-	projects := project.NewManager(
-		project.NewTokenStore(5*time.Minute, nil),
-		project.FileLocker{},
-		project.SQLiteFactory{Registry: registry},
-		project.NoJobs{},
-		project.NewFileRecentProjects(filepath.Dir(paths.Root)),
-	)
-	status := appruntime.NewStatusStore(nil)
 	identity, err := buildinfo.Current()
 	if err != nil {
 		return nil, err
 	}
+	selectionTokens := project.NewTokenStore(5*time.Minute, nil)
+	defaultBackupRoot := backuproot.DefaultRoot
+	if pathsProvided {
+		// Explicit path injection is used by isolated package/process tests and
+		// embedders; keep all resulting files within that supplied root.
+		defaultBackupRoot = func() (string, error) { return filepath.Join(paths.Root, "EcoGuardian Backups"), nil }
+	}
+	backupRoots := &rootconfig.Manager{Settings: settingsStore, Tokens: selectionTokens, DefaultRoot: defaultBackupRoot, Probe: backupfs.Probe{}}
+	retentionPolicy := func() (int, int) {
+		configured, _, loadErr := settingsStore.Load()
+		if loadErr != nil {
+			return 10, 5
+		}
+		return configured.Backup.DailyRetentionCount, configured.Backup.ReleaseMigrationRetention
+	}
+	backupServices := &backupRuntime{roots: backupRoots, appVersion: identity.Version, retention: retentionPolicy, selectionTokens: selectionTokens}
+	journalStore, err := restorejournal.New(filepath.Join(paths.Runtime, "restore"))
+	if err != nil {
+		return nil, err
+	}
+	backupServices.journal = journalStore
+	migrationBackup := backupintegration.MigrationBackup{Roots: backupRoots, AppVersion: identity.Version, Space: backupfs.Probe{}}
+	recentProjects := project.NewFileRecentProjects(filepath.Dir(paths.Root))
+	projects := project.NewManager(
+		selectionTokens,
+		project.FileLocker{},
+		project.SQLiteFactory{Registry: registry, GraphVersionContributor: projector.VersionContributor{Descriptor: projector.Descriptor{SchemaVersion: projector.ProjectionSchemaV1, Version: projector.ProjectorV1, Relations: projector.V1Relations(), Formatter: projector.V1Formatter{}}}, MigrationBackup: migrationBackup, ConfigureBackup: backupServices.Configure},
+		backupServices,
+		recentProjects,
+	)
+	backupServices.manager = projects
+	backupServices.ConfigureDetached(
+		backupintegration.ManagedInventory{Roots: backupRoots, MaxSchema: store.DBSchemaVersion()},
+		backupintegration.NewRecentProjectRegistry(recentProjects),
+	)
+	status := appruntime.NewStatusStore(nil)
 	statusAssembler, err := appruntime.NewStatusAssembler(appruntime.StatusResourceInput{
 		Lifecycle: status.Snapshot(), Build: identity, Project: appruntime.ProjectStatus{State: "none"},
 		Capabilities: defaultRuntimeCapabilities(status.Snapshot()), LogLocation: "<local-app-data>/EcoGuardian/logs",
@@ -175,13 +211,26 @@ func Build(options BuildOptions) (*Process, error) {
 		value := platformbrowser.NewDefault()
 		browserPort = value
 	}
-	capabilityConvergence := runtimeCapabilityConvergence{graph: graphDependency, settings: settingsStore, credentials: credentialResolver, projects: projects}
+	capabilityConvergence := runtimeCapabilityConvergence{graph: graphDependency, settings: settingsStore, credentials: credentialResolver, projects: projects, backups: backupServices}
+	restoreRecovery := &backupintegration.RestoreStartupRecovery{
+		Journal: journalStore, Locker: project.FileLocker{}, Registry: registry,
+		MigrationBackup: migrationBackup, Replacement: restorefs.Replacement{Verifier: store.BackupVerifier{}}, Verifier: store.BackupVerifier{}, Recent: recentProjects,
+	}
+	recoveryCoordinator, err := runtimerecovery.NewCoordinator(runtimerecovery.StageDescriptor{
+		Stage: runtimerecovery.StageRestoreCompatibility,
+		Scanner: runtimerecovery.ScannerFunc(func(ctx context.Context) (runtimerecovery.ScanResult, error) {
+			return runtimerecovery.ScanResult{}, restoreRecovery.Recover(ctx)
+		}),
+	})
+	if err != nil {
+		return nil, err
+	}
 	ports := appruntime.LifecyclePorts{
 		Settings:     settings,
 		Package:      packageVerifier,
 		Host:         host,
 		Dependencies: lifecycles,
-		Recovery:     noRecovery{},
+		Recovery:     stagedStartupRecovery{coordinator: recoveryCoordinator},
 		Projects:     recentProjectStartup{manager: projects, workers: workers},
 		Capabilities: capabilityConvergence,
 		Browser:      configuredBrowser{settings: settings, next: browserPort, diagnostics: options.Diagnostics},
@@ -213,7 +262,7 @@ func Build(options BuildOptions) (*Process, error) {
 	}
 	statusObserver := runtimeStatusObserver{assembler: statusAssembler, build: identity, projects: projects, graph: graphDependency}
 	graphDependency.refresh = runtimeCapabilityRefresher{status: status, convergence: capabilityConvergence, publish: statusObserver.Observe}.Refresh
-	registerRoutes(host, projects, registry, settingsStore, credentialResolver, assets, statusAssembler, graphDependency, impactWorker.Submit)
+	registerRoutes(host, projects, registry, settingsStore, credentialResolver, assets, statusAssembler, graphDependency, impactWorker.Submit, backupServices, backupRoots)
 	process := &Process{
 		Coordinator: coordinator, Status: status, Host: host, Projects: projects, Assets: assets,
 		workers: workers, dependencies: dependencies, boundaries: append([]ShutdownBoundary(nil), options.ShutdownBoundaries...), settings: settings, stdout: options.Stdout,
@@ -239,7 +288,17 @@ func Build(options BuildOptions) (*Process, error) {
 	return process, nil
 }
 
-func registerRoutes(host *httpapi.Runtime, projects *project.Manager, registry *domain.Registry, settings *runtimeconfig.Store, credentials provider.CredentialResolver, assets fs.FS, status *appruntime.StatusAssembler, runtimeActions httpapi.RuntimeActionService, impactSubmit func(context.Context, domain.ID) error) {
+type stagedStartupRecovery struct{ coordinator *runtimerecovery.Coordinator }
+
+func (startup stagedStartupRecovery) Recover(ctx context.Context) error {
+	if startup.coordinator == nil {
+		return runtimerecovery.ErrRegistryInvalid
+	}
+	_, err := startup.coordinator.Recover(ctx)
+	return err
+}
+
+func registerRoutes(host *httpapi.Runtime, projects *project.Manager, registry *domain.Registry, settings *runtimeconfig.Store, credentials provider.CredentialResolver, assets fs.FS, status *appruntime.StatusAssembler, runtimeActions httpapi.RuntimeActionService, impactSubmit func(context.Context, domain.ID) error, backups *backupRuntime, backupRoots *rootconfig.Manager) {
 	engine := host.Engine()
 	httpapi.NewProjectHandler(projects, project.NativeDirectorySelector{}).Register(engine)
 	httpapi.NewSchemaHandler(registry).Register(engine)
@@ -248,18 +307,25 @@ func registerRoutes(host *httpapi.Runtime, projects *project.Manager, registry *
 	httpapi.NewSettingsHandler(settings, func(name string) bool {
 		secret, err := credentials.Resolve(context.Background(), name)
 		return err == nil && secret.Present()
-	}).Register(engine)
+	}, httpapi.BackupRootSettings{Selection: backupRoots, Selector: project.NativeDirectorySelector{Title: "Select Eco Guardian backup folder"}, Projects: projects}).Register(engine)
 	httpapi.NewCredentialHandler(credentials).Register(engine)
 
 	graph := httpapi.GraphSyncServiceFromProjectManager(projects, nil)
 	versions := httpapi.NewVersionHandlerWithGraph(httpapi.VersioningServiceFromProjectManagerWithDependencies(projects, app.VersioningDependencies{}), graph)
+	versions.RegisterBackupCapabilityProvider(backups.Capability)
 	impactProvider, _ := runtimeActions.(httpapi.ImpactProvider)
 	impactAnalyses := httpapi.ImpactAnalysisServiceFromProjectManager(projects, httpapi.ImpactServiceDependencies{Provider: impactProvider, Submit: impactSubmit})
 	simulationJobs := httpapi.SimulationJobStoreFromProjectManager(projects)
 	versions.RegisterDurableResolver(httpapi.ImpactJobResolver(impactAnalyses))
 	versions.RegisterDurableResolver(httpapi.SimulationJobResolver(simulationJobs))
 	versions.RegisterDurableResolver(httpapi.AIJobResolver(httpapi.AIJobRuntimeServiceFromProjectManager(projects)))
+	backupProvider := backups.Provider(projects)
+	restoreProvider := backups.RestoreProvider()
+	versions.RegisterDurableResolver(httpapi.BackupJobResolver(backupProvider))
+	versions.RegisterDurableResolver(httpapi.RestoreJobResolver(restoreProvider))
 	versions.Register(engine)
+	httpapi.NewBackupHandler(backupProvider, backups.retention, backups.DailyProvider()).Register(engine)
+	httpapi.NewRestoreHandler(restoreProvider).Register(engine)
 	httpapi.NewRuntimeStatusHandler(status).Register(engine)
 	httpapi.NewRuntimeActionHandler(runtimeActions).Register(engine)
 	httpapi.NewGraphHandler(graph).Register(engine)
@@ -412,6 +478,9 @@ func defaultRuntimeCapabilities(snapshot appruntime.StatusSnapshot, graphs ...*g
 		}
 		if results[index].ID == capability.CapabilityAIDesign && aiUnavailable {
 			results[index].Actions = append(results[index].Actions, actions[capability.ActionProviderSettings], actions[capability.ActionCredentialConfigure])
+		}
+		if results[index].ID == capability.CapabilityBackup {
+			results[index].Actions = append(results[index].Actions, actions[capability.ActionBackupRetry], actions[capability.ActionBackupSettings])
 		}
 		sort.Slice(results[index].Actions, func(left, right int) bool { return results[index].Actions[left].ID < results[index].Actions[right].ID })
 	}
@@ -747,10 +816,6 @@ func classifyPackageVerification(err error) error {
 	return appruntime.StartupDegradations{Reasons: reasons}
 }
 
-type noRecovery struct{}
-
-func (noRecovery) Recover(ctx context.Context) error { return ctx.Err() }
-
 type recentProjectStartup struct {
 	manager *project.Manager
 	workers *workerGroup
@@ -780,7 +845,7 @@ func (s recentProjectStartup) OpenRecentProject(ctx context.Context) error {
 		reason.Code = "RECENT_PROJECT_LOCKED"
 	case errors.Is(err, store.ErrSchemaTooNew):
 		reason.Code = "RECENT_PROJECT_SCHEMA_NEWER"
-	case errors.Is(err, store.ErrMigrationBackupRequired):
+	case errors.Is(err, store.ErrMigrationBackupRequired), errors.Is(err, store.ErrProjectInvalid):
 		reason.Code = "RECENT_PROJECT_RECOVERY_REQUIRED"
 	default:
 		reason.Code = "RECENT_PROJECT_UNAVAILABLE"

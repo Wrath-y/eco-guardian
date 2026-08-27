@@ -18,6 +18,9 @@ const error = ref(''); const issues = ref<FieldIssue[]>([]); const errorSummary 
 const etag = ref(''); const dirty = ref(false); const saving = ref(false); const saved = ref(''); const conflict = ref(false); const switchDialog = ref<HTMLDialogElement | null>(null); const closeResolver = ref<((value: boolean) => void) | null>(null)
 const validationRun = ref<components['schemas']['ValidationRun'] | null>(null); const validationLoading = ref(false); const validationError = ref(''); const validationStale = ref(false)
 const localSaveSummary = ref<components['schemas']['LocalValidationSummary'] | null>(null)
+const dailyFailure = ref<{ jobID: string; state: string } | null>(null)
+const dailyActionPending = ref(false)
+const unprotectedDate = ref('')
 const currentFormHash = ref(''); const runFormHash = ref(''); const currentWorkingInputHash = ref(''); const runVersionIdentity = ref('')
 const fieldId = (path: string) => `field-${path.replace(/[^a-z0-9]+/gi, '-')}`
 const issuesFor = (path: string) => issues.value.filter(issue => issue.path === path)
@@ -76,16 +79,45 @@ async function save(): Promise<boolean> {
   const creating = id.value === 'new'; const url = creating ? `/api/v1/entities/${kind.value}` : `/api/v1/entities/${kind.value}/${id.value}`
   try {
     const r = await fetch(url, { method: creating ? 'POST' : 'PATCH', headers: { 'Content-Type': 'application/json', ...(creating ? {} : { 'If-Match': etag.value }) }, body: JSON.stringify(command(creating)) })
-    if (r.status === 409) { conflict.value = true; return false }
     if (!r.ok) {
-      const problem = await r.json().catch(() => null) as { title?: string; field_path?: string; details?: { issues?: Array<{ Path?: string; Message?: string; path?: string; message?: string }> }
+      const problem = await r.json().catch(() => null) as { code?: string; title?: string; field_path?: string; details?: { failed_backup_job_id?: string; state?: string; issues?: Array<{ Path?: string; Message?: string; path?: string; message?: string }> }
       } | null
+      if (problem?.code === 'DAILY_BACKUP_REQUIRED' && problem.details?.failed_backup_job_id) {
+        dailyFailure.value = { jobID: problem.details.failed_backup_job_id, state: problem.details.state ?? 'awaiting_waiver' }
+        error.value = '每日备份失败，本次输入尚未提交。请重试备份，或明确接受今天无恢复点后继续。'
+        await focusErrors(); return false
+      }
+      if (r.status === 409) { conflict.value = true; return false }
       error.value = problem?.title ?? '保存失败'
       issues.value = (problem?.details?.issues ?? []).map(issue => ({ path: issue.Path ?? issue.path ?? problem?.field_path ?? '', message: issue.Message ?? issue.message ?? '字段无效' }))
       await focusErrors(); return false
     }
-    const data = await r.json() as { entity: Entity; revision: { validation: components['schemas']['LocalValidationSummary'] } }; entity.value = data.entity; localSaveSummary.value = data.revision.validation; dirty.value = false; currentFormHash.value = hashForm(command(false)); currentWorkingInputHash.value = ''; refreshValidationStaleness(); etag.value = r.headers.get('ETag') ?? etag.value; saved.value = '保存成功。已创建新的配置修订。'; return true
+    const data = await r.json() as { entity: Entity; revision: { validation: components['schemas']['LocalValidationSummary'] } }; entity.value = data.entity; localSaveSummary.value = data.revision.validation; dirty.value = false; dailyFailure.value = null; currentFormHash.value = hashForm(command(false)); currentWorkingInputHash.value = ''; refreshValidationStaleness(); etag.value = r.headers.get('ETag') ?? etag.value; saved.value = '保存成功。已创建新的配置修订。'; return true
   } catch { error.value = '保存请求失败，请检查连接后重试。'; await focusErrors(); return false } finally { saving.value = false }
+}
+async function retryDailyBackup() {
+  if (!dailyFailure.value) return
+  dailyActionPending.value = true; error.value = ''
+  try {
+    const response = await fetch('/api/v1/backups/daily-retries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ failed_backup_job_id: dailyFailure.value.jobID }) })
+    if (!response.ok) {
+      const problem = await response.json().catch(() => null) as { title?: string; details?: { failed_backup_job_id?: string; state?: string } } | null
+      if (problem?.details?.failed_backup_job_id) dailyFailure.value = { jobID: problem.details.failed_backup_job_id, state: problem.details.state ?? 'awaiting_waiver' }
+      throw new Error(problem?.title ?? '每日备份重试失败')
+    }
+    await save()
+  } catch (cause) { error.value = cause instanceof Error ? cause.message : '每日备份重试失败'; await focusErrors() } finally { dailyActionPending.value = false }
+}
+async function waiveDailyBackup() {
+  if (!dailyFailure.value) return
+  dailyActionPending.value = true; error.value = ''
+  try {
+    const response = await fetch('/api/v1/backups/daily-waivers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ failed_backup_job_id: dailyFailure.value.jobID, confirmation: 'CONTINUE_WITHOUT_BACKUP_TODAY' }) })
+    if (!response.ok) throw new Error((await response.json().catch(() => null) as { title?: string } | null)?.title ?? '无法记录当日无恢复点确认')
+    const waiver = await response.json() as { local_date: string }
+    unprotectedDate.value = waiver.local_date
+    await save()
+  } catch (cause) { error.value = cause instanceof Error ? cause.message : '无法记录当日无恢复点确认'; await focusErrors() } finally { dailyActionPending.value = false }
 }
 async function runValidation() {
   validationLoading.value = true; validationError.value = ''
@@ -122,6 +154,8 @@ onBeforeRouteLeave(async () => {
   <section v-if="entity"><RouterLink to="/projects">项目</RouterLink><h1>{{ kind }} 编辑器</h1>
     <p v-if="schema" class="schema-note">表单契约：{{ schema.schema_id }}（固定渲染器：{{ Object.keys(rendererMap).join('、') }}）</p>
     <div v-if="issues.length || error" ref="errorSummary" tabindex="-1" role="alert" aria-live="assertive" class="error-summary"><strong>保存未完成</strong><p v-if="error">{{ error }}</p><ul v-if="issues.length"><li v-for="issue in issues" :key="`${issue.path}:${issue.message}`"><a :href="`#${fieldId(issue.path)}`">{{ issue.path }}：{{ issue.message }}</a></li></ul></div>
+    <section v-if="dailyFailure" aria-labelledby="daily-protection-heading" class="daily-protection"><h2 id="daily-protection-heading">今日编辑尚未受备份保护</h2><p>失败备份任务 {{ dailyFailure.jobID }}；本地表单输入仍保留，系统不会自动接受 waiver。</p><button type="button" :disabled="dailyActionPending" @click="retryDailyBackup">重试每日备份并保存</button><button type="button" :disabled="dailyActionPending" @click="waiveDailyBackup">明确继续：今天无恢复点</button></section>
+    <p v-if="unprotectedDate" role="status">{{ unprotectedDate }} 已明确选择无恢复点继续编辑；迁移、恢复和发布前强制备份仍不可绕过。</p>
     <div v-if="conflict" role="alert" aria-live="assertive">服务器版本已更新；本地输入已保留。<button @click="refreshServer">刷新服务器版本</button><button @click="copyInput">复制本地输入</button><button @click="conflict=false">保留输入继续编辑</button></div>
     <aside v-if="entity.extensions && Object.keys(entity.extensions as object).length" role="note">此对象包含当前版本不支持的扩展；它们将只读保留。<pre>{{ JSON.stringify(entity.extensions, null, 2) }}</pre></aside>
     <label for="field-key">Key <input id="field-key" data-field-path="/key" :aria-invalid="Boolean(issuesFor('key').length)" :aria-describedby="issuesFor('key').length ? 'key-error' : undefined" :value="String(entity.key ?? '')" @input="entity.key=($event.target as HTMLInputElement).value; markDirty()"></label><span v-if="issuesFor('key').length" id="key-error">{{ issuesFor('key')[0].message }}</span>
