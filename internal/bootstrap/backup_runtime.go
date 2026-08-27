@@ -24,23 +24,24 @@ import (
 // lane. It contains no durable truth; all commands/results remain in the
 // project Store and filesystem inventory.
 type backupRuntime struct {
-	roots           ports.ManagedRootSelection
-	appVersion      string
-	retention       func() (int, int)
-	manager         *project.Manager
-	journal         ports.RestoreJournalStore
-	selectionTokens project.TokenStore
-	mu              sync.RWMutex
-	services        map[*store.Store]*application.Service
-	restores        map[*store.Store]*application.RestoreService
-	currentRestore  *application.RestoreService
-	detachedRestore *application.RestoreService
-	detachedBackup  *application.Service
-	targets         *backupintegration.ProjectTargets
-	registry        ports.ProjectRegistry
-	inventory       ports.ManagedBackupInventory
-	currentDaily    *application.DailyAdmission
-	activeStore     *store.Store
+	roots            ports.ManagedRootSelection
+	appVersion       string
+	retention        func() (int, int)
+	manager          *project.Manager
+	journal          ports.RestoreJournalStore
+	selectionTokens  project.TokenStore
+	mu               sync.RWMutex
+	services         map[*store.Store]*application.Service
+	restores         map[*store.Store]*application.RestoreService
+	currentRestore   *application.RestoreService
+	detachedRestore  *application.RestoreService
+	detachedBackup   *application.Service
+	targets          *backupintegration.ProjectTargets
+	registry         ports.ProjectRegistry
+	inventory        ports.ManagedBackupInventory
+	currentDaily     *application.DailyAdmission
+	activeStore      *store.Store
+	commandsDisabled bool
 }
 
 func (runtime *backupRuntime) Provider(manager *project.Manager) httpapi.BackupServiceProvider {
@@ -74,6 +75,7 @@ func (runtime *backupRuntime) Configure(ctx context.Context, opened *store.Store
 		return opened.RegisterBusinessWriteAdmission(func(context.Context) error { return application.ErrUnavailable })
 	}
 	service := application.NewService(store.BackupSource{Store: opened, AppVersion: runtime.appVersion}, artifacts, store.BackupVerifier{}, opened, opened, backupfs.Probe{})
+	service.CommandGate = runtime.commandGate
 	if runtime.retention != nil {
 		service.Retention.Daily, service.Retention.ReleaseMigration = runtime.retention()
 	}
@@ -95,6 +97,7 @@ func (runtime *backupRuntime) Configure(ctx context.Context, opened *store.Store
 			runtime.targets = targets
 		}
 		restoreService := application.NewRestoreService(service, targets, runtime.journal, backupintegration.ProjectMaintenance{Manager: runtime.manager, Targets: targets}, restorefs.Replacement{Verifier: store.BackupVerifier{}})
+		restoreService.CommandGate = runtime.commandGate
 		restoreService.Inventory, restoreService.Registry = runtime.inventory, runtime.registry
 		if runtime.restores == nil {
 			runtime.restores = map[*store.Store]*application.RestoreService{}
@@ -161,8 +164,57 @@ func (runtime *backupRuntime) ConfigureDetached(inventory ports.ManagedBackupInv
 		runtime.targets = backupintegration.NewProjectTargets(runtime.manager, runtime.selectionTokens)
 	}
 	service := application.NewRestoreService(nil, runtime.targets, runtime.journal, backupintegration.ProjectMaintenance{Manager: runtime.manager, Targets: runtime.targets}, restorefs.Replacement{Verifier: store.BackupVerifier{}})
+	service.CommandGate = runtime.commandGate
 	service.Inventory, service.Registry, service.Verifier, service.Space = inventory, registry, store.BackupVerifier{}, backupfs.Probe{}
 	runtime.detachedRestore = service
+}
+
+func (runtime *backupRuntime) commandGate() error {
+	runtime.mu.RLock()
+	disabled := runtime.commandsDisabled
+	runtime.mu.RUnlock()
+	if disabled {
+		return application.ErrFeatureDisabled
+	}
+	return nil
+}
+
+// Rollback disables new backup/restore commands only after all durable
+// restore journals and caller-owned backup/restore Jobs are terminal. It
+// intentionally leaves artifacts, audit rows and journals untouched.
+func (runtime *backupRuntime) Rollback(ctx context.Context) error {
+	if runtime == nil {
+		return application.ErrUnavailable
+	}
+	if runtime.journal != nil {
+		journals, err := runtime.journal.List(ctx)
+		if err != nil {
+			return err
+		}
+		for _, journal := range journals {
+			if !journal.Phase.Terminal() {
+				return project.ErrCloseBlocked
+			}
+		}
+	}
+	runtime.mu.RLock()
+	opened := runtime.activeStore
+	runtime.mu.RUnlock()
+	if opened != nil {
+		jobs, err := opened.ListRecoverableJobs(ctx, 1000)
+		if err != nil {
+			return err
+		}
+		for _, job := range jobs {
+			if job.Kind == application.JobKind || job.Kind == application.RestoreJobKind {
+				return project.ErrCloseBlocked
+			}
+		}
+	}
+	runtime.mu.Lock()
+	runtime.commandsDisabled = true
+	runtime.mu.Unlock()
+	return nil
 }
 
 func (runtime *backupRuntime) Current(manager *project.Manager) *application.Service {

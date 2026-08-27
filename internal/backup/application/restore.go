@@ -39,6 +39,7 @@ type RestoreService struct {
 	Mandatory   ports.BackupInvoker
 	Clock       ports.Clock
 	Registry    ports.ProjectRegistry
+	CommandGate func() error
 
 	mu                 sync.Mutex
 	preflights         map[string]backupdomain.RestorePreflight
@@ -75,6 +76,11 @@ func (service *RestoreService) Preflight(ctx context.Context, backupID domain.ID
 func (service *RestoreService) PreflightTarget(ctx context.Context, backupID domain.ID, mode backupdomain.RestoreTargetMode, selectionToken, registryConfirmationToken string) (backupdomain.RestorePreflight, error) {
 	if !service.Valid() || !backupID.Valid() || !mode.Valid() {
 		return backupdomain.RestorePreflight{}, ErrRestoreUnavailable
+	}
+	if service.CommandGate != nil {
+		if err := service.CommandGate(); err != nil {
+			return backupdomain.RestorePreflight{}, err
+		}
 	}
 	if mode == backupdomain.RestoreEmptySelection {
 		return service.preflightEmpty(ctx, backupID, selectionToken, registryConfirmationToken)
@@ -204,6 +210,11 @@ func (service *RestoreService) preflightEmpty(ctx context.Context, backupID doma
 func (service *RestoreService) Submit(ctx context.Context, generation string, backupID domain.ID, mode backupdomain.RestoreTargetMode, confirmation, idempotencyKey string) (sharedjob.Record, bool, error) {
 	if !service.Valid() || idempotencyKey == "" || confirmation != "RESTORE" || !backupID.Valid() || !mode.Valid() {
 		return sharedjob.Record{}, false, ErrRestoreUnavailable
+	}
+	if service.CommandGate != nil {
+		if err := service.CommandGate(); err != nil {
+			return sharedjob.Record{}, false, err
+		}
 	}
 	service.mu.Lock()
 	preflight, found := service.preflights[generation]

@@ -21,6 +21,7 @@ var (
 	ErrUnavailable       = errors.New("backup application is unavailable")
 	ErrCommandMismatch   = errors.New("backup command does not match durable job")
 	ErrPublicationFailed = errors.New("backup artifact publication failed")
+	ErrFeatureDisabled   = errors.New("backup feature is disabled")
 )
 
 const JobKind sharedjob.Kind = "backup"
@@ -39,19 +40,20 @@ type RetentionPolicy struct {
 }
 
 type Service struct {
-	Source    ports.ProjectSnapshotSource
-	Inventory ports.ManagedBackupInventory
-	Artifacts ports.BackupArtifactStore
-	Verifier  ports.SnapshotVerifier
-	Jobs      sharedjob.Store
-	Events    sharedjob.EventStore
-	Clock     ports.Clock
-	IDs       ports.IDGenerator
-	Space     ports.SpaceProbe
-	Commands  ports.BackupCommandStore
-	Audit     ports.BackupAuditStore
-	Publish   ports.BackupPublicationStore
-	Retention RetentionPolicy
+	Source      ports.ProjectSnapshotSource
+	Inventory   ports.ManagedBackupInventory
+	Artifacts   ports.BackupArtifactStore
+	Verifier    ports.SnapshotVerifier
+	Jobs        sharedjob.Store
+	Events      sharedjob.EventStore
+	Clock       ports.Clock
+	IDs         ports.IDGenerator
+	Space       ports.SpaceProbe
+	Commands    ports.BackupCommandStore
+	Audit       ports.BackupAuditStore
+	Publish     ports.BackupPublicationStore
+	Retention   RetentionPolicy
+	CommandGate func() error
 
 	workerMu sync.Mutex
 }
@@ -86,6 +88,11 @@ func (service *Service) ListInventory(ctx context.Context, after string, limit i
 func (service *Service) Submit(ctx context.Context, command backupdomain.Command, idempotencyKey string) (sharedjob.Record, bool, error) {
 	if !service.Valid() || !command.Valid() || idempotencyKey == "" {
 		return sharedjob.Record{}, false, ErrUnavailable
+	}
+	if service.CommandGate != nil {
+		if err := service.CommandGate(); err != nil {
+			return sharedjob.Record{}, false, err
+		}
 	}
 	if service.Commands != nil {
 		return service.Commands.AdmitBackup(ctx, command, idempotencyKey)

@@ -330,6 +330,8 @@ func backupRecordJSON(record backupdomain.InventoryRecord) gin.H {
 
 func backupProblem(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, application.ErrFeatureDisabled):
+		problem(c, http.StatusServiceUnavailable, "BACKUP_FEATURE_DISABLED", "Backup commands are disabled during feature rollback")
 	case errors.Is(err, store.ErrJobIdempotencyConflict), errors.Is(err, backupdomain.ErrIdempotencyConflict):
 		problem(c, http.StatusConflict, "BACKUP_IDEMPOTENCY_CONFLICT", "Idempotency key conflicts with a different backup request")
 	case errors.Is(err, backupfs.ErrArtifactNotFound):

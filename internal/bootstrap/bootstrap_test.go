@@ -29,6 +29,10 @@ import (
 	"github.com/zouyi/eco-guardian/internal/app/runtime/config"
 	runtimediagnostics "github.com/zouyi/eco-guardian/internal/app/runtime/diagnostics"
 	runtimerecovery "github.com/zouyi/eco-guardian/internal/app/runtime/recovery"
+	"github.com/zouyi/eco-guardian/internal/backup/application"
+	backupdomain "github.com/zouyi/eco-guardian/internal/backup/domain"
+	backupfs "github.com/zouyi/eco-guardian/internal/backup/filesystem"
+	"github.com/zouyi/eco-guardian/internal/backup/ports"
 	"github.com/zouyi/eco-guardian/internal/domain"
 	"github.com/zouyi/eco-guardian/internal/httpapi"
 	sharedjob "github.com/zouyi/eco-guardian/internal/job"
@@ -759,5 +763,44 @@ func TestBackupRuntimeCloseGuardBlocksOnlyNonterminalBackupRestoreJobs(t *testin
 	}
 	if err = runtime.Preflight(context.Background()); err != nil {
 		t.Fatalf("terminal backup blocked close: %v", err)
+	}
+}
+
+func TestBackupRuntimeRollbackDisablesNewCommandsAndPreservesPublishedArtifacts(t *testing.T) {
+	ctx := context.Background()
+	registry, err := domain.NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened, projectID, err := store.Create(ctx, t.TempDir(), registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opened.Close()
+	artifacts, err := backupfs.NewStore(filepath.Clean(t.TempDir()), store.DBSchemaVersion())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := application.NewService(store.BackupSource{Store: opened, AppVersion: "test"}, artifacts, store.BackupVerifier{}, opened, opened, backupfs.Probe{})
+	command := backupdomain.Command{CommandVersion: backupdomain.CommandVersion, ProjectID: projectID, Purpose: backupdomain.Manual, ManualReason: "rollback evidence", Source: backupdomain.SourceIdentity{}}
+	job, _, err := service.Submit(ctx, command, "rollback-evidence")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.ExecuteStored(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &backupRuntime{activeStore: opened}
+	if err = runtime.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	service.CommandGate = runtime.commandGate
+	if _, _, err = service.Submit(ctx, command, "rollback-new-command"); !errors.Is(err, application.ErrFeatureDisabled) {
+		t.Fatalf("new command err=%v", err)
+	}
+	page, err := artifacts.List(ctx, ports.InventoryQuery{ProjectID: projectID, Limit: 50})
+	if err != nil || len(page.Items) != 1 || page.Items[0].BackupID != result.BackupID {
+		t.Fatalf("published artifacts=%#v err=%v", page.Items, err)
 	}
 }

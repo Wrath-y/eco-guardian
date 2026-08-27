@@ -169,6 +169,8 @@ func latestRestoreOrdinal(ctx context.Context, service *application.RestoreServi
 
 func restoreProblem(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, application.ErrFeatureDisabled):
+		problem(c, http.StatusServiceUnavailable, "RESTORE_FEATURE_DISABLED", "Restore commands are disabled during feature rollback")
 	case errors.Is(err, application.ErrRestorePreflightStale):
 		problem(c, http.StatusConflict, "RESTORE_PREFLIGHT_STALE", "Restore preflight must be repeated")
 	case errors.Is(err, application.ErrRestoreIncompatible):
