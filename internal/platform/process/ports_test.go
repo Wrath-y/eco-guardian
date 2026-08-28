@@ -35,8 +35,8 @@ func TestCommandValidationRejectsEmptyAndNULValues(t *testing.T) {
 }
 
 func TestUnsupportedAdapterFailsClosed(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unsupported adapter is selected only on non-Windows hosts")
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+		t.Skip("unsupported adapter is selected only on hosts without a native process implementation")
 	}
 	adapter := New()
 	if _, err := adapter.CreateSuspended(context.Background(), Command{}, 1, nil); !errors.Is(err, ErrUnsupportedPlatform) {

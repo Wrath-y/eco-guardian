@@ -133,8 +133,9 @@ type systemTimer struct{ *time.Timer }
 
 func (timer systemTimer) C() <-chan time.Time { return timer.Timer.C }
 
-// New returns the host implementation. Unsupported hosts return an adapter
-// whose operations fail closed with ErrUnsupportedPlatform.
+// New returns the host implementation. Hosts without a native process
+// implementation return an adapter whose operations fail closed with
+// ErrUnsupportedPlatform.
 func New() Adapter { return newHostAdapter() }
 
 func ValidateCommand(command Command) error {

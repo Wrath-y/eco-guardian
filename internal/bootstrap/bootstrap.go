@@ -185,7 +185,7 @@ func Build(options BuildOptions) (*Process, error) {
 	if err != nil {
 		return nil, err
 	}
-	credentialResolver := provider.CredentialResolver{Store: credential.NewWindowsStore(), Environment: provider.OSEnvironment{}}
+	credentialResolver := provider.CredentialResolver{Store: credential.NewDefaultStore(), Environment: provider.OSEnvironment{}}
 
 	packageVerifier := options.PackageVerifier
 	if packageVerifier == nil {

@@ -29,22 +29,33 @@ type UnsupportedPlatformError struct {
 }
 
 func (e UnsupportedPlatformError) Error() string {
-	return fmt.Sprintf("UNSUPPORTED_PLATFORM: Eco Guardian local runtime supports Windows x64, not %s/%s", e.OS, e.Arch)
+	return fmt.Sprintf("UNSUPPORTED_PLATFORM: Eco Guardian local runtime supports Windows x64 and macOS, not %s/%s", e.OS, e.Arch)
 }
 
 // ResolveWindows validates a LOCALAPPDATA base and derives canonical child
 // locations. It is platform-neutral so its path rules can be verified on every
-// development host; ResolveHost supplies the actual Windows environment.
+// development host; ResolveHost supplies the actual host environment.
 func ResolveWindows(localAppData string) (Paths, error) {
-	if strings.TrimSpace(localAppData) == "" {
-		return Paths{}, errors.New("LOCALAPPDATA is required")
+	return resolveApplicationData(localAppData, "LOCALAPPDATA")
+}
+
+// ResolveDarwin validates a macOS user configuration directory and derives
+// the same machine-local child locations as the Windows host adapter. The
+// caller supplies os.UserConfigDir() so this path policy stays testable.
+func ResolveDarwin(userConfigDir string) (Paths, error) {
+	return resolveApplicationData(userConfigDir, "application configuration directory")
+}
+
+func resolveApplicationData(baseDir, label string) (Paths, error) {
+	if strings.TrimSpace(baseDir) == "" {
+		return Paths{}, fmt.Errorf("%s is required", label)
 	}
-	base, err := filepath.Abs(filepath.Clean(localAppData))
+	base, err := filepath.Abs(filepath.Clean(baseDir))
 	if err != nil {
-		return Paths{}, fmt.Errorf("canonicalize LOCALAPPDATA: %w", err)
+		return Paths{}, fmt.Errorf("canonicalize %s: %w", label, err)
 	}
 	if !filepath.IsAbs(base) {
-		return Paths{}, fmt.Errorf("LOCALAPPDATA must be absolute")
+		return Paths{}, fmt.Errorf("%s must be absolute", label)
 	}
 	root := filepath.Join(base, applicationName)
 	return Paths{

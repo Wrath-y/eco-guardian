@@ -41,6 +41,8 @@ type windowsNativeAPI struct{}
 
 func NewWindowsStore() *WindowsStore { return newWindowsStore(windowsNativeAPI{}) }
 
+func NewDefaultStore() *WindowsStore { return NewWindowsStore() }
+
 func (windowsNativeAPI) Put(target string, value []byte) error {
 	targetUTF16, err := windows.UTF16PtrFromString(target)
 	if err != nil {
