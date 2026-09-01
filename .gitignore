@@ -9,6 +9,7 @@ node_modules
 # Local build outputs and single-file development builds.
 dist/
 eco-guardian
+*.log
 
 # Local SQLite project data and its companion files.
 *.db
