@@ -9,6 +9,7 @@ import (
 
 	"github.com/zouyi/eco-guardian/internal/backup/ports"
 	"github.com/zouyi/eco-guardian/internal/domain"
+	"github.com/zouyi/eco-guardian/internal/platform/securefs"
 )
 
 var (
@@ -24,7 +25,16 @@ func (Probe) RequireWritable(ctx context.Context, path string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	canonical, err := secureExistingDirectory(path)
+	clean := filepath.Clean(path)
+	info, err := os.Lstat(clean)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return ErrRootUnwritable
+	}
+	canonical, err := filepath.EvalSymlinks(clean)
+	if err != nil {
+		return ErrRootUnwritable
+	}
+	canonical, err = filepath.Abs(filepath.Clean(canonical))
 	if err != nil || canonical == "" {
 		return ErrRootUnwritable
 	}
@@ -40,13 +50,28 @@ func (Probe) RequireWritable(ctx context.Context, path string) error {
 	if err != nil {
 		return ErrRootUnwritable
 	}
-	if _, err = file.Write([]byte{0}); err == nil {
+	if err = securefs.Restrict(probePath, false); err == nil {
+		_, err = file.Write([]byte{0})
+	}
+	if err == nil {
 		err = file.Sync()
 	}
 	if closeErr := file.Close(); err == nil {
 		err = closeErr
 	}
+	if err == nil {
+		err = securefs.ValidatePrivate(probePath, false)
+	}
+	if err == nil {
+		err = securefs.SyncFile(probePath)
+	}
+	if err == nil {
+		err = securefs.SyncDirectory(canonical)
+	}
 	removeErr := os.Remove(probePath)
+	if err == nil && removeErr == nil {
+		err = securefs.SyncDirectory(canonical)
+	}
 	if err != nil || removeErr != nil {
 		return ErrRootUnwritable
 	}

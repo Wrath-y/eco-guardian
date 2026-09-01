@@ -764,6 +764,17 @@ func TestBackupRuntimeCloseGuardBlocksOnlyNonterminalBackupRestoreJobs(t *testin
 	if err = runtime.Preflight(context.Background()); err != nil {
 		t.Fatalf("terminal backup blocked close: %v", err)
 	}
+	restoreJob, _, err := opened.CreateOrGet(context.Background(), sharedjob.Request{ProjectID: projectID, Kind: application.RestoreJobKind, InputHash: hash, IdempotencyKey: "restore-close-guard", RequestHash: hash})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = runtime.Preflight(context.Background()); !errors.Is(err, project.ErrCloseBlocked) {
+		t.Fatalf("uncoordinated restore did not block close: %v", err)
+	}
+	coordinated := project.WithMaintenanceCoordinator(context.Background(), restoreJob.ID)
+	if err = runtime.Preflight(coordinated); err != nil {
+		t.Fatalf("restore coordinator blocked its own maintenance: %v", err)
+	}
 }
 
 func TestBackupRuntimeRollbackDisablesNewCommandsAndPreservesPublishedArtifacts(t *testing.T) {

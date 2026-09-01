@@ -355,7 +355,7 @@ func (service *RestoreService) Execute(ctx context.Context, jobID domain.ID) (_ 
 	if err = service.requireRestoreSpace(ctx, journal.TargetPath, record.DBBytes); err != nil {
 		return service.failBeforeMaintenance(ctx, &journal, job, ordinal, err)
 	}
-	maintenance, err := service.Maintenance.Acquire(ctx, journal.ProjectID, journal.TargetIdentity)
+	maintenance, err := service.Maintenance.Acquire(ctx, journal.ProjectID, journal.TargetIdentity, job.ID)
 	if err != nil {
 		return service.failBeforeMaintenance(ctx, &journal, job, ordinal, err)
 	}
@@ -453,6 +453,9 @@ func (service *RestoreService) Execute(ctx context.Context, jobID domain.ID) (_ 
 		return service.recoverFailure(ctx, &journal, job, ordinal, maintenance, original, false, err)
 	}
 	if err = reopened.ReconcileRestoreJob(ctx, job, ordinal, journal.Generation); err != nil {
+		return service.recoverFailure(ctx, &journal, job, ordinal, maintenance, original, false, err)
+	}
+	if err = reopened.ReconcileRestoredJobs(ctx, job.ID); err != nil {
 		return service.recoverFailure(ctx, &journal, job, ordinal, maintenance, original, false, err)
 	}
 	if detached {

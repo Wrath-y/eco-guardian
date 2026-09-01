@@ -35,7 +35,7 @@ type cancellationMaintenance struct {
 	lease *cancellationLease
 }
 
-func (maintenance cancellationMaintenance) Acquire(context.Context, domain.ID, string) (ports.MaintenanceLease, error) {
+func (maintenance cancellationMaintenance) Acquire(context.Context, domain.ID, string, domain.ID) (ports.MaintenanceLease, error) {
 	return maintenance.lease, nil
 }
 

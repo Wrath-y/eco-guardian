@@ -39,9 +39,8 @@ func TestJournalStrictCASFlushReplaceAndTerminalCleanup(t *testing.T) {
 	if err != nil || !found || loaded.Generation != 1 || loaded.Phase != backupdomain.RestorePreflighted {
 		t.Fatalf("loaded=%#v found=%v err=%v", loaded, found, err)
 	}
-	info, err := os.Stat(filepath.Join(root, string(journal.Job.ID)+".json"))
-	if err != nil || info.Mode().Perm()&0o077 != 0 {
-		t.Fatalf("mode=%v err=%v", info.Mode(), err)
+	if err := validateRestrictedPath(filepath.Join(root, string(journal.Job.ID)+".json"), false); err != nil {
+		t.Fatalf("journal permissions err=%v", err)
 	}
 	next := journal
 	next.Generation = 2

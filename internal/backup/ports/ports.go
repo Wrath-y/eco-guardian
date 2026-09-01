@@ -89,7 +89,7 @@ type MaintenanceLease interface {
 }
 
 type MaintenanceLeaser interface {
-	Acquire(context.Context, domain.ID, string) (MaintenanceLease, error)
+	Acquire(context.Context, domain.ID, string, domain.ID) (MaintenanceLease, error)
 }
 
 type RestoreTargetState struct {
@@ -249,6 +249,7 @@ type RestoreReconciliationStore interface {
 	sharedjob.Store
 	sharedjob.EventStore
 	ReconcileRestoreJob(context.Context, sharedjob.Record, int64, int64) error
+	ReconcileRestoredJobs(context.Context, domain.ID) error
 	ReconcileRestoreBackup(context.Context, domain.ID, backupdomain.Result) error
 	VerifyRestoreRuntime(context.Context) error
 }

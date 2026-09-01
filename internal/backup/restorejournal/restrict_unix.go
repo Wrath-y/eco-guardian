@@ -2,12 +2,14 @@
 
 package restorejournal
 
-import "os"
+import "github.com/zouyi/eco-guardian/internal/platform/securefs"
 
 func restrictPath(path string, directory bool) error {
-	mode := os.FileMode(0o600)
-	if directory {
-		mode = 0o700
-	}
-	return os.Chmod(path, mode)
+	return securefs.Restrict(path, directory)
 }
+
+func validateRestrictedPath(path string, directory bool) error {
+	return securefs.ValidatePrivate(path, directory)
+}
+
+func syncDirectory(path string) error { return securefs.SyncDirectory(path) }

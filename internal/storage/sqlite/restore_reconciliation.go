@@ -86,6 +86,71 @@ func (s *Store) ReconcileRestoreJob(ctx context.Context, original sharedjob.Reco
 	return tx.Commit()
 }
 
+// ReconcileRestoredJobs terminalizes nonterminal work captured in the selected
+// backup timepoint. Such workers no longer exist after database replacement
+// and must not be mistaken for resumable work or block project maintenance.
+// The coordinating restore Job is excluded because it is completed by the
+// restore service after all reconciliation succeeds.
+func (s *Store) ReconcileRestoredJobs(ctx context.Context, coordinatorJobID domain.ID) error {
+	if !coordinatorJobID.Valid() {
+		return ErrRestoreReconciliationInvalid
+	}
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	type candidate struct {
+		id     domain.ID
+		status sharedjob.Status
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id,status FROM jobs WHERE project_uuid=? AND id<>? AND status IN ('queued','running','interrupted') ORDER BY created_at,id`, s.projectID, coordinatorJobID)
+	if err != nil {
+		return err
+	}
+	candidates := []candidate{}
+	for rows.Next() {
+		var value candidate
+		if err = rows.Scan(&value.id, &value.status); err != nil || !value.id.Valid() || !value.status.Valid() || value.status.Terminal() {
+			_ = rows.Close()
+			return ErrRestoreReconciliationConflict
+		}
+		candidates = append(candidates, value)
+	}
+	if err = rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err = rows.Close(); err != nil {
+		return err
+	}
+	now := s.now().UTC().Format(time.RFC3339Nano)
+	for _, value := range candidates {
+		var ordinal int64
+		var progress int
+		err = tx.QueryRowContext(ctx, `SELECT event_ordinal,progress FROM job_events WHERE job_id=? ORDER BY event_ordinal DESC LIMIT 1`, value.id).Scan(&ordinal, &progress)
+		if errors.Is(err, sql.ErrNoRows) {
+			ordinal, progress, err = 0, 0, nil
+		}
+		if err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO job_events(job_id,event_ordinal,phase,progress,error,created_at) VALUES(?,?,?,?,?,?)`, value.id, ordinal+1, "superseded_by_restore", progress, "JOB_SUPERSEDED_BY_RESTORE", now); err != nil {
+			return err
+		}
+		updated, updateErr := tx.ExecContext(ctx, `UPDATE jobs SET status='failed',updated_at=? WHERE id=? AND project_uuid=? AND status=?`, now, value.id, s.projectID, value.status)
+		if updateErr != nil {
+			return updateErr
+		}
+		if affected, affectedErr := updated.RowsAffected(); affectedErr != nil || affected != 1 {
+			return errors.Join(ErrRestoreReconciliationConflict, affectedErr)
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *Store) VerifyRestoreRuntime(ctx context.Context) error {
 	connection, err := s.db.Conn(ctx)
 	if err != nil {

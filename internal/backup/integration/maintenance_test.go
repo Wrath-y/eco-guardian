@@ -33,6 +33,11 @@ func TestEmptyRestoreTargetConsumesFreshTokenReservesAtomicallyAndDetectsRaces(t
 	tokens := project.NewTokenStore(time.Minute, nil)
 	manager := project.NewManager(tokens, project.FileLocker{}, nil, project.NoJobs{}, nil)
 	targets := NewProjectTargets(manager, tokens)
+	defer func() {
+		if err := targets.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 	directory := filepath.Clean(t.TempDir())
 	token, _, _ := tokens.Issue(directory)
 	state, err := targets.ResolveEmpty(ctx, projectID, token)

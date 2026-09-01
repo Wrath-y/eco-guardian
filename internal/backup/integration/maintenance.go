@@ -29,8 +29,8 @@ type ProjectMaintenance struct {
 
 var _ ports.MaintenanceLeaser = ProjectMaintenance{}
 
-func (adapter ProjectMaintenance) Acquire(ctx context.Context, projectID domain.ID, targetIdentity string) (ports.MaintenanceLease, error) {
-	if adapter.Manager == nil || targetIdentity == "" {
+func (adapter ProjectMaintenance) Acquire(ctx context.Context, projectID domain.ID, targetIdentity string, coordinatorJobID domain.ID) (ports.MaintenanceLease, error) {
+	if adapter.Manager == nil || targetIdentity == "" || !coordinatorJobID.Valid() {
 		return nil, project.ErrMaintenance
 	}
 	if adapter.Targets != nil {
@@ -48,7 +48,7 @@ func (adapter ProjectMaintenance) Acquire(ctx context.Context, projectID domain.
 	if err != nil || state.Identity != targetIdentity {
 		return nil, project.ErrMaintenance
 	}
-	session, err := adapter.Manager.AcquireMaintenance(ctx, projectID)
+	session, err := adapter.Manager.AcquireMaintenance(project.WithMaintenanceCoordinator(ctx, coordinatorJobID), projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -127,6 +127,28 @@ type emptyTargetReservation struct {
 
 func NewProjectTargets(manager *project.Manager, tokens project.TokenStore) *ProjectTargets {
 	return &ProjectTargets{Manager: manager, Tokens: tokens, empty: map[string]emptyTargetReservation{}}
+}
+
+// Close releases empty-directory reservations that were preflighted but never
+// transferred into a restore maintenance session.
+func (targets *ProjectTargets) Close() error {
+	if targets == nil {
+		return nil
+	}
+	targets.mu.Lock()
+	reservations := make([]emptyTargetReservation, 0, len(targets.empty))
+	for identity, reservation := range targets.empty {
+		reservations = append(reservations, reservation)
+		delete(targets.empty, identity)
+	}
+	targets.mu.Unlock()
+	var errs []error
+	for _, reservation := range reservations {
+		if reservation.lock != nil {
+			errs = append(errs, reservation.lock.Release())
+		}
+	}
+	return errors.Join(errs...)
 }
 
 var _ ports.RestoreTargetResolver = (*ProjectTargets)(nil)

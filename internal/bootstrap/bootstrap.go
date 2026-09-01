@@ -265,7 +265,7 @@ func Build(options BuildOptions) (*Process, error) {
 	registerRoutes(host, projects, registry, settingsStore, credentialResolver, assets, statusAssembler, graphDependency, impactWorker.Submit, backupServices, backupRoots)
 	process := &Process{
 		Coordinator: coordinator, Status: status, Host: host, Projects: projects, Assets: assets,
-		workers: workers, dependencies: dependencies, boundaries: append([]ShutdownBoundary(nil), options.ShutdownBoundaries...), settings: settings, stdout: options.Stdout,
+		workers: workers, dependencies: dependencies, boundaries: append([]ShutdownBoundary{backupServices}, options.ShutdownBoundaries...), settings: settings, stdout: options.Stdout,
 		logger:        logger,
 		startupWindow: defaultStartupTimeout, shutdownWindow: defaultShutdownTimeout,
 	}

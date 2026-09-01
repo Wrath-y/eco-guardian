@@ -167,10 +167,10 @@ func TestActiveRestoreReplacesDatabaseRehydratesOriginalJobAndReopensProject(t *
 	if restoredReport, reportErr := reopened.GetValidationReport(ctx, string(validationReport.Run.ID)); reportErr != nil || restoredReport.Run.ID != validationReport.Run.ID || restoredReport.Run.ResultHash != validationReport.Run.ResultHash {
 		t.Fatalf("restored report=%#v err=%v", restoredReport, reportErr)
 	}
-	if restoredAuditJob, auditErr := reopened.GetJob(ctx, auditJob.ID); auditErr != nil || restoredAuditJob.RequestHash != auditJob.RequestHash {
+	if restoredAuditJob, auditErr := reopened.GetJob(ctx, auditJob.ID); auditErr != nil || restoredAuditJob.RequestHash != auditJob.RequestHash || restoredAuditJob.Status != sharedjob.Failed {
 		t.Fatalf("restored audit job=%#v err=%v", restoredAuditJob, auditErr)
 	}
-	if restoredAuditEvents, auditErr := reopened.ListEvents(ctx, auditJob.ID, 0); auditErr != nil || len(restoredAuditEvents) != 1 || restoredAuditEvents[0].Phase != "recorded" {
+	if restoredAuditEvents, auditErr := reopened.ListEvents(ctx, auditJob.ID, 0); auditErr != nil || len(restoredAuditEvents) != 2 || restoredAuditEvents[0].Phase != "recorded" || restoredAuditEvents[1].Phase != "superseded_by_restore" || restoredAuditEvents[1].SafeError != "JOB_SUPERSEDED_BY_RESTORE" {
 		t.Fatalf("restored audit events=%#v err=%v", restoredAuditEvents, auditErr)
 	}
 	graphState, found, err := reopened.GetGraphSyncState(ctx, checkpoint.ID)
@@ -193,6 +193,15 @@ func TestActiveRestoreReplacesDatabaseRehydratesOriginalJobAndReopensProject(t *
 	lastEvent := events[len(events)-1]
 	if lastEvent.Phase != "succeeded" || lastEvent.Result == nil || lastEvent.Result.ID != restoreJob.ID || lastEvent.Result.URL != "/api/v1/restores/"+string(restoreJob.ID) {
 		t.Fatalf("terminal restore event=%#v", lastEvent)
+	}
+	if recoverable, recoverErr := reopened.ListRecoverableJobs(ctx, 1000); recoverErr != nil {
+		t.Fatalf("recoverable jobs after restore err=%v", recoverErr)
+	} else {
+		for _, candidate := range recoverable {
+			if candidate.Kind == application.JobKind || candidate.Kind == application.RestoreJobKind {
+				t.Fatalf("stale backup/restore job after restore=%#v", candidate)
+			}
+		}
 	}
 	database, err := sql.Open("sqlite", filepath.Join(projectDirectory, "project.db"))
 	if err != nil {

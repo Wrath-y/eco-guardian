@@ -230,6 +230,9 @@ func (recovery *RestoreStartupRecovery) completeInstalled(ctx context.Context, j
 	if err = opened.ReconcileRestoreJob(ctx, journal.Job, journal.LastEventOrdinal, journal.Generation); err != nil {
 		return err
 	}
+	if err = opened.ReconcileRestoredJobs(ctx, journal.Job.ID); err != nil {
+		return err
+	}
 	if journal.TargetMode == backupdomain.RestoreEmptySelection {
 		if !journal.RestorePreNotApplicable || journal.RestorePreResult != nil {
 			return application.ErrRestoreRecoveryRequired

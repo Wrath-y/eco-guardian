@@ -56,7 +56,7 @@ func (targets *restoreHTTPTargets) Revalidate(_ context.Context, expected ports.
 
 type restoreHTTPMaintenance struct{}
 
-func (restoreHTTPMaintenance) Acquire(context.Context, domain.ID, string) (ports.MaintenanceLease, error) {
+func (restoreHTTPMaintenance) Acquire(context.Context, domain.ID, string, domain.ID) (ports.MaintenanceLease, error) {
 	return nil, errors.New("maintenance intentionally unavailable in HTTP admission test")
 }
 

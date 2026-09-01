@@ -50,6 +50,24 @@ type ProjectFactory interface {
 	Open(context.Context, string) (ProjectHandle, error)
 }
 type CloseGuard interface{ Preflight(context.Context) error }
+
+type maintenanceCoordinatorKey struct{}
+
+// WithMaintenanceCoordinator authorizes a close guard to ignore exactly the
+// restore job that is coordinating the requested maintenance transition.
+// Other active backup and restore jobs must continue to block maintenance.
+func WithMaintenanceCoordinator(ctx context.Context, jobID domain.ID) context.Context {
+	if !jobID.Valid() {
+		return ctx
+	}
+	return context.WithValue(ctx, maintenanceCoordinatorKey{}, jobID)
+}
+
+func MaintenanceCoordinator(ctx context.Context) (domain.ID, bool) {
+	jobID, ok := ctx.Value(maintenanceCoordinatorKey{}).(domain.ID)
+	return jobID, ok && jobID.Valid()
+}
+
 type RecentProjects interface {
 	Record(ProjectInfo) error
 	List() ([]ProjectInfo, error)

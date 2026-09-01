@@ -44,6 +44,19 @@ type backupRuntime struct {
 	commandsDisabled bool
 }
 
+func (runtime *backupRuntime) PrepareShutdown(context.Context) error {
+	if runtime == nil {
+		return nil
+	}
+	runtime.mu.RLock()
+	targets := runtime.targets
+	runtime.mu.RUnlock()
+	if targets == nil {
+		return nil
+	}
+	return targets.Close()
+}
+
 func (runtime *backupRuntime) Provider(manager *project.Manager) httpapi.BackupServiceProvider {
 	return func() *application.Service { return runtime.Current(manager) }
 }
@@ -126,8 +139,12 @@ func (runtime *backupRuntime) Preflight(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	coordinator, coordinated := project.MaintenanceCoordinator(ctx)
 	for _, job := range jobs {
 		if job.Kind == application.JobKind || job.Kind == application.RestoreJobKind {
+			if coordinated && job.Kind == application.RestoreJobKind && job.ID == coordinator {
+				continue
+			}
 			return project.ErrCloseBlocked
 		}
 	}

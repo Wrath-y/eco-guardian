@@ -14,6 +14,7 @@ import (
 
 	"github.com/zouyi/eco-guardian/internal/backup/ports"
 	"github.com/zouyi/eco-guardian/internal/domain"
+	"github.com/zouyi/eco-guardian/internal/platform/securefs"
 	modernsqlite "modernc.org/sqlite"
 )
 
@@ -130,7 +131,7 @@ func (source BackupSource) OnlineBackup(ctx context.Context, destination string,
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrOnlineBackupFailed, err)
 	}
-	if err = os.Chmod(destination, 0o600); err != nil {
+	if err = securefs.Restrict(destination, false); err != nil {
 		return fmt.Errorf("%w: %v", ErrOnlineBackupFailed, err)
 	}
 	return nil

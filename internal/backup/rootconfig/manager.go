@@ -13,6 +13,7 @@ import (
 	runtimeconfig "github.com/zouyi/eco-guardian/internal/app/runtime/config"
 	"github.com/zouyi/eco-guardian/internal/backup/ports"
 	"github.com/zouyi/eco-guardian/internal/domain"
+	"github.com/zouyi/eco-guardian/internal/platform/securefs"
 	"github.com/zouyi/eco-guardian/internal/project"
 )
 
@@ -87,7 +88,7 @@ func (manager *Manager) resolveBase(ctx context.Context) (string, error) {
 			return "", ErrSelectionInvalid
 		}
 	}
-	canonical, err := canonicalDirectory(base, true)
+	canonical, err := privateCanonicalDirectory(base, true)
 	if err != nil {
 		return "", ErrSelectionInvalid
 	}
@@ -110,7 +111,7 @@ func (manager *Manager) ApplyNativeSelection(ctx context.Context, token, activeP
 	if err != nil {
 		return ErrSelectionInvalid
 	}
-	canonical, err := canonicalDirectory(directory, false)
+	canonical, err := privateCanonicalDirectory(directory, false)
 	if err != nil {
 		return ErrSelectionInvalid
 	}
@@ -145,7 +146,7 @@ func (manager *Manager) ResetDefault(ctx context.Context) error {
 	if err != nil {
 		return ErrSelectionInvalid
 	}
-	canonical, err := canonicalDirectory(root, true)
+	canonical, err := privateCanonicalDirectory(root, true)
 	if err != nil {
 		return ErrSelectionInvalid
 	}
@@ -182,6 +183,20 @@ func canonicalDirectory(path string, create bool) (string, error) {
 		return "", err
 	}
 	return filepath.Abs(filepath.Clean(resolved))
+}
+
+func privateCanonicalDirectory(path string, create bool) (string, error) {
+	canonical, err := canonicalDirectory(path, create)
+	if err != nil {
+		return "", err
+	}
+	if err = securefs.Restrict(canonical, true); err != nil {
+		return "", ErrSelectionInvalid
+	}
+	if err = securefs.ValidatePrivate(canonical, true); err != nil {
+		return "", ErrSelectionInvalid
+	}
+	return canonical, nil
 }
 
 func pathsOverlap(left, right string) bool {

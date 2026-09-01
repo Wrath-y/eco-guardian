@@ -13,6 +13,7 @@ import (
 
 	"github.com/zouyi/eco-guardian/internal/backup/ports"
 	"github.com/zouyi/eco-guardian/internal/domain"
+	"github.com/zouyi/eco-guardian/internal/platform/securefs"
 )
 
 func TestOnlineBackupProducesIndependentVerifiedSnapshotWithMonotonicProgress(t *testing.T) {
@@ -43,9 +44,8 @@ func TestOnlineBackupProducesIndependentVerifiedSnapshotWithMonotonicProgress(t 
 	if err != nil || verified.Bytes < 1 || len(verified.SHA256) != 64 {
 		t.Fatalf("verified=%#v err=%v", verified, err)
 	}
-	info, err := os.Stat(destination)
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("backup mode=%v err=%v", info.Mode().Perm(), err)
+	if err = securefs.ValidatePrivate(destination, false); err != nil {
+		t.Fatalf("backup permissions err=%v", err)
 	}
 }
 

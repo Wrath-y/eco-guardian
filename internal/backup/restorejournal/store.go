@@ -50,6 +50,9 @@ func New(root string) (*Store, error) {
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return nil, ErrJournalInvalid
 	}
+	if err = validateRestrictedPath(root, true); err != nil {
+		return nil, ErrJournalInvalid
+	}
 	return &Store{root: root}, nil
 }
 
@@ -100,7 +103,10 @@ func (store *Store) load(jobID domain.ID) (ports.RestoreJournal, bool, error) {
 	if errors.Is(err, os.ErrNotExist) {
 		return ports.RestoreJournal{}, false, nil
 	}
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() < 2 || info.Size() > maxJournalBytes || info.Mode().Perm()&0o077 != 0 {
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() < 2 || info.Size() > maxJournalBytes {
+		return ports.RestoreJournal{}, false, ErrJournalInvalid
+	}
+	if err = validateRestrictedPath(path, false); err != nil {
 		return ports.RestoreJournal{}, false, ErrJournalInvalid
 	}
 	encoded, err := os.ReadFile(path)
@@ -166,12 +172,7 @@ func (store *Store) CompareAndSwap(ctx context.Context, expected int64, next por
 		return false, err
 	}
 	committed = true
-	directory, err := os.Open(store.root)
-	if err == nil {
-		err = directory.Sync()
-		_ = directory.Close()
-	}
-	return true, err
+	return true, syncDirectory(store.root)
 }
 
 func (store *Store) DeleteTerminal(ctx context.Context, jobID domain.ID, generation int64) error {

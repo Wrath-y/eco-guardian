@@ -20,6 +20,7 @@ import (
 	backupdomain "github.com/zouyi/eco-guardian/internal/backup/domain"
 	"github.com/zouyi/eco-guardian/internal/backup/ports"
 	"github.com/zouyi/eco-guardian/internal/domain"
+	"github.com/zouyi/eco-guardian/internal/platform/securefs"
 )
 
 var (
@@ -65,7 +66,7 @@ func NewStore(root string, maxSchema int) (*Store, error) {
 	if err := os.MkdirAll(clean, 0o700); err != nil {
 		return nil, err
 	}
-	if err := os.Chmod(clean, 0o700); err != nil {
+	if err := securefs.Restrict(clean, true); err != nil {
 		return nil, err
 	}
 	canonical, err := secureExistingDirectory(clean)
@@ -105,6 +106,10 @@ func (value *staging) WriteManifest(ctx context.Context, encoded []byte) error {
 	if err != nil {
 		return err
 	}
+	if err = securefs.Restrict(file.Name(), false); err != nil {
+		_ = file.Close()
+		return err
+	}
 	if _, err = file.Write(encoded); err == nil {
 		err = file.Sync()
 	}
@@ -122,28 +127,11 @@ func (value *staging) Flush(ctx context.Context) error {
 		return ErrPathSecurity
 	}
 	for _, name := range []string{databaseFile, manifestFile} {
-		file, err := os.OpenFile(filepath.Join(value.path, name), os.O_RDONLY, 0)
-		if err != nil {
-			return err
-		}
-		if err = file.Sync(); err != nil {
-			file.Close()
-			return err
-		}
-		if err = file.Close(); err != nil {
+		if err := securefs.SyncFile(filepath.Join(value.path, name)); err != nil {
 			return err
 		}
 	}
-	directory, err := os.Open(value.path)
-	if err != nil {
-		return err
-	}
-	err = directory.Sync()
-	closeErr := directory.Close()
-	if err != nil {
-		return err
-	}
-	return closeErr
+	return securefs.SyncDirectory(value.path)
 }
 
 func (value *staging) Close() error {
@@ -165,6 +153,10 @@ func (store *Store) CreateStaging(ctx context.Context, projectID, backupID domai
 	stagingRoot := filepath.Join(projectRoot, ".staging")
 	path := filepath.Join(stagingRoot, string(backupID))
 	if err = os.Mkdir(path, 0o700); err != nil {
+		return nil, err
+	}
+	if err = securefs.Restrict(path, true); err != nil {
+		_ = os.Remove(path)
 		return nil, err
 	}
 	return &staging{store: store, projectID: projectID, id: backupID, path: path}, nil
@@ -201,7 +193,7 @@ func (store *Store) Publish(ctx context.Context, artifact ports.StagingArtifact,
 	if !contained(projectRoot, destination) {
 		return backupdomain.Result{}, ErrPathSecurity
 	}
-	if err = os.Rename(value.path, destination); err != nil {
+	if err = renameDurable(value.path, destination); err != nil {
 		return backupdomain.Result{}, err
 	}
 	value.published = true
@@ -606,7 +598,7 @@ func (store *Store) ensureProjectRoot(projectID domain.ID) (string, error) {
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		return "", err
 	}
-	if err := os.Chmod(path, 0o700); err != nil {
+	if err := securefs.Restrict(path, true); err != nil {
 		return "", err
 	}
 	projectRoot, err := store.projectRoot(projectID)
@@ -618,7 +610,7 @@ func (store *Store) ensureProjectRoot(projectID domain.ID) (string, error) {
 		if err = os.MkdirAll(directory, 0o700); err != nil {
 			return "", err
 		}
-		if err = os.Chmod(directory, 0o700); err != nil || !store.secureOwnedDirectory(projectID, directory) {
+		if err = securefs.Restrict(directory, true); err != nil || !store.secureOwnedDirectory(projectID, directory) {
 			return "", ErrPathSecurity
 		}
 	}
@@ -740,6 +732,9 @@ func secureExistingDirectory(path string) (string, error) {
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return "", ErrPathSecurity
 	}
+	if err = securefs.ValidatePrivate(path, true); err != nil {
+		return "", ErrPathSecurity
+	}
 	canonical, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		return "", err
@@ -753,7 +748,10 @@ func secureExistingDirectory(path string) (string, error) {
 
 func validateRegular(path string) error {
 	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o077 != 0 {
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return ErrPathSecurity
+	}
+	if err = securefs.ValidatePrivate(path, false); err != nil {
 		return ErrPathSecurity
 	}
 	return validatePlatformFile(path)
