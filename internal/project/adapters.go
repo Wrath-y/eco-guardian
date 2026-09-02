@@ -2,10 +2,12 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"time"
 
 	"github.com/zouyi/eco-guardian/internal/domain"
 	graphsync "github.com/zouyi/eco-guardian/internal/graph/sync"
@@ -18,13 +20,15 @@ import (
 // FileLocker uses an exclusive lock file held for the active project lifetime.
 // It is intentionally independent from SQLite and works on Windows as well as
 // developer platforms; a second process cannot acquire the same lock name.
-type FileLocker struct{}
+type FileLocker struct {
+	Owner func() InstanceOwner
+}
 type fileLock struct {
 	file *os.File
 	path string
 }
 
-func (FileLocker) Acquire(dir string) (Lock, error) {
+func (locker FileLocker) Acquire(dir string) (Lock, error) {
 	path := filepath.Join(dir, ".eco-guardian.lock")
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if errors.Is(err, os.ErrExist) {
@@ -32,6 +36,29 @@ func (FileLocker) Acquire(dir string) (Lock, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+	if locker.Owner != nil {
+		owner := locker.Owner()
+		// Test/embedding code can create a project before the HTTP listener is
+		// acquired. Such a lock remains valid but cannot be remotely closed.
+		if owner.URL != "" {
+			if owner.Acquired == "" {
+				owner.Acquired = time.Now().UTC().Format(time.RFC3339Nano)
+			}
+			if !owner.valid() {
+				_ = file.Close()
+				_ = os.Remove(path)
+				return nil, ErrLockOwnerUnknown
+			}
+			if err = json.NewEncoder(file).Encode(owner); err == nil {
+				err = file.Sync()
+			}
+			if err != nil {
+				_ = file.Close()
+				_ = os.Remove(path)
+				return nil, err
+			}
+		}
 	}
 	return &fileLock{file, path}, nil
 }

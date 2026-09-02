@@ -229,11 +229,11 @@ func TestAIExecutionAndHTTPPathsCannotReachReleaseGraphActivationOrImmutableRevi
 
 	// The dedicated UI may submit AI admission/decision/settings requests only;
 	// publishing and Graph activation remain separate human workflows.
-	err := filepath.WalkDir("../../web/src/features/ai-design", func(name string, entry fs.DirEntry, walkErr error) error {
+	err := filepath.WalkDir("../../web/src/react/pages/AIDesignPage.tsx", func(name string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if entry.IsDir() || (!strings.HasSuffix(name, ".ts") && !strings.HasSuffix(name, ".vue")) {
+		if entry.IsDir() || (!strings.HasSuffix(name, ".ts") && !strings.HasSuffix(name, ".tsx")) {
 			return nil
 		}
 		body, readErr := os.ReadFile(name)

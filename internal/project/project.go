@@ -21,6 +21,9 @@ var (
 	ErrInvalidSelection = errors.New("invalid or expired project selection")
 	ErrActiveProject    = errors.New("an active project must be closed first")
 	ErrProjectLocked    = errors.New("project is locked by another process")
+	ErrLockOwnerUnknown = errors.New("project lock owner is unavailable")
+	ErrOtherUnavailable = errors.New("other project instance is unavailable")
+	ErrOtherRejected    = errors.New("other project instance rejected the request")
 	ErrCloseBlocked     = errors.New("project close is blocked")
 	ErrMaintenance      = errors.New("project is in exclusive maintenance")
 )
@@ -40,6 +43,9 @@ type DirectorySelector interface {
 type Lock interface{ Release() error }
 type Locker interface {
 	Acquire(directory string) (Lock, error)
+}
+type OtherInstanceCloser interface {
+	Close(context.Context, ProjectInfo) error
 }
 type ProjectHandle interface {
 	Close() error
@@ -186,6 +192,33 @@ func (m *Manager) OpenRecent(ctx context.Context, id domain.ID) (ProjectInfo, er
 		}
 	}
 	return ProjectInfo{}, ErrInvalidSelection
+}
+
+// CloseOther asks the verified owner of a recent project's lock to shut down.
+// The project path and peer credentials remain server-side throughout.
+func (m *Manager) CloseOther(ctx context.Context, id domain.ID, closer OtherInstanceCloser) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !id.Valid() || closer == nil || m.recent == nil {
+		return ErrInvalidSelection
+	}
+	m.mu.Lock()
+	busy := m.active != nil || m.maintenance != nil
+	m.mu.Unlock()
+	if busy {
+		return ErrActiveProject
+	}
+	values, err := m.recent.List()
+	if err != nil {
+		return err
+	}
+	for _, value := range values {
+		if value.ID == id {
+			return closer.Close(ctx, value)
+		}
+	}
+	return ErrInvalidSelection
 }
 func (m *Manager) install(ctx context.Context, token string, create bool) (ProjectInfo, error) {
 	m.mu.Lock()

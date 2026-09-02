@@ -86,7 +86,7 @@ func TestOpenAPIContainsAllHandlerOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	contract := string(raw)
-	for _, id := range []string{"selectProjectDirectory", "openProject", "listRecentProjects", "openRecentProject", "getCurrentProject", "closeProject", "getEntitySchema", "listEntities", "createEntity", "getEntity", "patchEntity", "deleteEntity", "createValidationRun", "getValidationRun", "listRevisions", "createRevision", "getRevision", "getRevisionDiff", "ensureGraphSync", "getGraphStatus", "listReleasePolicies", "createReleasePolicy", "listReleases", "createRelease", "getRelease", "getJob", "streamJobEvents", "cancelJob", "listBackups", "createBackup", "getBackup", "createRestorePreflight", "createRestore", "createSimulationJob", "getSimulationRun", "createRiskReview", "getRiskReview", "createAIDesignJob", "getDraftPatch", "acceptDraftPatch", "discardDraftPatch", "getSettings", "patchSettings", "putProviderCredential", "deleteProviderCredential", "getRuntimeStatus", "getRuntimeCapabilities"} {
+	for _, id := range []string{"selectProjectDirectory", "openProject", "listRecentProjects", "openRecentProject", "closeOtherProjectInstance", "getCurrentProject", "closeProject", "getEntitySchema", "listEntities", "createEntity", "getEntity", "patchEntity", "deleteEntity", "createValidationRun", "getValidationRun", "listRevisions", "createRevision", "getRevision", "getRevisionDiff", "ensureGraphSync", "getGraphStatus", "listReleasePolicies", "createReleasePolicy", "listReleases", "createRelease", "getRelease", "getJob", "streamJobEvents", "cancelJob", "listBackups", "createBackup", "getBackup", "createRestorePreflight", "createRestore", "createSimulationJob", "getSimulationRun", "createRiskReview", "getRiskReview", "createAIDesignJob", "getDraftPatch", "acceptDraftPatch", "discardDraftPatch", "getSettings", "patchSettings", "putProviderCredential", "deleteProviderCredential", "getRuntimeStatus", "getRuntimeCapabilities"} {
 		if !strings.Contains(contract, "operationId: "+id) {
 			t.Errorf("OpenAPI missing handler operation %s", id)
 		}
@@ -330,13 +330,13 @@ func TestVersioningDTOsAreGeneratedRatherThanHandwritten(t *testing.T) {
 }
 
 func TestSimulationClientUsesGeneratedDTOsRatherThanHandwrittenDuplicates(t *testing.T) {
-	path := "../../web/src/api/simulation.ts"
+	path := "../../web/src/react/pages/SimulationsPage.tsx"
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(contents)
-	if !strings.Contains(text, "import type { components } from './generated'") {
+	if !strings.Contains(text, "import type { components } from '@/api/generated'") {
 		t.Fatal("simulation client must use OpenAPI-generated component schemas")
 	}
 	duplicate := regexp.MustCompile(`(?m)^(?:export\s+)?(?:interface\s+Simulation\w*|type\s+Simulation\w*\s*=\s*\{)`)

@@ -22,7 +22,7 @@ Each project uses `project.db` as its business source of truth. The runtime list
 | --- | --- |
 | `cmd/eco-guardian` | Go application entry point |
 | `internal/` | Domain model, rule validation, HTTP API, versioning, simulation, risk, backup, and runtime orchestration |
-| `web/` | Vue 3 + TypeScript + Vite frontend |
+| `web/` | React + TypeScript + Ant Design + Vite frontend |
 | `api/openapi.yaml` | Source of truth for the HTTP API contract and generated frontend types |
 | `migrations/` | SQLite database migrations |
 | `scripts/` | Build, contract-check, and packaging helpers |

@@ -22,7 +22,7 @@ Eco Guardian 是一个优先面向 Windows 10/11 x64 的本地游戏数值策划
 | --- | --- |
 | `cmd/eco-guardian` | Go 应用入口 |
 | `internal/` | 领域模型、规则校验、HTTP API、版本/模拟/风险/备份和运行时编排 |
-| `web/` | Vue 3 + TypeScript + Vite 前端 |
+| `web/` | React + TypeScript + Ant Design + Vite 前端 |
 | `api/openapi.yaml` | HTTP API 契约事实源，同时用于生成前端类型 |
 | `migrations/` | SQLite 数据库迁移 |
 | `scripts/` | 构建、契约检查和打包辅助脚本 |

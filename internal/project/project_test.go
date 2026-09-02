@@ -1,11 +1,16 @@
 package project
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -213,12 +218,120 @@ func TestFileLockerSecondProcess(t *testing.T) {
 	dir := t.TempDir()
 	cmd := exec.Command(os.Args[0], "-test.run=TestFileLockerSecondProcess", dir)
 	cmd.Env = append(os.Environ(), "ECO_LOCK_HELPER=1")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 	defer cmd.Process.Kill()
-	time.Sleep(100 * time.Millisecond)
+	scanner := bufio.NewScanner(stdout)
+	if !scanner.Scan() || scanner.Text() != "locked" {
+		t.Fatalf("lock helper did not become ready: %q", scanner.Text())
+	}
 	if _, err := (FileLocker{}).Acquire(dir); !errors.Is(err, ErrProjectLocked) {
 		t.Fatalf("second process lock=%v", err)
+	}
+}
+
+func TestFileLockerPublishesVerifiedOwnerMetadata(t *testing.T) {
+	dir := t.TempDir()
+	secret, err := NewInstanceSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, err := (FileLocker{Owner: func() InstanceOwner {
+		return InstanceOwner{Version: 1, PID: 123, URL: "http://127.0.0.1:43123", Secret: secret}
+	}}).Acquire(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := ReadInstanceOwner(dir)
+	if err != nil || owner.PID != 123 || owner.URL != "http://127.0.0.1:43123" || owner.Secret != secret || owner.Acquired == "" {
+		t.Fatalf("owner=%#v err=%v", owner, err)
+	}
+	if err = lock.Release(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = ReadInstanceOwner(dir); !errors.Is(err, ErrLockOwnerUnknown) {
+		t.Fatalf("released owner=%v", err)
+	}
+}
+
+func TestFileLockerRejectsUnsafeOwnerAndLegacyLockCannotBeRemotelyClosed(t *testing.T) {
+	dir := t.TempDir()
+	legacy, err := (FileLocker{}).Acquire(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = ReadInstanceOwner(dir); !errors.Is(err, ErrLockOwnerUnknown) {
+		t.Fatalf("legacy owner=%v", err)
+	}
+	if err = legacy.Release(); err != nil {
+		t.Fatal(err)
+	}
+	secret, _ := NewInstanceSecret()
+	if _, err = (FileLocker{Owner: func() InstanceOwner {
+		return InstanceOwner{Version: 1, PID: 123, URL: "http://example.com:43123", Secret: secret}
+	}}).Acquire(dir); !errors.Is(err, ErrLockOwnerUnknown) {
+		t.Fatalf("unsafe owner=%v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, ".eco-guardian.lock")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("unsafe lock was retained: %v", statErr)
+	}
+}
+
+func TestPeerInstanceClientUsesLockSecretAndWaitsForRelease(t *testing.T) {
+	dir := t.TempDir()
+	id, _ := domain.NewID()
+	secret, _ := NewInstanceSecret()
+	var lock Lock
+	var gotToken, gotProject string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		gotToken = request.Header.Get(InstanceTokenHeader)
+		var body map[string]string
+		_ = json.NewDecoder(request.Body).Decode(&body)
+		gotProject = body["project_id"]
+		_ = lock.Release()
+		writer.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+	var err error
+	lock, err = (FileLocker{Owner: func() InstanceOwner {
+		return InstanceOwner{Version: 1, PID: os.Getpid(), URL: server.URL, Secret: secret}
+	}}).Acquire(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = (PeerInstanceClient{Client: server.Client()}).Close(context.Background(), ProjectInfo{ID: id, Name: "fixture", Path: dir}); err != nil {
+		t.Fatal(err)
+	}
+	if gotToken != secret || gotProject != string(id) {
+		t.Fatalf("token=%q project=%q", gotToken, gotProject)
+	}
+}
+
+type fakeOtherCloser struct{ info ProjectInfo }
+
+func (closer *fakeOtherCloser) Close(_ context.Context, info ProjectInfo) error {
+	closer.info = info
+	return nil
+}
+
+func TestManagerCloseOtherResolvesOnlyServerOwnedRecentProject(t *testing.T) {
+	recent := NewFileRecentProjects(t.TempDir())
+	id, _ := domain.NewID()
+	if err := recent.Record(ProjectInfo{ID: id, Name: "fixture", Path: "/server-owned/path"}); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewManager(NewTokenStore(time.Minute, nil), fakeLocker{}, fakeFactory{}, NoJobs{}, recent)
+	closer := &fakeOtherCloser{}
+	if err := manager.CloseOther(context.Background(), id, closer); err != nil || closer.info.ID != id || closer.info.Path != "/server-owned/path" {
+		t.Fatalf("close=%v info=%#v", err, closer.info)
+	}
+	missing, _ := domain.NewID()
+	if err := manager.CloseOther(context.Background(), missing, closer); !errors.Is(err, ErrInvalidSelection) {
+		t.Fatalf("missing close=%v", err)
 	}
 }

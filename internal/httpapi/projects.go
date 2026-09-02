@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/zouyi/eco-guardian/internal/domain"
@@ -13,18 +15,42 @@ import (
 type ProjectHandler struct {
 	manager  *project.Manager
 	selector project.DirectorySelector
+	closer   project.OtherInstanceCloser
 }
 
-func NewProjectHandler(manager *project.Manager, selector project.DirectorySelector) *ProjectHandler {
-	return &ProjectHandler{manager, selector}
+func NewProjectHandler(manager *project.Manager, selector project.DirectorySelector, closers ...project.OtherInstanceCloser) *ProjectHandler {
+	var closer project.OtherInstanceCloser
+	if len(closers) > 0 {
+		closer = closers[0]
+	}
+	return &ProjectHandler{manager: manager, selector: selector, closer: closer}
 }
 func (h *ProjectHandler) Register(r *gin.Engine) {
 	r.POST("/api/v1/project-selections", h.selectDir)
 	r.POST("/api/v1/projects", h.open)
 	r.GET("/api/v1/projects/recent", h.recent)
 	r.POST("/api/v1/projects/recent/:id", h.openRecent)
+	r.POST("/api/v1/projects/recent/:id/close-other-instance", h.closeOtherInstance)
 	r.GET("/api/v1/projects/current", h.current)
 	r.POST("/api/v1/projects/close", h.close)
+}
+func (h *ProjectHandler) closeOtherInstance(c *gin.Context) {
+	if !safeLoopbackOrigin(c.Request) {
+		problem(c, http.StatusForbidden, "OTHER_INSTANCE_UNAVAILABLE", "Request origin is not allowed")
+		return
+	}
+	id := domain.ID(c.Param("id"))
+	if !id.Valid() {
+		problem(c, http.StatusBadRequest, "INVALID_SELECTION", "Invalid recent project")
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+	if err := h.manager.CloseOther(ctx, id, h.closer); err != nil {
+		writeProjectError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 func (h *ProjectHandler) recent(c *gin.Context) {
 	values, err := h.manager.Recent()
@@ -115,6 +141,12 @@ func writeProjectError(c *gin.Context, err error) {
 		problem(c, 409, "ACTIVE_PROJECT_CONFLICT", "Close the active project first")
 	case errors.Is(err, project.ErrCloseBlocked):
 		problem(c, 409, "CLOSE_BLOCKED", "Project close is blocked")
+	case errors.Is(err, project.ErrLockOwnerUnknown):
+		problem(c, 409, "OTHER_INSTANCE_UNAVAILABLE", "The lock owner cannot be safely identified")
+	case errors.Is(err, project.ErrOtherUnavailable):
+		problem(c, 503, "OTHER_INSTANCE_UNAVAILABLE", "The other instance is unavailable")
+	case errors.Is(err, project.ErrOtherRejected):
+		problem(c, 409, "OTHER_INSTANCE_UNAVAILABLE", "The other instance rejected the close request")
 	default:
 		problem(c, 500, "VALIDATION_FAILED", "Project operation failed")
 	}

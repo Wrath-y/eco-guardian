@@ -98,9 +98,25 @@ type Process struct {
 	observerWait     sync.WaitGroup
 	closeOnce        sync.Once
 	closeErr         error
+	shutdownSignal   <-chan struct{}
 	stdout           io.Writer
 	startupWindow    time.Duration
 	shutdownWindow   time.Duration
+}
+
+type instanceShutdownController struct {
+	once sync.Once
+	done chan struct{}
+}
+
+func newInstanceShutdownController() *instanceShutdownController {
+	return &instanceShutdownController{done: make(chan struct{})}
+}
+
+func (controller *instanceShutdownController) Request() {
+	if controller != nil {
+		controller.once.Do(func() { close(controller.done) })
+	}
 }
 
 // Build resolves machine adapters and registers all currently applied core
@@ -127,6 +143,14 @@ func Build(options BuildOptions) (*Process, error) {
 	if err != nil {
 		return nil, err
 	}
+	instanceSecret, err := project.NewInstanceSecret()
+	if err != nil {
+		return nil, err
+	}
+	instanceShutdown := newInstanceShutdownController()
+	projectLocker := project.FileLocker{Owner: func() project.InstanceOwner {
+		return project.InstanceOwner{Version: 1, PID: os.Getpid(), URL: host.URL(), Secret: instanceSecret}
+	}}
 	settingsStore := runtimeconfig.NewStore(paths.Settings)
 	environment := options.Environment
 	if environment == nil {
@@ -167,7 +191,7 @@ func Build(options BuildOptions) (*Process, error) {
 	recentProjects := project.NewFileRecentProjects(filepath.Dir(paths.Root))
 	projects := project.NewManager(
 		selectionTokens,
-		project.FileLocker{},
+		projectLocker,
 		project.SQLiteFactory{Registry: registry, GraphVersionContributor: projector.VersionContributor{Descriptor: projector.Descriptor{SchemaVersion: projector.ProjectionSchemaV1, Version: projector.ProjectorV1, Relations: projector.V1Relations(), Formatter: projector.V1Formatter{}}}, MigrationBackup: migrationBackup, ConfigureBackup: backupServices.Configure},
 		backupServices,
 		recentProjects,
@@ -213,7 +237,7 @@ func Build(options BuildOptions) (*Process, error) {
 	}
 	capabilityConvergence := runtimeCapabilityConvergence{graph: graphDependency, settings: settingsStore, credentials: credentialResolver, projects: projects, backups: backupServices}
 	restoreRecovery := &backupintegration.RestoreStartupRecovery{
-		Journal: journalStore, Locker: project.FileLocker{}, Registry: registry,
+		Journal: journalStore, Locker: projectLocker, Registry: registry,
 		MigrationBackup: migrationBackup, Replacement: restorefs.Replacement{Verifier: store.BackupVerifier{}}, Verifier: store.BackupVerifier{}, Recent: recentProjects,
 	}
 	recoveryCoordinator, err := runtimerecovery.NewCoordinator(runtimerecovery.StageDescriptor{
@@ -262,11 +286,11 @@ func Build(options BuildOptions) (*Process, error) {
 	}
 	statusObserver := runtimeStatusObserver{assembler: statusAssembler, build: identity, projects: projects, graph: graphDependency}
 	graphDependency.refresh = runtimeCapabilityRefresher{status: status, convergence: capabilityConvergence, publish: statusObserver.Observe}.Refresh
-	registerRoutes(host, projects, registry, settingsStore, credentialResolver, assets, statusAssembler, graphDependency, impactWorker.Submit, backupServices, backupRoots)
+	registerRoutes(host, projects, registry, settingsStore, credentialResolver, assets, statusAssembler, graphDependency, impactWorker.Submit, backupServices, backupRoots, project.PeerInstanceClient{}, instanceSecret, instanceShutdown.Request)
 	process := &Process{
 		Coordinator: coordinator, Status: status, Host: host, Projects: projects, Assets: assets,
 		workers: workers, dependencies: dependencies, boundaries: append([]ShutdownBoundary{backupServices}, options.ShutdownBoundaries...), settings: settings, stdout: options.Stdout,
-		logger:        logger,
+		logger: logger, shutdownSignal: instanceShutdown.done,
 		startupWindow: defaultStartupTimeout, shutdownWindow: defaultShutdownTimeout,
 	}
 	process.recoveryShutdown, err = runtimerecovery.NewShutdownCoordinator(options.ShutdownPolicies...)
@@ -298,9 +322,10 @@ func (startup stagedStartupRecovery) Recover(ctx context.Context) error {
 	return err
 }
 
-func registerRoutes(host *httpapi.Runtime, projects *project.Manager, registry *domain.Registry, settings *runtimeconfig.Store, credentials provider.CredentialResolver, assets fs.FS, status *appruntime.StatusAssembler, runtimeActions httpapi.RuntimeActionService, impactSubmit func(context.Context, domain.ID) error, backups *backupRuntime, backupRoots *rootconfig.Manager) {
+func registerRoutes(host *httpapi.Runtime, projects *project.Manager, registry *domain.Registry, settings *runtimeconfig.Store, credentials provider.CredentialResolver, assets fs.FS, status *appruntime.StatusAssembler, runtimeActions httpapi.RuntimeActionService, impactSubmit func(context.Context, domain.ID) error, backups *backupRuntime, backupRoots *rootconfig.Manager, other project.OtherInstanceCloser, instanceSecret string, shutdown func()) {
 	engine := host.Engine()
-	httpapi.NewProjectHandler(projects, project.NativeDirectorySelector{}).Register(engine)
+	httpapi.NewProjectHandler(projects, project.NativeDirectorySelector{}, other).Register(engine)
+	httpapi.NewInstanceControlHandler(projects, instanceSecret, shutdown).Register(engine)
 	httpapi.NewSchemaHandler(registry).Register(engine)
 	httpapi.NewEntityHandler(httpapi.StoreFromProjectManager(projects)).Register(engine)
 	httpapi.NewValidationHandler(httpapi.ValidationStoreFromProjectManager(projects)).Register(engine)
@@ -604,7 +629,14 @@ func (p *Process) Run(ctx context.Context) error {
 	if _, err := p.Start(ctx); err != nil {
 		return err
 	}
-	<-ctx.Done()
+	if p.shutdownSignal == nil {
+		<-ctx.Done()
+	} else {
+		select {
+		case <-ctx.Done():
+		case <-p.shutdownSignal:
+		}
+	}
 	shutdown, cancel := context.WithTimeout(context.Background(), p.shutdownWindow)
 	defer cancel()
 	return p.Close(shutdown)

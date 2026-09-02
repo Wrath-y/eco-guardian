@@ -13,8 +13,18 @@
     "moduleDetection": "force",
     "noEmit": true,
     "strict": true,
-    "jsx": "preserve",
-    "types": ["vitest/globals"]
+    "jsx": "react-jsx",
+    "types": ["vite/client", "vitest/globals", "node"]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue", "tests/**/*.ts"]
+  "include": [
+    "src/main.tsx",
+    "src/react/**/*.ts",
+    "src/react/**/*.tsx",
+    "src/api/generated.ts",
+    "src/forms/**/*.ts",
+    "tests-react/**/*.ts",
+    "tests-react/**/*.tsx",
+    "vite.config.ts",
+    "playwright.config.ts"
+  ]
 }
