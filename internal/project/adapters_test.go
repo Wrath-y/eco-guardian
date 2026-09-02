@@ -11,7 +11,19 @@ import (
 	graphsync "github.com/zouyi/eco-guardian/internal/graph/sync"
 	store "github.com/zouyi/eco-guardian/internal/storage/sqlite"
 	versioninggate "github.com/zouyi/eco-guardian/internal/versioning/gate"
+	versioningrevision "github.com/zouyi/eco-guardian/internal/versioning/revision"
 )
+
+type deterministicVersionContributor struct{ capability, contract, implementation string }
+
+func (value deterministicVersionContributor) CapabilityID() string    { return value.capability }
+func (value deterministicVersionContributor) ContractVersion() string { return value.contract }
+func (value deterministicVersionContributor) ImplementationVersion() string {
+	return value.implementation
+}
+func (value deterministicVersionContributor) RegistrationState() versioningrevision.RegistrationState {
+	return versioningrevision.Registered
+}
 
 func TestSQLiteFactoryRunsConfiguredRecoveryOnProjectOpen(t *testing.T) {
 	registry, err := domain.NewRegistry()
@@ -111,6 +123,41 @@ func TestSQLiteFactoryOptionallyRegistersGraphVersionContributor(t *testing.T) {
 		}
 	}
 	t.Fatalf("Graph contributor missing from manifest: %#v", record.Metadata.Manifest)
+}
+
+func TestSQLiteFactoryRegistersSimulationAndRiskVersions(t *testing.T) {
+	registry, err := domain.NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	factory := SQLiteFactory{
+		Registry:                     registry,
+		SimulationVersionContributor: deterministicVersionContributor{capability: "simulation-engine", contract: "simulation-v1", implementation: "simulation-implementation-v1"},
+		RiskVersionContributor:       deterministicVersionContributor{capability: "risk", contract: "risk-v1", implementation: "risk-implementation-v1"},
+	}
+	handle, err := factory.Create(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer handle.Close()
+	opened := handle.(*sqliteHandle).Store()
+	_, revision, err := opened.Create(context.Background(), domain.KindTag, domain.EntityDraft{Key: "versions", Name: "Versions", Payload: map[string]json.RawMessage{"category": json.RawMessage(`"element"`), "parent_tag_ids": json.RawMessage(`[]`)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := opened.GetRevisionRecord(context.Background(), revision.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"simulation-engine": "simulation-implementation-v1", "risk": "risk-implementation-v1"}
+	for _, entry := range record.Metadata.Manifest.Entries {
+		if implementation, found := want[entry.CapabilityID]; found && entry.State == versioningrevision.Registered && entry.ImplementationVersion == implementation {
+			delete(want, entry.CapabilityID)
+		}
+	}
+	if len(want) != 0 {
+		t.Fatalf("deterministic contributors missing from revision manifest: missing=%v manifest=%#v", want, record.Metadata.Manifest)
+	}
 }
 
 func TestSQLiteFactoryOptionallyRegistersGraphGateOnceAcrossCreateAndOpen(t *testing.T) {

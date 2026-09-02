@@ -76,16 +76,18 @@ func (l *fileLock) Release() error {
 // Graph adapter; keeping it a callback avoids coupling project lifecycle to a
 // concrete external capability implementation.
 type SQLiteFactory struct {
-	Registry                *domain.Registry
-	GraphVersionContributor versioningrevision.VersionContributor
-	GraphGateRegistry       *versioninggate.Registry
-	GraphGateProvider       versioninggate.Provider
-	GraphRecovery           graphsync.RecoveryDispatcher
-	RecoveryStages          *RecoveryStages
-	Recover                 func(context.Context, *store.Store) error
-	AfterRevision           func(context.Context, *store.Store, domain.RevisionSummary)
-	MigrationBackup         store.MigrationBackup
-	ConfigureBackup         func(context.Context, *store.Store) error
+	Registry                     *domain.Registry
+	GraphVersionContributor      versioningrevision.VersionContributor
+	SimulationVersionContributor versioningrevision.VersionContributor
+	RiskVersionContributor       versioningrevision.VersionContributor
+	GraphGateRegistry            *versioninggate.Registry
+	GraphGateProvider            versioninggate.Provider
+	GraphRecovery                graphsync.RecoveryDispatcher
+	RecoveryStages               *RecoveryStages
+	Recover                      func(context.Context, *store.Store) error
+	AfterRevision                func(context.Context, *store.Store, domain.RevisionSummary)
+	MigrationBackup              store.MigrationBackup
+	ConfigureBackup              func(context.Context, *store.Store) error
 }
 type sqliteHandle struct{ store *store.Store }
 
@@ -161,9 +163,26 @@ func (f SQLiteFactory) configureGraphVersion(s *store.Store) error {
 		})
 	}
 	if f.GraphVersionContributor == nil {
-		return nil
+		return f.configureDeterministicVersions(s)
 	}
-	return s.RegisterGraphVersionContributor(f.GraphVersionContributor)
+	if err := s.RegisterGraphVersionContributor(f.GraphVersionContributor); err != nil {
+		return err
+	}
+	return f.configureDeterministicVersions(s)
+}
+
+func (f SQLiteFactory) configureDeterministicVersions(s *store.Store) error {
+	if f.SimulationVersionContributor != nil {
+		if err := s.RegisterSimulationVersionContributor(f.SimulationVersionContributor); err != nil {
+			return err
+		}
+	}
+	if f.RiskVersionContributor != nil {
+		if err := s.RegisterRiskVersionContributor(f.RiskVersionContributor); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (f SQLiteFactory) registerGraphGate() error {

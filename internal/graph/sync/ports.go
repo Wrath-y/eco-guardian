@@ -30,16 +30,19 @@ type Edge struct {
 }
 
 type PutSnapshotRequest struct {
-	SchemaVersion string   `json:"schema_version"`
-	Mode          string   `json:"mode"`
-	BaseVersion   string   `json:"base_version,omitempty"`
-	ContentHash   string   `json:"content_hash"`
-	Nodes         []Node   `json:"nodes,omitempty"`
-	Edges         []Edge   `json:"edges,omitempty"`
-	NodeUpserts   []Node   `json:"node_upserts,omitempty"`
-	NodeDeletes   []string `json:"node_deletes,omitempty"`
-	EdgeUpserts   []Edge   `json:"edge_upserts,omitempty"`
-	EdgeDeletes   []string `json:"edge_deletes,omitempty"`
+	SchemaVersion string `json:"schema_version"`
+	Mode          string `json:"mode"`
+	BaseVersion   string `json:"base_version,omitempty"`
+	ContentHash   string `json:"content_hash"`
+	// Full snapshots require explicit arrays even when empty. Omitting an empty
+	// slice changes the provider's canonical manifest from [] to null and makes
+	// its verified content hash diverge from the projector hash.
+	Nodes       []Node   `json:"nodes"`
+	Edges       []Edge   `json:"edges"`
+	NodeUpserts []Node   `json:"node_upserts,omitempty"`
+	NodeDeletes []string `json:"node_deletes,omitempty"`
+	EdgeUpserts []Edge   `json:"edge_upserts,omitempty"`
+	EdgeDeletes []string `json:"edge_deletes,omitempty"`
 }
 
 type Component struct {

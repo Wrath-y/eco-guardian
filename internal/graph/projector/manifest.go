@@ -42,13 +42,16 @@ func ManifestBytes(result Result) ([]byte, string, error) {
 		p := edge.Provenance
 		return manifestEdge{edge.ID, edge.From, edge.To, edge.Type, edge.RelationKind, edge.Confidence, edge.Properties, map[string]any{"project_id": p.ProjectID, "revision_id": p.RevisionID, "config_hash": p.ConfigHash, "source_entity_id": p.SourceEntityID, "field_path": p.FieldPath, "ordinal": p.Ordinal, "projection_schema_version": p.ProjectionSchema, "projector_version": p.Projector}}
 	}
-	encodedNodes := make([]manifestNode, len(nodes))
-	for i, node := range nodes {
-		encodedNodes[i] = toNode(node)
+	// local-rag's v1 canonicalizer preserves non-empty records but normalizes
+	// an empty cloned slice to nil before hashing. Mirror that provider contract
+	// here while the HTTP transport still sends the required explicit arrays.
+	var encodedNodes []manifestNode
+	for _, node := range nodes {
+		encodedNodes = append(encodedNodes, toNode(node))
 	}
-	encodedEdges := make([]manifestEdge, len(edges))
-	for i, edge := range edges {
-		encodedEdges[i] = toEdge(edge)
+	var encodedEdges []manifestEdge
+	for _, edge := range edges {
+		encodedEdges = append(encodedEdges, toEdge(edge))
 	}
 	payload, err := json.Marshal(struct {
 		SchemaVersion string         `json:"schema_version"`

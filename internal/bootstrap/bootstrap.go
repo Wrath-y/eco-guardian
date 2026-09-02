@@ -31,6 +31,7 @@ import (
 	"github.com/zouyi/eco-guardian/internal/buildinfo"
 	"github.com/zouyi/eco-guardian/internal/domain"
 	"github.com/zouyi/eco-guardian/internal/graph/projector"
+	graphsync "github.com/zouyi/eco-guardian/internal/graph/sync"
 	"github.com/zouyi/eco-guardian/internal/httpapi"
 	"github.com/zouyi/eco-guardian/internal/packageinfo"
 	"github.com/zouyi/eco-guardian/internal/platform/appdir"
@@ -39,6 +40,7 @@ import (
 	"github.com/zouyi/eco-guardian/internal/platform/credential"
 	"github.com/zouyi/eco-guardian/internal/project"
 	store "github.com/zouyi/eco-guardian/internal/storage/sqlite"
+	versioninggate "github.com/zouyi/eco-guardian/internal/versioning/gate"
 )
 
 const (
@@ -162,6 +164,10 @@ func Build(options BuildOptions) (*Process, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load domain registry: %w", err)
 	}
+	releaseCapabilities, err := newReleaseCapabilitySet()
+	if err != nil {
+		return nil, fmt.Errorf("load release capability registry: %w", err)
+	}
 	identity, err := buildinfo.Current()
 	if err != nil {
 		return nil, err
@@ -189,10 +195,18 @@ func Build(options BuildOptions) (*Process, error) {
 	backupServices.journal = journalStore
 	migrationBackup := backupintegration.MigrationBackup{Roots: backupRoots, AppVersion: identity.Version, Space: backupfs.Probe{}}
 	recentProjects := project.NewFileRecentProjects(filepath.Dir(paths.Root))
+	graphDescriptor := projector.Descriptor{SchemaVersion: projector.ProjectionSchemaV1, Version: projector.ProjectorV1, Relations: projector.V1Relations(), Formatter: projector.V1Formatter{}}
 	projects := project.NewManager(
 		selectionTokens,
 		projectLocker,
-		project.SQLiteFactory{Registry: registry, GraphVersionContributor: projector.VersionContributor{Descriptor: projector.Descriptor{SchemaVersion: projector.ProjectionSchemaV1, Version: projector.ProjectorV1, Relations: projector.V1Relations(), Formatter: projector.V1Formatter{}}}, MigrationBackup: migrationBackup, ConfigureBackup: backupServices.Configure},
+		project.SQLiteFactory{
+			Registry:                     registry,
+			GraphVersionContributor:      projector.VersionContributor{Descriptor: graphDescriptor},
+			SimulationVersionContributor: releaseCapabilities.simulation,
+			RiskVersionContributor:       releaseCapabilities.risk,
+			MigrationBackup:              migrationBackup,
+			ConfigureBackup:              backupServices.Configure,
+		},
 		backupServices,
 		recentProjects,
 	)
@@ -210,18 +224,30 @@ func Build(options BuildOptions) (*Process, error) {
 		return nil, err
 	}
 	credentialResolver := provider.CredentialResolver{Store: credential.NewDefaultStore(), Environment: provider.OSEnvironment{}}
+	aiCapabilities := &aiCapabilityRuntime{settings: settingsStore, credentials: credentialResolver}
 
 	packageVerifier := options.PackageVerifier
 	if packageVerifier == nil {
 		packageVerifier = &embeddedPackageVerifier{assets: assets, packageRoot: options.PackageRoot, allowBundled: true}
 	}
-	graphDependency := &graphRuntimeDependency{settings: settings, root: paths.Root}
+	graphDependency := &graphRuntimeDependency{settings: settings, root: paths.Root, invalidate: aiCapabilities.Invalidate}
 	if source, ok := packageVerifier.(verifiedPackageSource); ok {
 		graphDependency.packages = source
 	}
+	graphSyncWorker := &graphSyncRuntime{projects: projects, provider: graphDependency, descriptor: graphDescriptor}
+	releaseWorker := &releaseRuntime{
+		projects: projects, registry: releaseCapabilities.registry, graph: graphDependency, backups: backupServices,
+		simulationVersion: releaseCapabilities.simulation.ImplementationVersion(),
+	}
+	versioningDependencies := app.VersioningDependencies{
+		Catalog: releaseCapabilities.registry, Registry: releaseCapabilities.registry,
+		Submit: releaseWorker.Submit, Cancel: releaseWorker.Cancel,
+		GraphRuntime: app.GraphRuntimeStatusApplication{Provider: graphDependency},
+	}
+	versioningProvider := httpapi.VersioningServiceFromProjectManagerWithDependencies(projects, versioningDependencies)
 	impactWorker := &impactRuntime{projects: projects, graph: graphDependency}
 	workerValues := append([]Worker(nil), options.Workers...)
-	workerValues = append(workerValues, impactWorker)
+	workerValues = append(workerValues, graphSyncWorker, impactWorker, releaseWorker)
 	workers := &workerGroup{values: workerValues}
 	dependencyWorkers := make([]Worker, 0, len(options.Dependencies)+1)
 	for _, dependency := range options.Dependencies {
@@ -235,7 +261,17 @@ func Build(options BuildOptions) (*Process, error) {
 		value := platformbrowser.NewDefault()
 		browserPort = value
 	}
-	capabilityConvergence := runtimeCapabilityConvergence{graph: graphDependency, settings: settingsStore, credentials: credentialResolver, projects: projects, backups: backupServices}
+	capabilityConvergence := runtimeCapabilityConvergence{
+		graph: graphDependency, settings: settingsStore, credentials: credentialResolver, projects: projects, backups: backupServices,
+		ai: aiCapabilities.Observe,
+		release: func(ctx context.Context) (versioninggate.ReleaseCapability, error) {
+			service := versioningProvider()
+			if service == nil {
+				return versioninggate.ReleaseCapability{Enabled: false, Reasons: []versioninggate.DisabledReason{{CapabilityID: "release", GateID: "project", Reason: "required gate is unregistered"}}}, nil
+			}
+			return service.ReleaseCapability(ctx)
+		},
+	}
 	restoreRecovery := &backupintegration.RestoreStartupRecovery{
 		Journal: journalStore, Locker: projectLocker, Registry: registry,
 		MigrationBackup: migrationBackup, Replacement: restorefs.Replacement{Verifier: store.BackupVerifier{}}, Verifier: store.BackupVerifier{}, Recent: recentProjects,
@@ -286,7 +322,7 @@ func Build(options BuildOptions) (*Process, error) {
 	}
 	statusObserver := runtimeStatusObserver{assembler: statusAssembler, build: identity, projects: projects, graph: graphDependency}
 	graphDependency.refresh = runtimeCapabilityRefresher{status: status, convergence: capabilityConvergence, publish: statusObserver.Observe}.Refresh
-	registerRoutes(host, projects, registry, settingsStore, credentialResolver, assets, statusAssembler, graphDependency, impactWorker.Submit, backupServices, backupRoots, project.PeerInstanceClient{}, instanceSecret, instanceShutdown.Request)
+	registerRoutes(host, projects, registry, settingsStore, credentialResolver, assets, statusAssembler, graphDependency, aiCapabilities.Observe, graphSyncWorker.Submit, impactWorker.Submit, backupServices, backupRoots, versioningDependencies, project.PeerInstanceClient{}, instanceSecret, instanceShutdown.Request)
 	process := &Process{
 		Coordinator: coordinator, Status: status, Host: host, Projects: projects, Assets: assets,
 		workers: workers, dependencies: dependencies, boundaries: append([]ShutdownBoundary{backupServices}, options.ShutdownBoundaries...), settings: settings, stdout: options.Stdout,
@@ -322,7 +358,7 @@ func (startup stagedStartupRecovery) Recover(ctx context.Context) error {
 	return err
 }
 
-func registerRoutes(host *httpapi.Runtime, projects *project.Manager, registry *domain.Registry, settings *runtimeconfig.Store, credentials provider.CredentialResolver, assets fs.FS, status *appruntime.StatusAssembler, runtimeActions httpapi.RuntimeActionService, impactSubmit func(context.Context, domain.ID) error, backups *backupRuntime, backupRoots *rootconfig.Manager, other project.OtherInstanceCloser, instanceSecret string, shutdown func()) {
+func registerRoutes(host *httpapi.Runtime, projects *project.Manager, registry *domain.Registry, settings *runtimeconfig.Store, credentials provider.CredentialResolver, assets fs.FS, status *appruntime.StatusAssembler, runtimeActions httpapi.RuntimeActionService, aiCapabilities func(context.Context) provider.Capability, graphSubmit func(context.Context, graphsync.GraphJob) error, impactSubmit func(context.Context, domain.ID) error, backups *backupRuntime, backupRoots *rootconfig.Manager, versioningDependencies app.VersioningDependencies, other project.OtherInstanceCloser, instanceSecret string, shutdown func()) {
 	engine := host.Engine()
 	httpapi.NewProjectHandler(projects, project.NativeDirectorySelector{}, other).Register(engine)
 	httpapi.NewInstanceControlHandler(projects, instanceSecret, shutdown).Register(engine)
@@ -335,8 +371,10 @@ func registerRoutes(host *httpapi.Runtime, projects *project.Manager, registry *
 	}, httpapi.BackupRootSettings{Selection: backupRoots, Selector: project.NativeDirectorySelector{Title: "Select Eco Guardian backup folder"}, Projects: projects}).Register(engine)
 	httpapi.NewCredentialHandler(credentials).Register(engine)
 
-	graph := httpapi.GraphSyncServiceFromProjectManager(projects, nil)
-	versions := httpapi.NewVersionHandlerWithGraph(httpapi.VersioningServiceFromProjectManagerWithDependencies(projects, app.VersioningDependencies{}), graph)
+	graphProvider, _ := runtimeActions.(graphsync.GraphProvider)
+	graph := httpapi.GraphSyncServiceFromProjectManagerWithProvider(projects, graphProvider, graphSubmit)
+	versions := httpapi.NewVersionHandlerWithGraph(httpapi.VersioningServiceFromProjectManagerWithDependencies(projects, versioningDependencies), graph)
+	versions.RegisterAICapabilityProvider(aiCapabilities)
 	versions.RegisterBackupCapabilityProvider(backups.Capability)
 	impactProvider, _ := runtimeActions.(httpapi.ImpactProvider)
 	impactAnalyses := httpapi.ImpactAnalysisServiceFromProjectManager(projects, httpapi.ImpactServiceDependencies{Provider: impactProvider, Submit: impactSubmit})
@@ -881,6 +919,12 @@ func (s recentProjectStartup) OpenRecentProject(ctx context.Context) error {
 		reason.Code = "RECENT_PROJECT_RECOVERY_REQUIRED"
 	default:
 		reason.Code = "RECENT_PROJECT_UNAVAILABLE"
+	}
+	// Workers are process-owned and tolerate an absent project. Starting them
+	// even when automatic reopen fails lets a later manual open use Graph,
+	// impact, and release immediately without requiring an application restart.
+	if workerErr := s.workers.StartDependencies(ctx); workerErr != nil {
+		return workerErr
 	}
 	return appruntime.RecentProjectDegradation{Reason: reason}
 }

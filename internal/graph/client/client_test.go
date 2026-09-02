@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -160,13 +161,33 @@ func TestClientHandlesReplayAndProviderErrorBranches(t *testing.T) {
 	}
 }
 
+func TestFullSnapshotTransportKeepsRequiredEmptyArrays(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || string(body["nodes"]) != "[]" || string(body["edges"]) != "[]" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write([]byte(`{"namespace":"project","version":"revision","base_version":null,"schema_version":"1.0","content_hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","node_count":0,"edge_count":0,"task_id":"task-1","status":"building","query_ready":false,"components":[],"warnings":[]}`))
+	}))
+	defer server.Close()
+	client, err := New(Config{Endpoint: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := graphsync.PutSnapshotRequest{SchemaVersion: "1.0", Mode: "full", ContentHash: strings.Repeat("a", 64), Nodes: []graphsync.Node{}, Edges: []graphsync.Edge{}}
+	if _, err = client.PutSnapshot(context.Background(), "project", "revision", request, "request-empty"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTaskSnapshotAndActivationContractValidation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/tasks/task-1":
-			_, _ = w.Write([]byte(`{"task_id":"task-1","operation":"snapshot_build","namespace":"project","snapshot_version":"revision","state":"succeeded","phase":"completed","progress":1,"warnings":[],"created_at":"2026-08-01T00:00:00Z"}`))
+			_, _ = w.Write([]byte(`{"task_id":"task-1","operation":"snapshot_build","namespace":"project","snapshot_version":"revision","state":"succeeded","phase":"completed","progress":1,"warnings":null,"created_at":"2026-08-01T00:00:00Z"}`))
 		case "/v1/graphs/project/snapshots/revision":
-			_, _ = w.Write([]byte(`{"namespace":"project","version":"revision","base_version":null,"schema_version":"1.0","content_hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","node_count":2,"edge_count":1,"task_id":"task-1","status":"ready","query_ready":true,"components":[{"name":"graph","state":"ready"},{"name":"fts","state":"ready"},{"name":"vector","state":"unavailable"}],"warnings":["VECTOR_UNAVAILABLE"]}`))
+			_, _ = w.Write([]byte(`{"namespace":"project","version":"revision","base_version":null,"schema_version":"1.0","content_hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","node_count":2,"edge_count":1,"task_id":"task-1","status":"ready","query_ready":true,"components":[{"name":"graph","state":"ready"},{"name":"fts","state":"ready"},{"name":"vector","state":"ready"}],"warnings":null}`))
 		default:
 			_, _ = w.Write([]byte(`{"namespace":"project","active_version":"revision","changed":false}`))
 		}
@@ -177,11 +198,11 @@ func TestTaskSnapshotAndActivationContractValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	task, err := client.GetTask(context.Background(), "task-1", "request-1")
-	if err != nil || task.State != "succeeded" {
+	if err != nil || task.State != "succeeded" || task.Warnings == nil {
 		t.Fatalf("task=%#v err=%v", task, err)
 	}
 	snapshot, err := client.InspectSnapshot(context.Background(), "project", "revision", "request-2")
-	if err != nil || !snapshot.QueryReady || snapshot.Components[2].State != "unavailable" {
+	if err != nil || !snapshot.QueryReady || snapshot.Components[2].State != "ready" || snapshot.Warnings == nil {
 		t.Fatalf("snapshot=%#v err=%v", snapshot, err)
 	}
 	activation, err := client.ActivateSnapshot(context.Background(), "project", "revision", "request-3")

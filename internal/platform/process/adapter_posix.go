@@ -1,4 +1,4 @@
-//go:build darwin
+//go:build darwin || linux
 
 package process
 
@@ -54,7 +54,7 @@ func (adapter *darwinAdapter) CreateSuspended(ctx context.Context, command Comma
 		_ = stderrWrite.Close()
 		return nil, err
 	}
-	// macOS has no Windows-style CREATE_SUSPENDED. Stop the newly-created
+	// POSIX hosts have no Windows-style CREATE_SUSPENDED. Stop the newly-created
 	// process group immediately so the supervisor can establish ownership
 	// before allowing it to serve. The tiny interval before SIGSTOP is the
 	// unavoidable limitation of the POSIX adapter.

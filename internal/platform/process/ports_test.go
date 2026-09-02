@@ -35,7 +35,7 @@ func TestCommandValidationRejectsEmptyAndNULValues(t *testing.T) {
 }
 
 func TestUnsupportedAdapterFailsClosed(t *testing.T) {
-	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		t.Skip("unsupported adapter is selected only on hosts without a native process implementation")
 	}
 	adapter := New()

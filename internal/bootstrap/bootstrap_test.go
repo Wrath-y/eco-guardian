@@ -166,6 +166,7 @@ func TestCompositionStartsAppliedServicesAndClosesInOwnershipOrder(t *testing.T)
 		t.Fatalf("stdout=%q url=%q", output.String(), snapshot.ListenerURL)
 	}
 	assertEmbeddedSameOrigin(t, snapshot.ListenerURL)
+	assertRuntimeCapabilitiesComposed(t, snapshot.ListenerURL)
 	routes := map[string]bool{}
 	for _, route := range process.Host.Engine().Routes() {
 		routes[route.Method+" "+route.Path] = true
@@ -213,6 +214,39 @@ func TestCompositionStartsAppliedServicesAndClosesInOwnershipOrder(t *testing.T)
 	}
 	if strings.Contains(logText, projectPath) {
 		t.Fatalf("runtime log leaked project path: %s", logText)
+	}
+}
+
+func assertRuntimeCapabilitiesComposed(t *testing.T, baseURL string) {
+	t.Helper()
+	response, err := http.Get(baseURL + "/api/v1/runtime/capabilities")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, readErr := io.ReadAll(response.Body)
+	_ = response.Body.Close()
+	if readErr != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("runtime capabilities status=%d body=%q err=%v", response.StatusCode, body, readErr)
+	}
+	text := string(body)
+	if !strings.Contains(text, `"release":{"disabled_reasons":[],"enabled":true}`) {
+		t.Fatalf("release Gate registry was not composed: %s", text)
+	}
+	if !strings.Contains(text, `"reasons":["AI_DISABLED"]`) || strings.Contains(text, "AI_PROVIDER_UNCONFIGURED") {
+		t.Fatalf("AI capability did not use live settings: %s", text)
+	}
+
+	statusResponse, err := http.Get(baseURL + "/api/v1/runtime/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	statusBody, readErr := io.ReadAll(statusResponse.Body)
+	_ = statusResponse.Body.Close()
+	if readErr != nil || statusResponse.StatusCode != http.StatusOK {
+		t.Fatalf("runtime status=%d body=%q err=%v", statusResponse.StatusCode, statusBody, readErr)
+	}
+	if bytes.Contains(statusBody, []byte("RELEASE_GATE_UNREGISTERED")) || bytes.Contains(statusBody, []byte("RELEASE_GATE_REGISTRY_UNAVAILABLE")) {
+		t.Fatalf("runtime status retained synthetic release failure: %s", statusBody)
 	}
 }
 

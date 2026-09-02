@@ -1,4 +1,4 @@
-//go:build !darwin
+//go:build windows
 
 package project
 
@@ -9,8 +9,8 @@ import (
 	"github.com/sqweek/dialog"
 )
 
-// NativeDirectorySelector opens the OS-provided directory dialog on macOS and
-// Windows. The selected path stays process-local in the token store.
+// NativeDirectorySelector opens the Windows-provided directory dialog. The
+// selected path stays process-local in the token store.
 type NativeDirectorySelector struct{ Title string }
 
 func (s NativeDirectorySelector) SelectDirectory(ctx context.Context) (string, error) {

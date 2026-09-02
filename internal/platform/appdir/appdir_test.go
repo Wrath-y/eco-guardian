@@ -32,6 +32,18 @@ func TestResolveDarwinDerivesMachineOnlyPaths(t *testing.T) {
 	}
 }
 
+func TestResolveLinuxDerivesMachineOnlyPaths(t *testing.T) {
+	base := t.TempDir()
+	paths, err := ResolveLinux(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantRoot := filepath.Join(base, "EcoGuardian")
+	if paths.Root != wantRoot || paths.Runtime != filepath.Join(wantRoot, "runtime") || paths.Logs != filepath.Join(wantRoot, "logs") || paths.Settings != filepath.Join(wantRoot, "settings.json") {
+		t.Fatalf("paths = %#v", paths)
+	}
+}
+
 func TestEnsureCanonicalizesAndRestrictsMachinePaths(t *testing.T) {
 	paths, err := ResolveWindows(t.TempDir())
 	if err != nil {
@@ -78,12 +90,12 @@ func TestCreatePrivateFileRejectsTraversal(t *testing.T) {
 
 func TestResolveHostReportsUnsupportedPlatforms(t *testing.T) {
 	paths, err := ResolveHost()
-	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		if err != nil {
 			t.Fatal(err)
 		}
 		if paths.Root == "" {
-			t.Fatal("Windows paths are empty")
+			t.Fatal("host paths are empty")
 		}
 		return
 	}

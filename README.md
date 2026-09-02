@@ -31,7 +31,10 @@ Production builds embed `web/dist`, the API contract, migrations, and built-in s
 
 ## Run from source
 
-The complete runtime currently requires Windows 10/11 x64. A source build also requires:
+Source builds run on Linux, macOS, and Windows. External Graph mode uses the
+same loopback `local-rag` contract on all three systems; the self-contained
+complete package with bundled runtimes/models remains a Windows x64 artifact.
+A source build requires:
 
 - Go 1.25 (as specified in `go.mod`);
 - Node.js 22 and npm;

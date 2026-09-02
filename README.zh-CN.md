@@ -31,7 +31,9 @@ Eco Guardian 是一个优先面向 Windows 10/11 x64 的本地游戏数值策划
 
 ## 从源码启动
 
-完整运行需要 Windows 10/11 x64。源码构建还需要：
+源码运行支持 Linux、macOS 和 Windows；三者的 External Graph 模式使用同一套
+loopback `local-rag` 契约。自带运行时和模型的完整离线安装包目前仍是 Windows
+x64 制品。源码构建需要：
 
 - Go 1.25（版本以 `go.mod` 为准）；
 - Node.js 22 和 npm；

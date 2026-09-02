@@ -29,7 +29,7 @@ type UnsupportedPlatformError struct {
 }
 
 func (e UnsupportedPlatformError) Error() string {
-	return fmt.Sprintf("UNSUPPORTED_PLATFORM: Eco Guardian local runtime supports Windows x64 and macOS, not %s/%s", e.OS, e.Arch)
+	return fmt.Sprintf("UNSUPPORTED_PLATFORM: Eco Guardian local runtime supports Windows, macOS, and Linux, not %s/%s", e.OS, e.Arch)
 }
 
 // ResolveWindows validates a LOCALAPPDATA base and derives canonical child
@@ -44,6 +44,12 @@ func ResolveWindows(localAppData string) (Paths, error) {
 // caller supplies os.UserConfigDir() so this path policy stays testable.
 func ResolveDarwin(userConfigDir string) (Paths, error) {
 	return resolveApplicationData(userConfigDir, "application configuration directory")
+}
+
+// ResolveLinux validates an XDG user configuration directory without reading
+// the host environment, keeping Linux path policy deterministic in tests.
+func ResolveLinux(userConfigDir string) (Paths, error) {
+	return resolveApplicationData(userConfigDir, "XDG configuration directory")
 }
 
 func resolveApplicationData(baseDir, label string) (Paths, error) {

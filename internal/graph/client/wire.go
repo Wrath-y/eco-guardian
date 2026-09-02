@@ -75,7 +75,7 @@ type snapshotWire struct {
 }
 
 func (w snapshotWire) toDomain() (graphsync.Snapshot, error) {
-	if strings.TrimSpace(w.Namespace) == "" || strings.TrimSpace(w.Version) == "" || w.SchemaVersion != graphsync.SnapshotSchemaVersion || !hash(w.ContentHash) || w.NodeCount < 0 || w.EdgeCount < 0 || strings.TrimSpace(w.TaskID) == "" || !oneOf(w.Status, "building", "ready", "failed") || w.Components == nil || w.Warnings == nil {
+	if strings.TrimSpace(w.Namespace) == "" || strings.TrimSpace(w.Version) == "" || w.SchemaVersion != graphsync.SnapshotSchemaVersion || !hash(w.ContentHash) || w.NodeCount < 0 || w.EdgeCount < 0 || strings.TrimSpace(w.TaskID) == "" || !oneOf(w.Status, "building", "ready", "failed") || w.Components == nil {
 		return graphsync.Snapshot{}, fmt.Errorf("%w: invalid snapshot response", ErrContract)
 	}
 	components := make([]graphsync.Component, 0, len(w.Components))
@@ -89,7 +89,7 @@ func (w snapshotWire) toDomain() (graphsync.Snapshot, error) {
 	if w.BaseVersion != nil {
 		base = *w.BaseVersion
 	}
-	return graphsync.Snapshot{Namespace: w.Namespace, Version: w.Version, BaseVersion: base, SchemaVersion: w.SchemaVersion, ContentHash: w.ContentHash, NodeCount: w.NodeCount, EdgeCount: w.EdgeCount, TaskID: w.TaskID, Status: w.Status, QueryReady: w.QueryReady, Components: components, Warnings: append([]string(nil), w.Warnings...)}, nil
+	return graphsync.Snapshot{Namespace: w.Namespace, Version: w.Version, BaseVersion: base, SchemaVersion: w.SchemaVersion, ContentHash: w.ContentHash, NodeCount: w.NodeCount, EdgeCount: w.EdgeCount, TaskID: w.TaskID, Status: w.Status, QueryReady: w.QueryReady, Components: components, Warnings: append([]string{}, w.Warnings...)}, nil
 }
 
 type taskWire struct {
@@ -109,10 +109,10 @@ type taskWire struct {
 }
 
 func (w taskWire) toDomain() (graphsync.Task, error) {
-	if strings.TrimSpace(w.ID) == "" || strings.TrimSpace(w.Operation) == "" || strings.TrimSpace(w.Namespace) == "" || strings.TrimSpace(w.SnapshotVersion) == "" || !oneOf(w.State, "queued", "running", "succeeded", "failed") || strings.TrimSpace(w.Phase) == "" || w.Progress < 0 || w.Progress > 1 || w.Warnings == nil || w.CreatedAt == nil || (w.Error != nil && !w.Error.Valid()) {
+	if strings.TrimSpace(w.ID) == "" || strings.TrimSpace(w.Operation) == "" || strings.TrimSpace(w.Namespace) == "" || strings.TrimSpace(w.SnapshotVersion) == "" || !oneOf(w.State, "queued", "running", "succeeded", "failed") || strings.TrimSpace(w.Phase) == "" || w.Progress < 0 || w.Progress > 1 || w.CreatedAt == nil || (w.Error != nil && !w.Error.Valid()) {
 		return graphsync.Task{}, fmt.Errorf("%w: invalid task response", ErrContract)
 	}
-	return graphsync.Task{ID: w.ID, Operation: w.Operation, Namespace: w.Namespace, SnapshotVersion: w.SnapshotVersion, State: w.State, Phase: w.Phase, Progress: w.Progress, Warnings: append([]string(nil), w.Warnings...), CreatedAt: w.CreatedAt, StartedAt: w.StartedAt, FinishedAt: w.FinishedAt, Error: w.Error, Result: append([]byte(nil), w.Result...)}, nil
+	return graphsync.Task{ID: w.ID, Operation: w.Operation, Namespace: w.Namespace, SnapshotVersion: w.SnapshotVersion, State: w.State, Phase: w.Phase, Progress: w.Progress, Warnings: append([]string{}, w.Warnings...), CreatedAt: w.CreatedAt, StartedAt: w.StartedAt, FinishedAt: w.FinishedAt, Error: w.Error, Result: append([]byte(nil), w.Result...)}, nil
 }
 
 type activationWire struct {

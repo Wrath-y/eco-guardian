@@ -17,6 +17,10 @@ import (
 const (
 	maxProbeResponseBytes = 1 << 20
 	defaultProbeTimeout   = 10 * time.Second
+	// Reasoning-capable OpenAI-compatible models may consume completion budget
+	// before emitting the tiny JSON/tool payload. Sixteen tokens caused false
+	// "unsupported" results for otherwise compatible providers.
+	capabilityProbeTokens = 128
 )
 
 type HTTPClient interface {
@@ -99,7 +103,7 @@ func (p Prober) modelAvailable(ctx context.Context, client HTTPClient, baseURL, 
 
 func (p Prober) probeStructuredOutput(ctx context.Context, client HTTPClient, baseURL, model string, credential []byte) (bool, error) {
 	body := map[string]any{
-		"model": model, "max_tokens": 16, "stream": false,
+		"model": model, "max_tokens": capabilityProbeTokens, "stream": false,
 		"messages": []map[string]string{{"role": "user", "content": "Return {\"ok\":true}."}},
 		"response_format": map[string]any{
 			"type": "json_schema",
@@ -134,7 +138,7 @@ func (p Prober) probeStructuredOutput(ctx context.Context, client HTTPClient, ba
 
 func (p Prober) probeToolCalls(ctx context.Context, client HTTPClient, baseURL, model string, credential []byte) (bool, error) {
 	body := map[string]any{
-		"model": model, "max_tokens": 16, "stream": false,
+		"model": model, "max_tokens": capabilityProbeTokens, "stream": false,
 		"messages": []map[string]string{{"role": "user", "content": "Call the capability probe tool."}},
 		"tools": []map[string]any{{"type": "function", "function": map[string]any{
 			"name": "eco_capability_probe", "description": "Capability probe", "strict": true,

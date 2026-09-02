@@ -50,13 +50,14 @@ func (loopbackPortCandidates) NextLoopbackPort(ctx context.Context) (uint16, err
 }
 
 type graphRuntimeDependency struct {
-	actionMu sync.Mutex
-	mu       sync.Mutex
-	settings *settingsStartup
-	packages verifiedPackageSource
-	root     string
-	logger   *runtimediagnostics.Logger
-	refresh  func(context.Context)
+	actionMu   sync.Mutex
+	mu         sync.Mutex
+	settings   *settingsStartup
+	packages   verifiedPackageSource
+	root       string
+	logger     *runtimediagnostics.Logger
+	refresh    func(context.Context)
+	invalidate func()
 
 	refreshRequests chan struct{}
 	refreshCancel   context.CancelFunc
@@ -69,6 +70,8 @@ type graphRuntimeDependency struct {
 	process    graphprocess.ProcessObservation
 	health     graphprocess.HealthObservation
 }
+
+var _ graphsync.GraphProvider = (*graphRuntimeDependency)(nil)
 
 func (dependency *graphRuntimeDependency) impactClient() (*graphclient.Client, error) {
 	if dependency == nil {
@@ -89,6 +92,50 @@ func (dependency *graphRuntimeDependency) InspectSnapshot(ctx context.Context, n
 		return graphsync.Snapshot{}, err
 	}
 	return client.InspectSnapshot(ctx, namespace, version, requestID)
+}
+
+// The runtime dependency is also the process-owned Graph provider used by
+// application services. Every operation resolves the current endpoint at call
+// time, so settings reconnects cannot leave handlers holding a stale client.
+// The concrete HTTP adapter remains loopback-only on every supported OS.
+func (dependency *graphRuntimeDependency) Health(ctx context.Context, requestID string) (graphsync.Health, error) {
+	client, err := dependency.impactClient()
+	if err != nil {
+		return graphsync.Health{}, err
+	}
+	return client.Health(ctx, requestID)
+}
+
+func (dependency *graphRuntimeDependency) PutSnapshot(ctx context.Context, namespace, version string, request graphsync.PutSnapshotRequest, requestID string) (graphsync.Snapshot, error) {
+	client, err := dependency.impactClient()
+	if err != nil {
+		return graphsync.Snapshot{}, err
+	}
+	return client.PutSnapshot(ctx, namespace, version, request, requestID)
+}
+
+func (dependency *graphRuntimeDependency) GetTask(ctx context.Context, taskID, requestID string) (graphsync.Task, error) {
+	client, err := dependency.impactClient()
+	if err != nil {
+		return graphsync.Task{}, err
+	}
+	return client.GetTask(ctx, taskID, requestID)
+}
+
+func (dependency *graphRuntimeDependency) ActivateSnapshot(ctx context.Context, namespace, version, requestID string) (graphsync.Activation, error) {
+	client, err := dependency.impactClient()
+	if err != nil {
+		return graphsync.Activation{}, err
+	}
+	return client.ActivateSnapshot(ctx, namespace, version, requestID)
+}
+
+func (dependency *graphRuntimeDependency) DeleteSnapshotForRetry(ctx context.Context, namespace, version, requestID string) error {
+	client, err := dependency.impactClient()
+	if err != nil {
+		return err
+	}
+	return client.DeleteSnapshotForRetry(ctx, namespace, version, requestID)
 }
 
 func (dependency *graphRuntimeDependency) Traverse(ctx context.Context, request impact.TraverseRequest, requestID string) (impact.TraverseResponse, error) {
@@ -256,6 +303,9 @@ func (dependency *graphRuntimeDependency) Reprobe(ctx context.Context) error {
 	if dependency == nil {
 		return graphprocess.ErrSelectionUnavailable
 	}
+	if dependency.invalidate != nil {
+		dependency.invalidate()
+	}
 	dependency.actionMu.Lock()
 	dependency.mu.Lock()
 	observer, endpoint := dependency.observer, dependency.endpoint
@@ -277,6 +327,9 @@ func (dependency *graphRuntimeDependency) Reprobe(ctx context.Context) error {
 func (dependency *graphRuntimeDependency) Reconnect(ctx context.Context) error {
 	if dependency == nil || dependency.settings == nil || dependency.settings.graphSettings().Mode == runtimeconfig.GraphDisabled {
 		return graphprocess.ErrSelectionUnavailable
+	}
+	if dependency.invalidate != nil {
+		dependency.invalidate()
 	}
 	dependency.actionMu.Lock()
 	closeErr := dependency.close(ctx)
@@ -360,7 +413,7 @@ func (dependency *graphRuntimeDependency) triggerRefresh(ctx context.Context) {
 	refresh := dependency.refresh
 	dependency.mu.Unlock()
 	if refresh != nil {
-		refreshContext, cancel := context.WithTimeout(ctx, 10*time.Second)
+		refreshContext, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()
 		refresh(refreshContext)
 	}
@@ -435,6 +488,8 @@ type runtimeCapabilityConvergence struct {
 	credentials aiprovider.CredentialResolver
 	projects    *project.Manager
 	backups     *backupRuntime
+	ai          func(context.Context) aiprovider.Capability
+	release     func(context.Context) (versioninggate.ReleaseCapability, error)
 }
 
 func (convergence runtimeCapabilityConvergence) ConvergeCapabilities(ctx context.Context) (appruntime.CapabilityConvergence, error) {
@@ -458,13 +513,19 @@ func (convergence runtimeCapabilityConvergence) ConvergeCapabilities(ctx context
 			observations[observation.ID] = observation
 		}
 	}
-	ai := appruntime.AICapabilityService{Settings: convergence.settings, Credentials: convergence.credentials, Prober: aiopenai.Prober{}}.Observe(ctx)
+	ai := aiprovider.Capability{State: aiprovider.CapabilityUnavailable, Reasons: []string{aiprovider.ReasonSettingsUnavailable}}
+	if convergence.ai != nil {
+		ai = convergence.ai(ctx)
+	} else {
+		ai = appruntime.AICapabilityService{Settings: convergence.settings, Credentials: convergence.credentials, Prober: aiopenai.Prober{}}.Observe(ctx)
+	}
 	observations[capability.ObservationAIProvider] = capability.AIObservation(ai, 1, now)
 	release := versioninggate.ReleaseCapability{Enabled: false, Reasons: []versioninggate.DisabledReason{{CapabilityID: "release", GateID: "project", Reason: "gate registry unavailable"}}}
-	if _, active := convergence.projects.Current(); active {
-		// The project-owned release handler remains authoritative. Runtime status
-		// stays unavailable until its exact candidate Gate result is observed.
-		release.Reasons[0].Reason = "required gate is unregistered"
+	if convergence.release != nil {
+		observed, releaseErr := convergence.release(ctx)
+		if releaseErr == nil {
+			release = observed
+		}
 	}
 	observations[capability.ObservationReleaseGates] = capability.ReleaseGateObservation(release, 1, now)
 	results := capability.DefaultRegistry().Evaluate(observations)

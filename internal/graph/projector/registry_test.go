@@ -187,7 +187,7 @@ func TestManifestBytesUseProviderJCSOrderAndSortedRecords(t *testing.T) {
 	if err != nil || len(hash) != 64 {
 		t.Fatalf("bytes=%s hash=%q err=%v", bytes, hash, err)
 	}
-	if !strings.HasPrefix(string(bytes), `{"edges":[],"nodes":[{"id":"a","label":"A"`) || !reflect.DeepEqual(result.Nodes[0].ID, "b") {
+	if !strings.HasPrefix(string(bytes), `{"edges":null,"nodes":[{"id":"a","label":"A"`) || !reflect.DeepEqual(result.Nodes[0].ID, "b") {
 		t.Fatalf("canonical=%s", bytes)
 	}
 	again, againHash, err := ManifestBytes(Result{Nodes: []Node{result.Nodes[1], result.Nodes[0]}, Edges: []Edge{}})
