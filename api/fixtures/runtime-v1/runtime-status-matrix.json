@@ -10,7 +10,7 @@
     "dependencies": [{ "id": "graph.core", "state": "healthy", "generation": 2, "observed_at": "2026-08-25T00:00:00Z", "expires_at": "2026-08-25T00:00:30Z", "reasons": [] }],
     "capabilities": [{ "id": "local.editing", "version": "1", "state": "available", "observation_generation": 10, "reasons": [], "actions": [] }],
     "recovery": [],
-    "log_location": "<local-app-data>/EcoGuardian/logs",
+    "log_location": "<project-directory>/logs",
     "updated_at": "2026-08-25T00:00:01Z"
   },
   {
@@ -28,7 +28,7 @@
       { "id": "ai.design", "version": "1", "state": "unavailable", "observation_generation": 11, "reasons": [{ "code": "AI_PROVIDER_UNAVAILABLE", "component": "ai.provider", "observation_generation": 8 }], "actions": [{ "id": "provider.settings", "method": "PATCH", "uri": "/api/v1/settings", "idempotency_required": false }] }
     ],
     "recovery": [{ "job_kind": "graph_sync", "state": "reconciling", "count": 1 }, { "job_kind": "ai_design", "state": "recovery_required", "count": 1 }],
-    "log_location": "<local-app-data>/EcoGuardian/logs",
+    "log_location": "<project-directory>/logs",
     "updated_at": "2026-08-25T00:00:02Z"
   },
   {
@@ -42,7 +42,7 @@
     "dependencies": [{ "id": "graph.core", "state": "unavailable", "generation": 0, "observed_at": null, "expires_at": null, "reasons": [{ "code": "PACKAGE_COMPONENT_MISSING", "component": "local-rag", "observation_generation": 0 }] }],
     "capabilities": [{ "id": "graph.sync", "version": "1", "state": "unavailable", "observation_generation": 12, "reasons": [{ "code": "GRAPH_CORE_UNAVAILABLE", "component": "graph.core", "observation_generation": 0 }], "actions": [] }],
     "recovery": [],
-    "log_location": "<local-app-data>/EcoGuardian/logs",
+    "log_location": "<project-directory>/logs",
     "updated_at": "2026-08-25T00:00:03Z"
   }
 ]

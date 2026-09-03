@@ -20,7 +20,10 @@ import (
 	aiaudit "github.com/zouyi/eco-guardian/internal/ai/audit"
 )
 
-const Filename = "eco-guardian.log"
+const (
+	Filename         = "eco-guardian.log"
+	DisplayDirectory = "<project-directory>/logs"
+)
 
 var ErrLoggerInvalid = errors.New("runtime diagnostics logger is invalid")
 
@@ -148,7 +151,7 @@ func (logger *Logger) Failures() uint64 {
 	}
 	return logger.failures.Load()
 }
-func (logger *Logger) DisplayLocation() string { return "<local-app-data>/EcoGuardian/logs" }
+func (logger *Logger) DisplayLocation() string { return DisplayDirectory }
 
 func (logger *Logger) run() {
 	var firstError error

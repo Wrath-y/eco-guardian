@@ -31,7 +31,7 @@ func TestRuntimeStatusHandlerReturnsGeneratedSafeDTOWithoutSideEffects(t *testin
 		Lifecycle: appruntime.StatusSnapshot{Generation: 4, Phase: appruntime.PhaseDegraded, ListenerURL: "http://127.0.0.1:8123", UpdatedAt: now},
 		Build:     buildinfo.Info{Version: "1.0.0", Build: "release", Commit: "abc", PackageMode: buildinfo.PackageComplete},
 		Project:   appruntime.ProjectStatus{State: "none"}, Capabilities: []capability.Result{}, Recovery: []appruntime.RecoveryStatus{},
-		LogLocation: "<local-app-data>/EcoGuardian/logs",
+		LogLocation: "<project-directory>/logs",
 	})
 	if err != nil {
 		t.Fatal(err)

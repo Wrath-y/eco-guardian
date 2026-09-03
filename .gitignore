@@ -9,6 +9,7 @@ node_modules
 # Local build outputs and single-file development builds.
 dist/
 .run/
+/logs/
 eco-guardian
 *.log
 

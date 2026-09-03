@@ -1702,6 +1702,7 @@ const (
 	ProblemCodeINVALIDVALIDATIONTARGET             ProblemCode = "INVALID_VALIDATION_TARGET"
 	ProblemCodeMANDATORYBACKUPFAILED               ProblemCode = "MANDATORY_BACKUP_FAILED"
 	ProblemCodeMIGRATIONBACKUPREQUIRED             ProblemCode = "MIGRATION_BACKUP_REQUIRED"
+	ProblemCodeOTHERINSTANCEUNAVAILABLE            ProblemCode = "OTHER_INSTANCE_UNAVAILABLE"
 	ProblemCodePRECONDITIONREQUIRED                ProblemCode = "PRECONDITION_REQUIRED"
 	ProblemCodePROJECTLOCKED                       ProblemCode = "PROJECT_LOCKED"
 	ProblemCodePROJECTNOTOPEN                      ProblemCode = "PROJECT_NOT_OPEN"
@@ -1888,6 +1889,8 @@ func (e ProblemCode) Valid() bool {
 	case ProblemCodeMANDATORYBACKUPFAILED:
 		return true
 	case ProblemCodeMIGRATIONBACKUPREQUIRED:
+		return true
+	case ProblemCodeOTHERINSTANCEUNAVAILABLE:
 		return true
 	case ProblemCodePRECONDITIONREQUIRED:
 		return true

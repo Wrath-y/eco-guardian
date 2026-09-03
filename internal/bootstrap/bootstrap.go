@@ -137,6 +137,10 @@ func Build(options BuildOptions) (*Process, error) {
 	if err != nil {
 		return nil, err
 	}
+	logDirectory, err := resolveRuntimeLogDirectory(paths, pathsProvided)
+	if err != nil {
+		return nil, err
+	}
 	assets := options.Assets
 	if assets == nil {
 		assets = ecoguardian.Assets
@@ -218,7 +222,7 @@ func Build(options BuildOptions) (*Process, error) {
 	status := appruntime.NewStatusStore(nil)
 	statusAssembler, err := appruntime.NewStatusAssembler(appruntime.StatusResourceInput{
 		Lifecycle: status.Snapshot(), Build: identity, Project: appruntime.ProjectStatus{State: "none"},
-		Capabilities: defaultRuntimeCapabilities(status.Snapshot()), LogLocation: "<local-app-data>/EcoGuardian/logs",
+		Capabilities: defaultRuntimeCapabilities(status.Snapshot()), LogLocation: runtimediagnostics.DisplayDirectory,
 	})
 	if err != nil {
 		return nil, err
@@ -304,7 +308,7 @@ func Build(options BuildOptions) (*Process, error) {
 		logPolicy = configured.Logs
 	}
 	logger, loggerErr := runtimediagnostics.New(runtimediagnostics.Options{
-		Directory: paths.Logs, MaxBytes: logPolicy.MaxBytes, MaxFiles: logPolicy.MaxFiles, Capacity: 1024,
+		Directory: logDirectory, MaxBytes: logPolicy.MaxBytes, MaxFiles: logPolicy.MaxFiles, Capacity: 1024,
 	})
 	if loggerErr != nil && options.Diagnostics != nil {
 		_, _ = fmt.Fprintln(options.Diagnostics, `{"event_name":"safe_error","component":"diagnostics","code":"LOG_UNAVAILABLE"}`)
@@ -492,8 +496,26 @@ func (observer runtimeStatusObserver) Observe(snapshot appruntime.StatusSnapshot
 	}
 	_, _ = observer.assembler.Publish(appruntime.StatusResourceInput{
 		Lifecycle: snapshot, Build: observer.build, Project: projectStatus, Process: processObservation, Dependencies: dependencies,
-		Capabilities: defaultRuntimeCapabilities(snapshot, observer.graph), Recovery: []appruntime.RecoveryStatus{}, LogLocation: "<local-app-data>/EcoGuardian/logs",
+		Capabilities: defaultRuntimeCapabilities(snapshot, observer.graph), Recovery: []appruntime.RecoveryStatus{}, LogLocation: runtimediagnostics.DisplayDirectory,
 	})
+}
+
+// resolveRuntimeLogDirectory keeps the default runtime log beside the project
+// sources. Explicit machine paths are used only by isolated Build callers such
+// as tests and embedders so their files remain inside the supplied sandbox.
+func resolveRuntimeLogDirectory(paths appdir.Paths, pathsProvided bool) (string, error) {
+	if pathsProvided {
+		return filepath.Join(paths.Root, "logs"), nil
+	}
+	projectDirectory, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("resolve project log directory: %w", err)
+	}
+	projectDirectory, err = filepath.Abs(filepath.Clean(projectDirectory))
+	if err != nil {
+		return "", fmt.Errorf("canonicalize project log directory: %w", err)
+	}
+	return filepath.Join(projectDirectory, "logs"), nil
 }
 
 func defaultRuntimeCapabilities(snapshot appruntime.StatusSnapshot, graphs ...*graphRuntimeDependency) []capability.Result {

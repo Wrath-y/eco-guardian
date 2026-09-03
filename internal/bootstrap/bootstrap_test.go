@@ -202,7 +202,7 @@ func TestCompositionStartsAppliedServicesAndClosesInOwnershipOrder(t *testing.T)
 	if len(phases) == 0 || phases[len(phases)-1] != runtime.PhaseStopped {
 		t.Fatalf("observer phases=%v", phases)
 	}
-	logBody, err := os.ReadFile(filepath.Join(paths.Logs, runtimediagnostics.Filename))
+	logBody, err := os.ReadFile(filepath.Join(paths.Root, "logs", runtimediagnostics.Filename))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,6 +214,24 @@ func TestCompositionStartsAppliedServicesAndClosesInOwnershipOrder(t *testing.T)
 	}
 	if strings.Contains(logText, projectPath) {
 		t.Fatalf("runtime log leaked project path: %s", logText)
+	}
+}
+
+func TestRuntimeLogDirectoryDefaultsToProjectDirectory(t *testing.T) {
+	projectDirectory := t.TempDir()
+	t.Chdir(projectDirectory)
+	machinePaths, err := appdir.ResolveDarwin(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	directory, err := resolveRuntimeLogDirectory(machinePaths, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(projectDirectory, "logs")
+	if directory != want {
+		t.Fatalf("log directory=%q want=%q", directory, want)
 	}
 }
 

@@ -10,7 +10,7 @@ const runtime = {
   schema_version: 1, generation: 1, build: { version: '1.0.0', build: 'test', commit: 'abc', package_mode: 'development' },
   listener: { url: 'http://127.0.0.1:43123' }, phase: 'ready', project: { state: 'active', project_id: project.id, recent_count: 1, recovery_required: false },
   process: { ownership: 'external', state: 'ready', launch_generation: 1, endpoint: null, restart_attempt: 0, reason: null },
-  dependencies: [], capabilities: [], recovery: [], log_location: '<local>/logs', updated_at: new Date().toISOString(),
+  dependencies: [], capabilities: [], recovery: [], log_location: '<project-directory>/logs', updated_at: new Date().toISOString(),
 }
 const capabilities = {
   release: { enabled: true, disabled_reasons: [] },

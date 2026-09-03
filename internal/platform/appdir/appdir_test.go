@@ -15,7 +15,7 @@ func TestResolveWindowsDerivesMachineOnlyPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantRoot := filepath.Join(base, "EcoGuardian")
-	if paths.Root != wantRoot || paths.Runtime != filepath.Join(wantRoot, "runtime") || paths.Logs != filepath.Join(wantRoot, "logs") || paths.Settings != filepath.Join(wantRoot, "settings.json") {
+	if paths.Root != wantRoot || paths.Runtime != filepath.Join(wantRoot, "runtime") || paths.Settings != filepath.Join(wantRoot, "settings.json") {
 		t.Fatalf("paths = %#v", paths)
 	}
 }
@@ -27,7 +27,7 @@ func TestResolveDarwinDerivesMachineOnlyPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantRoot := filepath.Join(base, "EcoGuardian")
-	if paths.Root != wantRoot || paths.Runtime != filepath.Join(wantRoot, "runtime") || paths.Logs != filepath.Join(wantRoot, "logs") || paths.Settings != filepath.Join(wantRoot, "settings.json") {
+	if paths.Root != wantRoot || paths.Runtime != filepath.Join(wantRoot, "runtime") || paths.Settings != filepath.Join(wantRoot, "settings.json") {
 		t.Fatalf("paths = %#v", paths)
 	}
 }
@@ -39,7 +39,7 @@ func TestResolveLinuxDerivesMachineOnlyPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantRoot := filepath.Join(base, "EcoGuardian")
-	if paths.Root != wantRoot || paths.Runtime != filepath.Join(wantRoot, "runtime") || paths.Logs != filepath.Join(wantRoot, "logs") || paths.Settings != filepath.Join(wantRoot, "settings.json") {
+	if paths.Root != wantRoot || paths.Runtime != filepath.Join(wantRoot, "runtime") || paths.Settings != filepath.Join(wantRoot, "settings.json") {
 		t.Fatalf("paths = %#v", paths)
 	}
 }
@@ -53,7 +53,7 @@ func TestEnsureCanonicalizesAndRestrictsMachinePaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, directory := range []string{ensured.Root, ensured.Runtime, ensured.Logs} {
+	for _, directory := range []string{ensured.Root, ensured.Runtime} {
 		info, err := os.Stat(directory)
 		if err != nil {
 			t.Fatal(err)

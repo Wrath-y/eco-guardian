@@ -165,7 +165,7 @@ function Invoke-PackageSmoke([string] $Mode, [string] $PackageRoot, [string] $Ru
         Assert-Condition ($status.schema_version -eq 1 -and $status.listener.url -eq $listenerURL) "runtime status identity mismatch"
         Assert-Condition ($status.build.package_mode -eq $Mode) "runtime package mode mismatch"
         Assert-Condition ($status.project.state -eq 'active' -and $status.project.project_id -eq $fixture.project_id) "recent project was not reopened"
-        Assert-Condition ($status.log_location -eq '<local-app-data>/EcoGuardian/logs') "runtime exposed an unsafe log path"
+        Assert-Condition ($status.log_location -eq '<project-directory>/logs') "runtime exposed an unsafe log path"
         if ($status.process.endpoint) {
             Assert-Condition ($status.process.endpoint -match '^http://(127\.0\.0\.1|localhost):[0-9]{1,5}$') "Graph endpoint is not loopback-only"
         }
@@ -184,7 +184,7 @@ function Invoke-PackageSmoke([string] $Mode, [string] $PackageRoot, [string] $Ru
         foreach ($listener in $listeners) {
             Assert-Condition ($listener.LocalAddress -eq '127.0.0.1') "Eco Guardian has a non-loopback listener: $($listener.LocalAddress)"
         }
-        $logPath = Join-Path $ecoData 'logs\eco-guardian.log'
+        $logPath = Join-Path $PackageRoot 'logs\eco-guardian.log'
         $logDeadline = [DateTime]::UtcNow.AddSeconds(10)
         while (-not (Test-Path -LiteralPath $logPath -PathType Leaf) -and [DateTime]::UtcNow -lt $logDeadline) { Start-Sleep -Milliseconds 200 }
         Assert-Condition (Test-Path -LiteralPath $logPath -PathType Leaf) "runtime log file was not created"

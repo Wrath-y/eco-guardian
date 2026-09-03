@@ -18,7 +18,6 @@ const applicationName = "EcoGuardian"
 type Paths struct {
 	Root     string
 	Runtime  string
-	Logs     string
 	Settings string
 }
 
@@ -67,7 +66,6 @@ func resolveApplicationData(baseDir, label string) (Paths, error) {
 	return Paths{
 		Root:     root,
 		Runtime:  filepath.Join(root, "runtime"),
-		Logs:     filepath.Join(root, "logs"),
 		Settings: filepath.Join(root, "settings.json"),
 	}, nil
 }
@@ -79,10 +77,10 @@ func ResolveHost() (Paths, error) { return resolveHost() }
 // Ensure creates the machine-local directory layout with owner-only requested
 // permissions and returns symlink-resolved absolute paths.
 func (p Paths) Ensure() (Paths, error) {
-	if p.Root == "" || p.Runtime == "" || p.Logs == "" || p.Settings == "" {
+	if p.Root == "" || p.Runtime == "" || p.Settings == "" {
 		return Paths{}, errors.New("application paths are incomplete")
 	}
-	for _, directory := range []string{p.Root, p.Runtime, p.Logs} {
+	for _, directory := range []string{p.Root, p.Runtime} {
 		if err := os.MkdirAll(directory, 0o700); err != nil {
 			return Paths{}, fmt.Errorf("create private directory: %w", err)
 		}
@@ -101,7 +99,6 @@ func (p Paths) Ensure() (Paths, error) {
 	return Paths{
 		Root:     root,
 		Runtime:  filepath.Join(root, "runtime"),
-		Logs:     filepath.Join(root, "logs"),
 		Settings: filepath.Join(root, "settings.json"),
 	}, nil
 }

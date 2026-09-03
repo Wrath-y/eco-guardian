@@ -67,6 +67,8 @@ The launcher builds and directly runs `.run/eco-guardian`, reuses a healthy `loc
 
 After startup, the application binds to an available `127.0.0.1` port, opens the default browser, and prints the URL in the terminal. Press `Ctrl+C` to stop it.
 
+Rotating runtime logs are written to `logs/eco-guardian.log` under the project directory used to start Eco Guardian.
+
 Common launch options:
 
 ```sh

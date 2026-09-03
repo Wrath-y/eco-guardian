@@ -20,7 +20,7 @@ func TestStatusAssemblerPublishesOneDetachedDeterministicSnapshot(t *testing.T) 
 		Dependencies: []DependencyStatus{{ID: "z", State: "healthy", Generation: 2}, {ID: "a", State: "degraded", Generation: 3, ExpiresAt: now.Add(-time.Second), Reasons: []capability.Reason{{Code: "Z_REASON", Component: "z"}, {Code: "A_REASON", Component: "a"}}}},
 		Capabilities: []capability.Result{{ID: "z", Version: "1", State: capability.Available, Reasons: []capability.Reason{}, Actions: []capability.Action{}}, {ID: "a", Version: "1", State: capability.Degraded, Reasons: []capability.Reason{}, Actions: []capability.Action{}}},
 		Recovery:     []RecoveryStatus{{JobKind: "release", State: "complete", Count: 1}, {JobKind: "graph", State: "pending", Count: 2}},
-		LogLocation:  "<local-app-data>/EcoGuardian/logs",
+		LogLocation:  "<project-directory>/logs",
 	}
 	assembler, err := NewStatusAssembler(input)
 	if err != nil {
@@ -47,7 +47,7 @@ func TestStatusAssemblerPublishesOneDetachedDeterministicSnapshot(t *testing.T) 
 
 func TestStatusAssemblerRejectsUnsafeOrIncompletePublication(t *testing.T) {
 	now := time.Now().UTC()
-	base := StatusResourceInput{Lifecycle: StatusSnapshot{Phase: PhaseReady, UpdatedAt: now}, Build: buildinfo.Info{Version: "1.0.0", Build: "release", Commit: "abc", PackageMode: buildinfo.PackageLightweight}, LogLocation: "<local-app-data>/EcoGuardian/logs"}
+	base := StatusResourceInput{Lifecycle: StatusSnapshot{Phase: PhaseReady, UpdatedAt: now}, Build: buildinfo.Info{Version: "1.0.0", Build: "release", Commit: "abc", PackageMode: buildinfo.PackageLightweight}, LogLocation: "<project-directory>/logs"}
 	base.Process.Reason = "unsafe\nchild output"
 	if _, err := NewStatusAssembler(base); err != ErrRuntimeStatusInvalid {
 		t.Fatalf("err=%v", err)
