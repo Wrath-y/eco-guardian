@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -81,7 +82,8 @@ func ReadInstanceOwner(directory string) (InstanceOwner, error) {
 }
 
 type PeerInstanceClient struct {
-	Client *http.Client
+	Client         *http.Client
+	IsProcessAlive func(int) (bool, error)
 }
 
 func (client PeerInstanceClient) Close(ctx context.Context, info ProjectInfo) error {
@@ -111,6 +113,16 @@ func (client PeerInstanceClient) Close(ctx context.Context, info ProjectInfo) er
 	}
 	response, err := httpClient.Do(request)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		reclaimed, reclaimErr := client.reclaimStaleLock(info.Path, owner)
+		if reclaimErr != nil {
+			return fmt.Errorf("%w: %v", ErrOtherUnavailable, reclaimErr)
+		}
+		if reclaimed {
+			return nil
+		}
 		return fmt.Errorf("%w: %v", ErrOtherUnavailable, err)
 	}
 	defer response.Body.Close()
@@ -142,4 +154,39 @@ func (client PeerInstanceClient) Close(ctx context.Context, info ProjectInfo) er
 		case <-ticker.C:
 		}
 	}
+}
+
+// reclaimStaleLock archives a verified owner record only after the recorded
+// process is known to have exited. A live or uninspectable PID keeps the lock,
+// so a temporarily unreachable instance is never forcefully displaced.
+func (client PeerInstanceClient) reclaimStaleLock(directory string, expected InstanceOwner) (bool, error) {
+	probe := client.IsProcessAlive
+	if probe == nil {
+		probe = processAlive
+	}
+	alive, err := probe(expected.PID)
+	if err != nil || alive {
+		return false, err
+	}
+	current, err := ReadInstanceOwner(directory)
+	if err != nil {
+		if errors.Is(err, ErrLockOwnerUnknown) {
+			if _, statErr := os.Stat(filepath.Join(directory, ".eco-guardian.lock")); errors.Is(statErr, os.ErrNotExist) {
+				return true, nil
+			}
+		}
+		return false, err
+	}
+	if current != expected {
+		return false, errors.New("project lock owner changed while closing the other instance")
+	}
+	lockPath := filepath.Join(directory, ".eco-guardian.lock")
+	archivePath := fmt.Sprintf("%s.stale-pid-%d-%s", lockPath, expected.PID, time.Now().UTC().Format("20060102T150405.000000000Z"))
+	if err = os.Rename(lockPath, archivePath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true, nil
+		}
+		return false, err
+	}
+	return true, nil
 }

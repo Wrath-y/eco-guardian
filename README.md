@@ -53,6 +53,18 @@ npm --prefix web run build
 go run ./cmd/eco-guardian
 ```
 
+When the `local-rag` repository is next to this repository, one command can start both services:
+
+```sh
+# macOS / Linux
+./start.sh
+
+# Windows CMD
+start.bat
+```
+
+The launcher builds and directly runs `.run/eco-guardian`, reuses a healthy `local-rag:8765`, or invokes the neighboring repository's launcher when needed. When Eco Guardian exits, it stops only the local-rag instance that it started and leaves a pre-existing instance alone. Extra arguments are forwarded to Eco Guardian, for example `./start.sh --browser-auto-open false`. Set `LOCAL_RAG_DIR` when the repositories are not siblings.
+
 After startup, the application binds to an available `127.0.0.1` port, opens the default browser, and prints the URL in the terminal. Press `Ctrl+C` to stop it.
 
 Common launch options:

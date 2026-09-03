@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { issueNavigationQuery, issueNavigationRoute, normalizeFieldPath, readIssueNavigation } from '@/forms/issue-navigation'
-import { emptyDraft, validateDraft } from '@/forms/registry'
+import { emptyDraft, preparePayload, validateDraft } from '@/forms/registry'
 import { utf8ByteToUTF16, utf8SpanToUTF16 } from '@/forms/utf8-span'
 
 describe('React authoring form helpers', () => {
@@ -12,6 +12,18 @@ describe('React authoring form helpers', () => {
       expect(paths).toContain('key')
       expect(paths).toContain('name')
     }
+  })
+
+  it('prepares structured form payloads without blank optional values', () => {
+    expect(preparePayload('attribute', { value_type: 'boolean', dimension: 'flag', base_unit: 'bool', default: false, min: '0', max: '' })).toEqual({
+      value_type: 'boolean', dimension: 'flag', base_unit: 'bool', default: false,
+    })
+    expect(preparePayload('skill', { costs: [], cooldown: 3, target_selector: { type: 'self', tag_id: 'unused' }, effect_ids: [], rule_blocks: [] })).toEqual({
+      costs: [], cooldown: '3', target_selector: { type: 'self' }, effect_ids: [], rule_blocks: [],
+    })
+    expect(preparePayload('effect', { duration: 5, modifiers: [{ attribute_id: 'attribute', operation: 'Add', value: 2 }], trigger_blocks: [], stack_rule: { operation: 'Add', priority: '', max_stacks: 3, refresh_policy: 'refresh', cap: '' } })).toEqual({
+      duration: '5', modifiers: [{ attribute_id: 'attribute', operation: 'Add', value: '2' }], trigger_blocks: [], stack_rule: { operation: 'Add', max_stacks: '3', refresh_policy: 'refresh' },
+    })
   })
 
   it('preserves RFC 6901 paths and only exposes complete byte spans', () => {

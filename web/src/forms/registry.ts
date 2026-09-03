@@ -6,6 +6,15 @@ export type EntityDraft = components['schemas']['EntityDraft']
 export type EntitySchema = components['schemas']['EntitySchema']
 export type Payload = components['schemas']['EntityPayload']
 
+export const entityKindLabels: Record<EntityKind, string> = {
+  attribute: '属性',
+  tag: '标签',
+  character: '角色',
+  skill: '技能',
+  item: '物品',
+  effect: '效果',
+}
+
 // This is deliberately a fixed, auditable renderer vocabulary. The server may
 // supply schema metadata, but it never supplies executable UI or component names.
 export const rendererMap = Object.freeze({
@@ -28,6 +37,81 @@ export function emptyPayload(kind: EntityKind): Payload {
 
 export function emptyDraft(kind: EntityKind): EntityDraft {
   return { key: '', name: '', description: '', tag_ids: [], balance_group: '', payload: emptyPayload(kind), extensions: {} }
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function omitEmpty(value: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) if (value[key] === '' || value[key] === undefined || value[key] === null) delete value[key]
+}
+
+function stringifyNumbers(value: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) if (typeof value[key] === 'number') value[key] = String(value[key])
+}
+
+function prepareSelector(value: unknown) {
+  const selector = record(value)
+  if (selector.type !== 'targets_with_tag') delete selector.tag_id
+  else omitEmpty(selector, ['tag_id'])
+  return selector
+}
+
+function prepareTriggers(value: unknown) {
+  if (!Array.isArray(value)) return
+  for (const item of value) {
+    const trigger = record(item)
+    omitEmpty(trigger, ['condition', 'termination_budget'])
+    stringifyNumbers(trigger, ['termination_budget'])
+    trigger.target = prepareSelector(trigger.target)
+  }
+}
+
+function prepareModifiers(value: unknown) {
+  if (!Array.isArray(value)) return
+  for (const item of value) stringifyNumbers(record(item), ['value'])
+}
+
+/** Converts form values into the existing API payload shape and removes blank optional fields. */
+export function preparePayload(kind: EntityKind, value: unknown): Payload {
+  const payload = record(JSON.parse(JSON.stringify(value ?? {})) as unknown)
+  switch (kind) {
+    case 'attribute':
+      omitEmpty(payload, ['min', 'max', 'display_scale'])
+      stringifyNumbers(payload, ['default', 'min', 'max', 'display_scale'])
+      if (payload.value_type === 'boolean') {
+        delete payload.min
+        delete payload.max
+        delete payload.display_scale
+      }
+      break
+    case 'character':
+      prepareTriggers(payload.rule_blocks)
+      break
+    case 'skill':
+      stringifyNumbers(payload, ['cooldown'])
+      payload.target_selector = prepareSelector(payload.target_selector)
+      prepareTriggers(payload.rule_blocks)
+      break
+    case 'item':
+      prepareModifiers(payload.attribute_modifiers)
+      prepareTriggers(payload.rule_blocks)
+      break
+    case 'effect': {
+      stringifyNumbers(payload, ['duration'])
+      prepareModifiers(payload.modifiers)
+      prepareTriggers(payload.trigger_blocks)
+      const stackRule = record(payload.stack_rule)
+      omitEmpty(stackRule, ['priority', 'cap'])
+      stringifyNumbers(stackRule, ['priority', 'max_stacks', 'cap'])
+      payload.stack_rule = stackRule
+      break
+    }
+    case 'tag':
+      break
+  }
+  return payload as Payload
 }
 
 export function validateDraft(value: Record<string, unknown>, kind: EntityKind): FieldIssue[] {

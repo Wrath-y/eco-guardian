@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Card, Col, Descriptions, Divider, Form, Input, Modal, Row, Space, Table, Tag, Typography, message } from 'antd'
+import { Alert, Button, Card, Col, Descriptions, Divider, Form, Input, Modal, Row, Select, Space, Table, Tag, Typography, message } from 'antd'
 import { ArrowLeftOutlined, CheckCircleOutlined, CodeOutlined, CopyOutlined, ExperimentOutlined, SaveOutlined } from '@ant-design/icons'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { components } from '@/api/generated'
-import { emptyDraft, rendererMap, validateDraft, type EntityKind, type EntitySchema, type FieldIssue } from '@/forms/registry'
+import { emptyDraft, entityKindLabels, preparePayload, validateDraft, type EntityKind, type EntitySchema, type FieldIssue } from '@/forms/registry'
 import PageHeader from '../components/PageHeader'
+import PayloadForm, { type EntityCatalogs, type EntityOption } from '../components/PayloadForm'
 import { ApiError, apiRequest, errorMessage } from '../api'
 
 type Entity = components['schemas']['Entity']
@@ -14,8 +15,18 @@ type ValidationIssue = components['schemas']['ValidationIssue']
 type LocalSummary = components['schemas']['LocalValidationSummary']
 
 interface LoadedEntity { entity: Record<string, unknown>; etag: string }
+interface EntityPage { items: EntityOption[]; next_cursor: string | null }
 
 const allowedCommandFields = ['key', 'name', 'description', 'tag_ids', 'balance_group', 'payload', 'extensions']
+const referenceKinds: EntityKind[] = ['attribute', 'tag', 'skill', 'item', 'effect']
+const basicExamples: Record<EntityKind, { key: string; name: string; description: string; balanceGroup: string; tags: string }> = {
+  attribute: { key: 'attack_power', name: '攻击力', description: '角色造成伤害时使用的基础攻击数值。', balanceGroup: 'combat_core', tags: '战斗、核心属性' },
+  tag: { key: 'fire', name: '火焰', description: '标记火焰相关技能、物品与效果。', balanceGroup: 'elements', tags: '元素分类' },
+  character: { key: 'starter_hero', name: '初始勇者', description: '玩家进入游戏时使用的基础角色。', balanceGroup: 'starter_characters', tags: '玩家、近战' },
+  skill: { key: 'fireball', name: '火球术', description: '对主要目标造成火焰伤害并附加燃烧。', balanceGroup: 'mage_skills', tags: '火焰、主动技能' },
+  item: { key: 'training_sword', name: '训练木剑', description: '新手使用的基础近战武器。', balanceGroup: 'starter_weapons', tags: '武器、近战' },
+  effect: { key: 'burning', name: '燃烧', description: '在数个回合内持续造成火焰伤害。', balanceGroup: 'damage_over_time', tags: '火焰、持续伤害' },
+}
 
 export default function EntityEditorPage() {
   const { kind = 'attribute', id = 'new' } = useParams()
@@ -24,7 +35,6 @@ export default function EntityEditorPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const client = useQueryClient()
   const [form] = Form.useForm()
-  const [payloadText, setPayloadText] = useState('{}')
   const [dirty, setDirty] = useState(false)
   const [issues, setIssues] = useState<FieldIssue[]>([])
   const [conflict, setConflict] = useState(false)
@@ -34,6 +44,9 @@ export default function EntityEditorPage() {
   const [validationRun, setValidationRun] = useState<ValidationRun>()
   const [messageApi, contextHolder] = message.useMessage()
   const creating = id === 'new'
+  const kindLabel = entityKindLabels[entityKind]
+  const basicExample = basicExamples[entityKind]
+  const editingTag = entityKind === 'tag'
 
   const schema = useQuery({ queryKey: ['entity-schema', kind], queryFn: () => apiRequest<EntitySchema>(`/api/v1/schemas/entities/${kind}`) })
   const entity = useQuery({
@@ -45,19 +58,32 @@ export default function EntityEditorPage() {
       return { entity: await response.json() as Record<string, unknown>, etag: response.headers.get('ETag') ?? '' }
     },
   })
+  const catalogs = useQuery({
+    queryKey: ['entity-reference-catalogs', kind, id],
+    enabled: Boolean(entity.data),
+    queryFn: async (): Promise<EntityCatalogs> => {
+      const entries = await Promise.all(referenceKinds.map(async referenceKind => {
+        const page = await apiRequest<EntityPage>(`/api/v1/entities/${referenceKind}?limit=200`)
+        return [referenceKind, page.items] as const
+      }))
+      return Object.fromEntries(entries) as EntityCatalogs
+    },
+  })
 
   useEffect(() => {
     if (!entity.data) return
+    form.resetFields()
     form.setFieldsValue({
       key: entity.data.entity.key ?? '',
       name: entity.data.entity.name ?? '',
       description: entity.data.entity.description ?? '',
+      tag_ids: entity.data.entity.tag_ids ?? [],
       balance_group: entity.data.entity.balance_group ?? '',
+      payload: entity.data.entity.payload ?? emptyDraft(entityKind).payload,
     })
-    setPayloadText(JSON.stringify(entity.data.entity.payload ?? {}, null, 2))
     setDirty(false)
     setIssues([])
-  }, [entity.data, form])
+  }, [entity.data, entityKind, form])
 
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => { if (dirty) { event.preventDefault(); event.returnValue = '' } }
@@ -88,9 +114,8 @@ export default function EntityEditorPage() {
   }, [searchParams])
 
   function buildCommand() {
-    let payload: unknown
-    try { payload = JSON.parse(payloadText) } catch { throw new Error('Payload 不是有效的 JSON，请修正语法后保存。') }
-    const values = form.getFieldsValue()
+    const values = form.getFieldsValue(true)
+    const payload = preparePayload(entityKind, values.payload)
     const source = { ...(entity.data?.entity ?? {}), ...values, payload }
     if (creating) return source
     return Object.fromEntries(allowedCommandFields.filter(field => field in source).map(field => [field, source[field]]))
@@ -159,8 +184,8 @@ export default function EntityEditorPage() {
     {contextHolder}
     <PageHeader
       eyebrow={<><CodeOutlined /> 结构化实体</>}
-      title={creating ? `新建 ${kind}` : `${String(entity.data?.entity.name ?? kind)} · 编辑`}
-      description={schema.data ? `表单契约：${schema.data.schema_id} · 固定渲染器：${Object.keys(rendererMap).join('、')}` : '正在读取表单契约…'}
+      title={creating ? `新建${kindLabel}` : `${String(entity.data?.entity.name ?? kindLabel)} · 编辑`}
+      description={schema.isLoading ? '正在读取表单配置…' : creating ? `按字段填写${kindLabel}信息；每一项都附有填写示例。` : `按字段编辑${kindLabel}信息，保存后会创建新的配置修订。`}
       extra={<Space><Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/config/${kind}`)}>返回列表</Button><Button type="primary" icon={<SaveOutlined />} loading={save.isPending} onClick={() => save.mutate()}>保存</Button></Space>}
     />
 
@@ -174,16 +199,45 @@ export default function EntityEditorPage() {
         <Card className="section-card" title="基础信息">
           <Form form={form} layout="vertical" onValuesChange={() => setDirty(true)}>
             <Row gutter={16}>
-              <Col xs={24} md={12}><Form.Item name="key" label="Key" rules={[{ required: true, message: '请输入 Key' }, { pattern: /^[a-z][a-z0-9_]*$/, message: '仅可使用小写字母、数字和下划线' }]}><Input data-field-path="/key" /></Form.Item></Col>
-              <Col xs={24} md={12}><Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}><Input data-field-path="/name" /></Form.Item></Col>
+              <Col xs={24} md={12}><Form.Item name="key" label="Key" rules={[{ required: true, message: '请输入 Key' }, { pattern: /^[a-z][a-z0-9_]*$/, message: '仅可使用小写字母、数字和下划线' }]} extra={creating ? `示例：${basicExample.key}；用于系统内唯一识别` : undefined}><Input placeholder={`例如 ${basicExample.key}`} data-field-path="/key" /></Form.Item></Col>
+              <Col xs={24} md={12}><Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]} extra={creating ? `示例：${basicExample.name}；用于页面展示` : undefined}><Input placeholder={`例如 ${basicExample.name}`} data-field-path="/name" /></Form.Item></Col>
             </Row>
-            <Form.Item name="description" label="说明"><Input.TextArea rows={3} data-field-path="/description" /></Form.Item>
-            <Form.Item name="balance_group" label="平衡分组"><Input /></Form.Item>
+            <Form.Item name="description" label="说明" extra={creating ? `示例：${basicExample.description}` : undefined}><Input.TextArea rows={3} placeholder={basicExample.description} data-field-path="/description" /></Form.Item>
+            <Row gutter={16}>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  name="tag_ids"
+                  label={editingTag ? '关联标签（可选）' : '标签'}
+                  extra={editingTag
+                    ? '用于给当前标签附加检索标签，与下方“父标签”的层级关系不同；可留空。'
+                    : creating ? `示例：${basicExample.tags}` : undefined}
+                >
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    showSearch
+                    maxTagCount="responsive"
+                    optionFilterProp="label"
+                    loading={catalogs.isLoading}
+                    options={(catalogs.data?.tag ?? []).map(item => ({ value: item.id, label: `${item.name}（${item.key}）` }))}
+                    placeholder={editingTag ? '可选择已有标签，也可留空' : '请选择用于分类和检索的标签'}
+                    notFoundContent={catalogs.isLoading
+                      ? '正在加载标签…'
+                      : editingTag ? '暂无已有标签，可留空创建当前标签' : '暂无标签，请先在标签配置中创建'}
+                    data-field-path="/tag_ids"
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={12}>
+                <Form.Item name="balance_group" label="平衡分组" extra={creating ? `示例：${basicExample.balanceGroup}；同组配置便于一起比较` : undefined}><Input placeholder={`例如 ${basicExample.balanceGroup}`} data-field-path="/balance_group" /></Form.Item>
+              </Col>
+            </Row>
+            <Divider titlePlacement="start">配置字段</Divider>
+            <Typography.Paragraph type="secondary">请按业务含义填写以下字段，系统会自动整理并校验数据，无需编写 JSON。</Typography.Paragraph>
+            {catalogs.isError && <Alert className="block-alert" type="warning" showIcon title="引用选项加载失败" description="属性、标签、技能、物品或效果的选择列表暂不可用。" action={<Button onClick={() => void catalogs.refetch()}>重试</Button>} />}
+            <PayloadForm kind={entityKind} form={form} catalogs={catalogs.data} catalogsLoading={catalogs.isLoading} showExamples={creating} />
+            <Space className="form-sync-status"><Typography.Text type={dirty ? 'warning' : 'secondary'}>{dirty ? '有未保存修改' : '已与服务器同步'}</Typography.Text></Space>
           </Form>
-          <Divider titlePlacement="start">配置字段（Payload）</Divider>
-          <Typography.Paragraph type="secondary">Payload 使用服务端 Schema 约束。JSON 编辑器会完整保留当前版本支持的嵌套结构。</Typography.Paragraph>
-          <Input.TextArea className="json-editor" value={payloadText} onChange={event => { setPayloadText(event.target.value); setDirty(true) }} rows={20} spellCheck={false} data-field-path="/payload" aria-label="Payload JSON" />
-          <Space className="json-actions"><Button onClick={() => { try { setPayloadText(JSON.stringify(JSON.parse(payloadText), null, 2)) } catch { messageApi.error('Payload JSON 语法无效') } }}>格式化 JSON</Button><Typography.Text type={dirty ? 'warning' : 'secondary'}>{dirty ? '有未保存修改' : '已与服务器同步'}</Typography.Text></Space>
         </Card>
       </Col>
       <Col xs={24} xl={9}>

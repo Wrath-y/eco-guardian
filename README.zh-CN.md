@@ -52,6 +52,18 @@ npm --prefix web run build
 go run ./cmd/eco-guardian
 ```
 
+如果 `local-rag` 仓库与本仓库位于同一父目录，也可以用一个命令依次启动两者：
+
+```sh
+# macOS / Linux
+./start.sh
+
+# Windows CMD
+start.bat
+```
+
+脚本会先构建并直接运行 `.run/eco-guardian`，复用已健康的 `local-rag:8765`，否则调用相邻仓库的启动脚本。退出 Eco Guardian 时，脚本只会停止本次由它启动的 local-rag，不会停止原本已在运行的实例。额外参数会原样传给 Eco Guardian；例如 `./start.sh --browser-auto-open false`。如果两个仓库不相邻，可通过 `LOCAL_RAG_DIR` 指定 `local-rag` 仓库路径。
+
 启动后程序会监听一个可用的 `127.0.0.1` 端口，默认自动打开浏览器，并在终端输出访问地址。按 `Ctrl+C` 停止程序。
 
 常用启动参数：

@@ -38,6 +38,21 @@ function mockBase(active = true) {
   })
 }
 
+function mockEntityCatalogs(tags: Array<{ id: string; name: string; key: string; entity_version: number }> = []) {
+  const fallback = mockBase()
+  return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    const catalog = path.match(/\/entities\/(attribute|tag|skill|item|effect)\?limit=200$/)
+    if (catalog) {
+      return Promise.resolve(new Response(JSON.stringify({ items: catalog[1] === 'tag' ? tags : [], next_cursor: null }), { status: 200 }))
+    }
+    if (path.includes('/schemas/entities/')) {
+      return Promise.resolve(new Response(JSON.stringify({ schema_id: 'test', schema: {} }), { status: 200 }))
+    }
+    return fallback(input, init)
+  })
+}
+
 describe('React application shell', () => {
   it('renders the Ant Design workspace and project state', async () => {
     vi.stubGlobal('fetch', mockBase())
@@ -63,6 +78,60 @@ describe('React application shell', () => {
     renderApp('/config/tag')
     expect(await screen.findByRole('heading', { name: '标签配置' })).toBeTruthy()
     expect(await screen.findByRole('button', { name: 'Flame' })).toBeTruthy()
+  })
+
+  it('allows the first tag to be created without a circular tag prerequisite', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', mockEntityCatalogs())
+    renderApp('/config/tag/new')
+
+    expect(await screen.findByRole('heading', { name: '新建标签' })).toBeTruthy()
+    const relatedTags = screen.getByRole('combobox', { name: '关联标签（可选）' })
+    const parentTags = screen.getByRole('combobox', { name: '父标签' })
+
+    await user.click(relatedTags)
+    expect(await screen.findByText('暂无已有标签，可留空创建当前标签')).toBeTruthy()
+    await user.keyboard('{Escape}')
+    await user.click(parentTags)
+    expect(await screen.findByText('暂无父标签，可留空创建根标签')).toBeTruthy()
+    expect(screen.queryByText(/请先在标签配置中创建/)).toBeNull()
+  })
+
+  it('keeps the tag configuration guidance on non-tag entity forms', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', mockEntityCatalogs())
+    renderApp('/config/attribute/new')
+
+    expect(await screen.findByRole('heading', { name: '新建属性' })).toBeTruthy()
+    await user.click(screen.getByRole('combobox', { name: '标签' }))
+    expect(await screen.findByText('暂无标签，请先在标签配置中创建')).toBeTruthy()
+  })
+
+  it('submits a selected parent tag through the shared reference control', async () => {
+    const user = userEvent.setup()
+    const catalogMock = mockEntityCatalogs([{ id: project.id, name: 'Flame', key: 'flame', entity_version: 1 }])
+    let submitted: { payload?: { parent_tag_ids?: string[] } } | undefined
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input)
+      if (path === '/api/v1/entities/tag' && init?.method === 'POST') {
+        submitted = JSON.parse(String(init.body)) as typeof submitted
+        return Promise.resolve(new Response(JSON.stringify({
+          entity: { id: project.id, kind: 'tag', key: 'child_tag', name: 'Child tag' },
+          revision: { validation: { error: 0, block: 0, warning: 0, info: 0 } },
+        }), { status: 201 }))
+      }
+      return catalogMock(input, init)
+    }))
+    renderApp('/config/tag/new')
+
+    await user.type(await screen.findByRole('textbox', { name: 'Key' }), 'child_tag')
+    await user.type(screen.getByRole('textbox', { name: '名称' }), 'Child tag')
+    await user.type(screen.getByRole('textbox', { name: '分类' }), 'element')
+    await user.click(screen.getByRole('combobox', { name: '父标签' }))
+    await user.click(await screen.findByText('Flame（flame）'))
+    await user.click(screen.getByRole('button', { name: /保存/ }))
+
+    await waitFor(() => expect(submitted?.payload?.parent_tag_ids).toEqual([project.id]))
   })
 
   it('offers a confirmed close-other-instance flow and retries the locked project', async () => {
@@ -95,7 +164,7 @@ describe('React application shell', () => {
   })
 
   it.each([
-    ['/config/tag/new', '新建 tag'],
+    ['/config/tag/new', '新建标签'],
     ['/versions', '版本历史'],
     [`/versions/${project.id}/diff`, '版本差异与发布'],
     ['/simulations', '模拟实验'],

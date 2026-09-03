@@ -312,6 +312,98 @@ func TestPeerInstanceClientUsesLockSecretAndWaitsForRelease(t *testing.T) {
 	}
 }
 
+func TestPeerInstanceClientArchivesDeadOwnerLock(t *testing.T) {
+	dir := t.TempDir()
+	id, _ := domain.NewID()
+	secret, _ := NewInstanceSecret()
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	owner := InstanceOwner{Version: 1, PID: 424242, URL: server.URL, Secret: secret, Acquired: time.Now().UTC().Format(time.RFC3339Nano)}
+	writeInstanceOwner(t, dir, owner)
+	client := server.Client()
+	server.Close()
+	err := (PeerInstanceClient{Client: client, IsProcessAlive: func(pid int) (bool, error) {
+		if pid != owner.PID {
+			t.Fatalf("probed pid=%d want=%d", pid, owner.PID)
+		}
+		return false, nil
+	}}).Close(context.Background(), ProjectInfo{ID: id, Name: "fixture", Path: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, ".eco-guardian.lock")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("stale lock still present: %v", statErr)
+	}
+	archives, err := filepath.Glob(filepath.Join(dir, ".eco-guardian.lock.stale-pid-424242-*"))
+	if err != nil || len(archives) != 1 {
+		t.Fatalf("archives=%v err=%v", archives, err)
+	}
+	lock, err := (FileLocker{}).Acquire(dir)
+	if err != nil {
+		t.Fatalf("reacquire after stale lock archive: %v", err)
+	}
+	if err = lock.Release(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPeerInstanceClientRetainsUnreachableLiveOwnerLock(t *testing.T) {
+	dir := t.TempDir()
+	id, _ := domain.NewID()
+	secret, _ := NewInstanceSecret()
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	owner := InstanceOwner{Version: 1, PID: 424243, URL: server.URL, Secret: secret, Acquired: time.Now().UTC().Format(time.RFC3339Nano)}
+	writeInstanceOwner(t, dir, owner)
+	client := server.Client()
+	server.Close()
+	err := (PeerInstanceClient{Client: client, IsProcessAlive: func(int) (bool, error) { return true, nil }}).Close(context.Background(), ProjectInfo{ID: id, Name: "fixture", Path: dir})
+	if !errors.Is(err, ErrOtherUnavailable) {
+		t.Fatalf("close=%v", err)
+	}
+	current, readErr := ReadInstanceOwner(dir)
+	if readErr != nil || current != owner {
+		t.Fatalf("owner=%#v err=%v", current, readErr)
+	}
+}
+
+func TestPeerInstanceClientDoesNotArchiveChangedOwner(t *testing.T) {
+	dir := t.TempDir()
+	id, _ := domain.NewID()
+	secret, _ := NewInstanceSecret()
+	replacementSecret, _ := NewInstanceSecret()
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	owner := InstanceOwner{Version: 1, PID: 424244, URL: server.URL, Secret: secret, Acquired: time.Now().UTC().Format(time.RFC3339Nano)}
+	replacement := InstanceOwner{Version: 1, PID: 424245, URL: server.URL, Secret: replacementSecret, Acquired: time.Now().Add(time.Second).UTC().Format(time.RFC3339Nano)}
+	writeInstanceOwner(t, dir, owner)
+	client := server.Client()
+	server.Close()
+	err := (PeerInstanceClient{Client: client, IsProcessAlive: func(int) (bool, error) {
+		writeInstanceOwner(t, dir, replacement)
+		return false, nil
+	}}).Close(context.Background(), ProjectInfo{ID: id, Name: "fixture", Path: dir})
+	if !errors.Is(err, ErrOtherUnavailable) {
+		t.Fatalf("close=%v", err)
+	}
+	current, readErr := ReadInstanceOwner(dir)
+	if readErr != nil || current != replacement {
+		t.Fatalf("owner=%#v err=%v", current, readErr)
+	}
+}
+
+func writeInstanceOwner(t *testing.T, directory string, owner InstanceOwner) {
+	t.Helper()
+	file, err := os.Create(filepath.Join(directory, ".eco-guardian.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = json.NewEncoder(file).Encode(owner); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err = file.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 type fakeOtherCloser struct{ info ProjectInfo }
 
 func (closer *fakeOtherCloser) Close(_ context.Context, info ProjectInfo) error {
