@@ -13,9 +13,10 @@ import (
 )
 
 type ProjectHandler struct {
-	manager  *project.Manager
-	selector project.DirectorySelector
-	closer   project.OtherInstanceCloser
+	manager            *project.Manager
+	selector           project.DirectorySelector
+	closer             project.OtherInstanceCloser
+	projectStateChange func(active bool)
 }
 
 func NewProjectHandler(manager *project.Manager, selector project.DirectorySelector, closers ...project.OtherInstanceCloser) *ProjectHandler {
@@ -25,6 +26,23 @@ func NewProjectHandler(manager *project.Manager, selector project.DirectorySelec
 	}
 	return &ProjectHandler{manager: manager, selector: selector, closer: closer}
 }
+
+// ObserveProjectStateChanges registers a process-local notification after a
+// successful project open, create, or close so derived runtime projections
+// can converge without waiting for a manual retry.
+func (h *ProjectHandler) ObserveProjectStateChanges(observer func(active bool)) *ProjectHandler {
+	if h != nil {
+		h.projectStateChange = observer
+	}
+	return h
+}
+
+func (h *ProjectHandler) notifyProjectStateChange(active bool) {
+	if h != nil && h.projectStateChange != nil {
+		h.projectStateChange(active)
+	}
+}
+
 func (h *ProjectHandler) Register(r *gin.Engine) {
 	r.POST("/api/v1/project-selections", h.selectDir)
 	r.POST("/api/v1/projects", h.open)
@@ -72,6 +90,7 @@ func (h *ProjectHandler) openRecent(c *gin.Context) {
 		writeProjectError(c, err)
 		return
 	}
+	h.notifyProjectStateChange(true)
 	c.JSON(http.StatusOK, gin.H{"id": info.ID, "name": info.Name, "db_schema_version": store.DBSchemaVersion()})
 }
 func (h *ProjectHandler) selectDir(c *gin.Context) {
@@ -114,6 +133,7 @@ func (h *ProjectHandler) open(c *gin.Context) {
 	if request.Mode == "create" {
 		status = http.StatusCreated
 	}
+	h.notifyProjectStateChange(true)
 	c.JSON(status, gin.H{"id": info.ID, "name": info.Name, "db_schema_version": store.DBSchemaVersion()})
 }
 func (h *ProjectHandler) current(c *gin.Context) {
@@ -129,6 +149,7 @@ func (h *ProjectHandler) close(c *gin.Context) {
 		writeProjectError(c, err)
 		return
 	}
+	h.notifyProjectStateChange(false)
 	c.Status(204)
 }
 func writeProjectError(c *gin.Context, err error) {

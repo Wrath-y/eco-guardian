@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -460,6 +461,16 @@ func (dependency *graphRuntimeDependency) requestRefresh() {
 	}
 }
 
+func (dependency *graphRuntimeDependency) projectStateChanged(active bool) {
+	if dependency == nil {
+		return
+	}
+	if active && dependency.invalidate != nil {
+		dependency.invalidate()
+	}
+	dependency.requestRefresh()
+}
+
 func (dependency *graphRuntimeDependency) stopRefreshLoop() {
 	dependency.mu.Lock()
 	cancel := dependency.refreshCancel
@@ -567,7 +578,11 @@ func (refresher runtimeCapabilityRefresher) Refresh(ctx context.Context) {
 		return
 	}
 	convergence, err := refresher.convergence.ConvergeCapabilities(ctx)
-	reasons := preserveNonCapabilityReasons(current)
+	projectActive := false
+	if refresher.convergence.projects != nil {
+		_, projectActive = refresher.convergence.projects.Current()
+	}
+	reasons := preserveNonCapabilityReasons(current, projectActive)
 	if err != nil {
 		reasons = append(reasons, appruntime.RuntimeReason{Code: "CAPABILITY_CONVERGENCE_FAILED", Component: "capabilities", Message: "Capability state could not fully converge"})
 	} else {
@@ -588,7 +603,7 @@ func (refresher runtimeCapabilityRefresher) Refresh(ctx context.Context) {
 	}
 }
 
-func preserveNonCapabilityReasons(snapshot appruntime.StatusSnapshot) []appruntime.RuntimeReason {
+func preserveNonCapabilityReasons(snapshot appruntime.StatusSnapshot, projectActive bool) []appruntime.RuntimeReason {
 	components := map[string]struct{}{"capabilities": {}}
 	for _, observation := range snapshot.Observations {
 		components[observation.ID] = struct{}{}
@@ -598,6 +613,9 @@ func preserveNonCapabilityReasons(snapshot appruntime.StatusSnapshot) []apprunti
 	}
 	result := make([]appruntime.RuntimeReason, 0, len(snapshot.Reasons))
 	for _, reason := range snapshot.Reasons {
+		if projectActive && reason.Component == "project" && strings.HasPrefix(reason.Code, "RECENT_PROJECT_") {
+			continue
+		}
 		if _, generated := components[reason.Component]; !generated {
 			result = append(result, reason)
 		}

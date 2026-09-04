@@ -26,6 +26,23 @@ export default function RuntimeStatus() {
   const restoreState = runtimeCapabilities?.backup.restore_state ?? 'idle'
   const maintenance = ['maintenance', 'recovering', 'recovery_required'].includes(restoreState)
 
+  async function refreshStatus() {
+    setRunningAction('runtime.refresh')
+    try {
+      await apiRequest('/api/v1/runtime/reprobe', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': newIdempotencyKey() },
+      })
+      await refreshRuntime()
+      messageApi.success('运行状态已刷新')
+    } catch (cause) {
+      await refreshRuntime().catch(() => undefined)
+      messageApi.error(errorMessage(cause, '运行状态刷新失败'))
+    } finally {
+      setRunningAction('')
+    }
+  }
+
   async function runAction(action: (typeof actions extends Map<string, infer V> ? V : never)) {
     setRunningAction(action.id)
     try {
@@ -53,7 +70,7 @@ export default function RuntimeStatus() {
       </Tooltip>
 
       <Drawer title={<Space><ApiOutlined />本地运行状态</Space>} size={520} open={open} onClose={() => setOpen(false)}
-        extra={<Button icon={<ReloadOutlined />} onClick={() => void refreshRuntime()}>刷新</Button>}>
+        extra={<Button icon={<ReloadOutlined />} loading={runningAction === 'runtime.refresh'} disabled={runningAction !== '' && runningAction !== 'runtime.refresh'} onClick={() => void refreshStatus()}>刷新</Button>}>
         {runtimeError && <Alert type="error" showIcon title="无法读取运行状态" description={runtimeError} className="block-alert" />}
         {runtime && <>
           <Descriptions bordered size="small" column={1} className="runtime-descriptions">

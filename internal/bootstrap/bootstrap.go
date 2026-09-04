@@ -364,7 +364,11 @@ func (startup stagedStartupRecovery) Recover(ctx context.Context) error {
 
 func registerRoutes(host *httpapi.Runtime, projects *project.Manager, registry *domain.Registry, settings *runtimeconfig.Store, credentials provider.CredentialResolver, assets fs.FS, status *appruntime.StatusAssembler, runtimeActions httpapi.RuntimeActionService, aiCapabilities func(context.Context) provider.Capability, graphSubmit func(context.Context, graphsync.GraphJob) error, impactSubmit func(context.Context, domain.ID) error, backups *backupRuntime, backupRoots *rootconfig.Manager, versioningDependencies app.VersioningDependencies, other project.OtherInstanceCloser, instanceSecret string, shutdown func()) {
 	engine := host.Engine()
-	httpapi.NewProjectHandler(projects, project.NativeDirectorySelector{}, other).Register(engine)
+	projectHandler := httpapi.NewProjectHandler(projects, project.NativeDirectorySelector{}, other)
+	if dependency, ok := runtimeActions.(*graphRuntimeDependency); ok {
+		projectHandler.ObserveProjectStateChanges(dependency.projectStateChanged)
+	}
+	projectHandler.Register(engine)
 	httpapi.NewInstanceControlHandler(projects, instanceSecret, shutdown).Register(engine)
 	httpapi.NewSchemaHandler(registry).Register(engine)
 	httpapi.NewEntityHandler(httpapi.StoreFromProjectManager(projects)).Register(engine)

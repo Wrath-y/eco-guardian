@@ -4,14 +4,35 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	appruntime "github.com/zouyi/eco-guardian/internal/app/runtime"
+	"github.com/zouyi/eco-guardian/internal/app/runtime/capability"
 	runtimeconfig "github.com/zouyi/eco-guardian/internal/app/runtime/config"
 	"github.com/zouyi/eco-guardian/internal/app/runtime/graphprocess"
 	platformprocess "github.com/zouyi/eco-guardian/internal/platform/process"
 )
+
+func TestResolvedRecentProjectReasonDoesNotKeepRuntimeDegraded(t *testing.T) {
+	snapshot := appruntime.StatusSnapshot{
+		Reasons: []appruntime.RuntimeReason{
+			{Code: "RECENT_PROJECT_LOCKED", Component: "project"},
+			{Code: "AI_STRUCTURED_OUTPUT_UNSUPPORTED", Component: capability.ObservationAIProvider},
+			{Code: "BROWSER_LAUNCH_FAILED", Component: "browser"},
+		},
+		Observations: []appruntime.RuntimeObservation{{ID: capability.ObservationAIProvider}},
+	}
+
+	if got := preserveNonCapabilityReasons(snapshot, true); !reflect.DeepEqual(got, []appruntime.RuntimeReason{{Code: "BROWSER_LAUNCH_FAILED", Component: "browser"}}) {
+		t.Fatalf("active project retained resolved reasons: %#v", got)
+	}
+	if got := preserveNonCapabilityReasons(snapshot, false); !reflect.DeepEqual(got, []appruntime.RuntimeReason{{Code: "RECENT_PROJECT_LOCKED", Component: "project"}, {Code: "BROWSER_LAUNCH_FAILED", Component: "browser"}}) {
+		t.Fatalf("inactive project lost unresolved reason: %#v", got)
+	}
+}
 
 const compatibleHealth = `{"schema_version":"1.0","status":"ok","service":"local-rag","service_version":"9.0.0","api_versions":["v1"],"supported_schema_versions":["1.0"],"capabilities":[{"name":"snapshot_lifecycle","state":"available"},{"name":"task_polling","state":"available"}],"dependencies":[{"name":"sqlite","state":"available"},{"name":"graph_migrations","state":"available"},{"name":"core_graph_query","state":"available"},{"name":"bm25","state":"available"}],"limits":[]}`
 

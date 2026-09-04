@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Alert, Button, Card, Col, Empty, Flex, Modal, Row, Skeleton, Space, Statistic, Tag, Typography, message } from 'antd'
-import { CloseOutlined, FolderAddOutlined, FolderOpenOutlined, HistoryOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
+import { CloseOutlined, DatabaseOutlined, FolderAddOutlined, FolderOpenOutlined, HistoryOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
 import PageHeader from '../components/PageHeader'
 import { ApiError, apiRequest, errorMessage, postJSON, type ActiveProject } from '../api'
+import { baseDataCounts, baseDataTotal, initializeBaseData } from '../baseData'
 import { useAppState } from '../context/AppContext'
 
 export default function ProjectsPage() {
@@ -79,6 +80,31 @@ export default function ProjectsPage() {
     onError: cause => messageApi.error(errorMessage(cause, '无法关闭项目')),
   })
 
+  const initializeMutation = useMutation({
+    mutationFn: initializeBaseData,
+    onSuccess: result => {
+      void client.invalidateQueries({ queryKey: ['entities'] })
+      void client.invalidateQueries({ queryKey: ['entity-reference-catalogs'] })
+      void client.invalidateQueries({ queryKey: ['revisions'] })
+      if (result.created === 0) {
+        messageApi.info(`基础数据已全部存在，已跳过 ${result.skipped} 项`)
+        return
+      }
+      messageApi.success(`基础数据初始化完成：新增 ${result.created} 项${result.skipped ? `，跳过已有 ${result.skipped} 项` : ''}`)
+    },
+    onError: cause => messageApi.error(`${errorMessage(cause, '基础数据初始化失败')}；已完成的数据会保留，可再次点击继续`),
+  })
+
+  function confirmInitialize() {
+    Modal.confirm({
+      title: '初始化基础数据？',
+      content: `将补充属性、标签、角色、技能、物品和效果各 ${baseDataCounts.attribute} 项，共 ${baseDataTotal} 项；已有相同 Key 的数据会自动跳过。`,
+      okText: '开始初始化',
+      cancelText: '取消',
+      onOk: () => initializeMutation.mutateAsync(),
+    })
+  }
+
   return <div className="page-container project-page">
     {contextHolder}
     <PageHeader
@@ -86,8 +112,8 @@ export default function ProjectsPage() {
       title="项目空间"
       description="创建或打开一个项目，所有配置、版本、验证和恢复记录都会围绕当前项目组织。"
       extra={<Space wrap>
-        <Button icon={<FolderOpenOutlined />} loading={operation === 'open'} onClick={() => chooseMutation.mutate('open')}>打开项目</Button>
-        <Button type="primary" icon={<FolderAddOutlined />} loading={operation === 'create'} onClick={() => chooseMutation.mutate('create')}>创建项目</Button>
+        <Button icon={<FolderOpenOutlined />} loading={operation === 'open'} disabled={initializeMutation.isPending} onClick={() => chooseMutation.mutate('open')}>打开项目</Button>
+        <Button type="primary" icon={<FolderAddOutlined />} loading={operation === 'create'} disabled={initializeMutation.isPending} onClick={() => chooseMutation.mutate('create')}>创建项目</Button>
       </Space>}
     />
 
@@ -101,7 +127,12 @@ export default function ProjectsPage() {
           </Space>
         </Col>
         <Col><Statistic title="数据库 Schema" value={project.db_schema_version} prefix="v" /></Col>
-        <Col><Button danger icon={<CloseOutlined />} loading={closeMutation.isPending} onClick={() => closeMutation.mutate()}>关闭项目</Button></Col>
+        <Col>
+          <Space orientation="vertical" className="project-actions">
+            <Button danger icon={<CloseOutlined />} loading={closeMutation.isPending} disabled={initializeMutation.isPending} onClick={() => closeMutation.mutate()}>关闭项目</Button>
+            <Button icon={<DatabaseOutlined />} loading={initializeMutation.isPending} disabled={closeMutation.isPending} onClick={confirmInitialize}>初始化基础数据</Button>
+          </Space>
+        </Col>
       </Row>
     </Card> : <>
       <Alert className="block-alert" type="info" showIcon title="尚未打开项目" description="请创建新项目，或从本机选择已有的 Eco Guardian 项目。" />
@@ -121,7 +152,7 @@ export default function ProjectsPage() {
         {recent.data.map(item => <div className="project-recent-row" key={item.id}>
           <div className="project-list-icon"><FolderOpenOutlined /></div>
           <div className="project-recent-copy"><strong>{item.name}</strong><Flex gap="small" wrap><Typography.Text type="secondary">{item.id}</Typography.Text>{item.db_schema_version && <Tag>Schema v{item.db_schema_version}</Tag>}</Flex></div>
-          <Button type="link" loading={operation === item.id} onClick={() => recentMutation.mutate(item)}>打开 {item.name}</Button>
+          <Button type="link" loading={operation === item.id} disabled={initializeMutation.isPending} onClick={() => recentMutation.mutate(item)}>打开 {item.name}</Button>
         </div>)}
       </Flex> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无最近项目" />}
     </Card>

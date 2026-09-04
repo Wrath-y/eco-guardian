@@ -62,6 +62,34 @@ describe('React application shell', () => {
     expect(await screen.findByRole('heading', { name: 'balance' })).toBeTruthy()
   })
 
+  it('reprobes and refreshes the displayed runtime phase', async () => {
+    const user = userEvent.setup()
+    let currentRuntime = { ...runtime, phase: 'degraded', generation: 1 }
+    const fallback = mockBase()
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input)
+      if (path.endsWith('/runtime/reprobe') && init?.method === 'POST') {
+        currentRuntime = { ...runtime, phase: 'ready', generation: 2 }
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      if (path.endsWith('/runtime/status')) {
+        return Promise.resolve(new Response(JSON.stringify(currentRuntime), { status: 200 }))
+      }
+      return fallback(input, init)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderApp()
+
+    await user.click(await screen.findByRole('button', { name: '降级' }))
+    expect(screen.getAllByText('降级').length).toBeGreaterThanOrEqual(2)
+    await user.click(screen.getByRole('button', { name: /刷新/ }))
+
+    await waitFor(() => expect(screen.getAllByText('就绪').length).toBeGreaterThanOrEqual(2))
+    const reprobe = fetchMock.mock.calls.find(([input, init]) => String(input).endsWith('/runtime/reprobe') && init?.method === 'POST')
+    expect(reprobe).toBeTruthy()
+    expect(new Headers(reprobe?.[1]?.headers).get('Idempotency-Key')).toBeTruthy()
+  })
+
   it('creates a project through the native selection capability', async () => {
     const user = userEvent.setup()
     const fetchMock = mockBase(false)
@@ -93,6 +121,69 @@ describe('React application shell', () => {
 
     expect(fetchMock.mock.calls.some(([input, init]) => String(input).endsWith('/projects/close') && init?.method === 'POST')).toBe(true)
     expect(await screen.findByText('尚未打开项目')).toBeTruthy()
+  })
+
+  it('initializes a referenced base-data set once and safely skips it on retry', async () => {
+    const user = userEvent.setup()
+    type Kind = 'attribute' | 'tag' | 'character' | 'skill' | 'item' | 'effect'
+    type StoredEntity = Record<string, unknown> & { id: string; kind: Kind; key: string }
+    const stored: Record<Kind, StoredEntity[]> = { attribute: [], tag: [], character: [], skill: [], item: [], effect: [] }
+    const postedKinds: Kind[] = []
+    const fallback = mockBase()
+    let nextID = 1
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), 'http://localhost')
+      const match = url.pathname.match(/\/api\/v1\/entities\/(attribute|tag|character|skill|item|effect)$/)
+      if (!match) return fallback(input, init)
+      const kind = match[1] as Kind
+      if ((init?.method ?? 'GET') === 'GET') {
+        return Promise.resolve(new Response(JSON.stringify({ items: stored[kind], next_cursor: null }), { status: 200 }))
+      }
+      const draft = JSON.parse(String(init?.body)) as Record<string, unknown> & { key: string }
+      const entity: StoredEntity = {
+        ...draft,
+        id: `01948c1e-0000-7000-8000-${String(nextID++).padStart(12, '0')}`,
+        kind,
+        key: draft.key,
+      }
+      stored[kind].push(entity)
+      postedKinds.push(kind)
+      return Promise.resolve(new Response(JSON.stringify({ entity, revision: {} }), { status: 201 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderApp()
+
+    const closeButton = await screen.findByRole('button', { name: /关闭项目/ })
+    const initializeButton = screen.getByRole('button', { name: /初始化基础数据/ })
+    expect(closeButton.compareDocumentPosition(initializeButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await user.click(initializeButton)
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/各 3 项，共 18 项/)).toBeTruthy()
+    await user.click(within(dialog).getByRole('button', { name: '开始初始化' }))
+
+    expect(await screen.findByText('基础数据初始化完成：新增 18 项')).toBeTruthy()
+    expect(postedKinds).toEqual([
+      'tag', 'tag', 'tag',
+      'attribute', 'attribute', 'attribute',
+      'effect', 'effect', 'effect',
+      'skill', 'skill', 'skill',
+      'item', 'item', 'item',
+      'character', 'character', 'character',
+    ])
+    for (const entities of Object.values(stored)) expect(entities).toHaveLength(3)
+
+    const entitiesByKey = new Map(Object.values(stored).flat().map(entity => [entity.key, entity]))
+    const guardian = entitiesByKey.get('trainee_guardian')!
+    const guardianPayload = guardian.payload as { skill_ids: string[]; item_ids: string[] }
+    expect(guardian.tag_ids).toEqual([entitiesByKey.get('starter_content')!.id, entitiesByKey.get('player')!.id])
+    expect(guardianPayload.skill_ids).toEqual([entitiesByKey.get('basic_attack')!.id, entitiesByKey.get('guard_stance')!.id])
+    expect(guardianPayload.item_ids).toEqual([entitiesByKey.get('training_sword')!.id, entitiesByKey.get('cloth_armor')!.id])
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await user.click(initializeButton)
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: '开始初始化' }))
+    expect(await screen.findByText('基础数据已全部存在，已跳过 18 项')).toBeTruthy()
+    expect(postedKinds).toHaveLength(18)
   })
 
   it('routes an active project to the Ant Design entity table', async () => {
