@@ -38,16 +38,38 @@ function mockBase(active = true) {
   })
 }
 
-function mockEntityCatalogs(tags: Array<{ id: string; name: string; key: string; entity_version: number }> = []) {
+function mockEntityCatalogs(tags: Array<{ id: string; name: string; key: string; entity_version: number; balance_group?: string }> = []) {
   const fallback = mockBase()
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
-    const catalog = path.match(/\/entities\/(attribute|tag|skill|item|effect)\?limit=200$/)
+    const catalog = path.match(/\/entities\/(attribute|tag|character|skill|item|effect)\?limit=200$/)
     if (catalog) {
       return Promise.resolve(new Response(JSON.stringify({ items: catalog[1] === 'tag' ? tags : [], next_cursor: null }), { status: 200 }))
     }
+    if (path === '/api/v1/formula-validations' && init?.method === 'POST') {
+      const request = JSON.parse(String(init.body)) as { expression: string }
+      const mismatch = request.expression === '80[health_point] + 10[damage_point]'
+      return Promise.resolve(new Response(JSON.stringify({
+        valid: !mismatch,
+        diagnostics: mismatch ? [{ code: 'FORMULA_UNIT_MISMATCH', message: 'arithmetic requires same dimension', start_byte: 0, end_byte: request.expression.length }] : [],
+      }), { status: 200 }))
+    }
     if (path.includes('/schemas/entities/')) {
-      return Promise.resolve(new Response(JSON.stringify({ schema_id: 'test', schema: {} }), { status: 200 }))
+      return Promise.resolve(new Response(JSON.stringify({
+        kind: path.split('/').pop(),
+        schema_id: 'urn:eco:schema:test:1',
+        schema: {},
+        dsl_registry: {
+          dsl_version: 'v1', manifest_hash: 'a'.repeat(64), selector_template: '${scope:symbol}', scopes: ['self', 'source', 'target', 'scenario'], functions: [],
+          units: [
+            { name: 'scalar', value_type: 'decimal', dimension: 'scalar', base: 'scalar' },
+            { name: 'damage_point', value_type: 'decimal', dimension: 'damage', base: 'damage_point' },
+            { name: 'health_point', value_type: 'decimal', dimension: 'health', base: 'health_point' },
+            { name: 'resource_point', value_type: 'decimal', dimension: 'resource', base: 'resource_point' },
+            { name: 'millisecond', value_type: 'integer', dimension: 'duration', base: 'millisecond' },
+          ],
+        },
+      }), { status: 200 }))
     }
     return fallback(input, init)
   })
@@ -218,6 +240,160 @@ describe('React application shell', () => {
     expect(await screen.findByRole('heading', { name: '新建属性' })).toBeTruthy()
     await user.click(screen.getByRole('combobox', { name: '标签' }))
     expect(await screen.findByText('暂无标签，请先在标签配置中创建')).toBeTruthy()
+  })
+
+  it('offers and removes balance-group suggestions and explains every visible field', async () => {
+    const user = userEvent.setup()
+    const fallback = mockEntityCatalogs()
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/v1/entities/attribute?limit=200') {
+        return Promise.resolve(new Response(JSON.stringify({
+          items: [{ id: project.id, name: 'Boss health', key: 'boss_health', entity_version: 1, balance_group: 'boss_stats' }],
+          next_cursor: null,
+        }), { status: 200 }))
+      }
+      return fallback(input, init)
+    }))
+    const view = renderApp('/config/attribute/new')
+
+    const balanceGroup = await screen.findByRole('combobox', { name: '平衡分组' })
+    await user.click(balanceGroup)
+    const groupLabels = await screen.findAllByText('boss_stats')
+    await user.click(groupLabels[groupLabels.length - 1])
+    await waitFor(() => expect((balanceGroup as HTMLInputElement).value).toBe('boss_stats'))
+
+    await user.click(balanceGroup)
+    await user.click(await screen.findByRole('button', { name: '删除平衡分组候选 boss_stats' }))
+    expect(screen.queryByRole('button', { name: '删除平衡分组候选 boss_stats' })).toBeNull()
+    expect(JSON.parse(localStorage.getItem(`entity-editor:hidden-balance-groups:${project.id}:attribute`) ?? '[]')).toContain('boss_stats')
+
+    const labels = [...view.container.querySelectorAll('.entity-editor-page .ant-form-item-label > label')]
+    expect(labels.length).toBeGreaterThan(0)
+    expect(labels.every(label => label.querySelector('.ant-form-item-tooltip'))).toBe(true)
+
+    const balanceLabel = screen.getByText('平衡分组').closest('label')
+    const helpIcon = balanceLabel?.querySelector<HTMLElement>('.ant-form-item-tooltip')
+    expect(helpIcon).toBeTruthy()
+    await user.hover(helpIcon!)
+    expect(await screen.findByText(/把同类型且需要一起比较的配置归入一组/)).toBeTruthy()
+  })
+
+  it('suggests registered dimensions and matching base units', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', mockEntityCatalogs())
+    renderApp('/config/attribute/new')
+
+    const dimension = await screen.findByRole('combobox', { name: '量纲' })
+    await user.click(dimension)
+    const dimensionLabels = await screen.findAllByText('damage')
+    await user.click(dimensionLabels[dimensionLabels.length - 1])
+    await waitFor(() => expect((dimension as HTMLInputElement).value).toBe('damage'))
+
+    const baseUnit = screen.getByRole('combobox', { name: '基础单位' })
+    await user.click(baseUnit)
+    const unitLabels = await screen.findAllByText('damage_point（damage）')
+    await user.click(unitLabels[unitLabels.length - 1])
+    await waitFor(() => expect((baseUnit as HTMLInputElement).value).toBe('damage_point'))
+  })
+
+  it('suggests editable formulas and explains their inputs and units', async () => {
+    const user = userEvent.setup()
+    const fallback = mockEntityCatalogs()
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/v1/entities/attribute?limit=200') {
+        return Promise.resolve(new Response(JSON.stringify({
+          items: [{
+            id: project.id,
+            name: 'Health',
+            key: 'health',
+            entity_version: 1,
+            payload: { value_type: 'decimal', dimension: 'health', base_unit: 'health_point', default: '100' },
+          }],
+          next_cursor: null,
+        }), { status: 200 }))
+      }
+      return fallback(input, init)
+    }))
+    renderApp('/config/character/new')
+
+    await user.click(await screen.findByRole('button', { name: /添加属性值/ }))
+    const attribute = screen.getByRole('combobox', { name: '属性' })
+    await user.click(attribute)
+    const attributeLabels = await screen.findAllByText('Health（health）')
+    await user.click(attributeLabels[attributeLabels.length - 1])
+
+    const formula = screen.getByRole('combobox', { name: '数值或公式' })
+    await user.click(formula)
+    const formulaOptions = await screen.findAllByText('80[health_point] · 固定值（health_point）')
+    await user.click(formulaOptions[formulaOptions.length - 1])
+    await waitFor(() => expect((formula as HTMLInputElement).value).toBe('80[health_point]'))
+    await user.click(formula)
+    expect((await screen.findAllByText('${self:health} · 读取自身 · Health（health）')).length).toBeGreaterThan(0)
+    await user.keyboard('{Escape}')
+    await user.clear(formula)
+    await user.click(formula)
+    await user.paste('42[health_point]')
+    expect((formula as HTMLInputElement).value).toBe('42[health_point]')
+    await user.keyboard('{Escape}')
+    await user.click(formula)
+    expect((await screen.findAllByText('80[health_point] · 固定值（health_point）')).length).toBeGreaterThan(0)
+    await user.keyboard('{Escape}')
+
+    const formulaLabel = screen.getByText('数值或公式').closest('label')
+    const helpIcon = formulaLabel?.querySelector<HTMLElement>('.ant-form-item-tooltip')
+    expect(helpIcon).toBeTruthy()
+    await user.hover(helpIcon!)
+
+    expect((await screen.findAllByText('80[health_point]')).length).toBeGreaterThan(0)
+    expect(screen.getByText(/当前角色配置中的“属性值”规则/)).toBeTruthy()
+    expect(screen.getByText(/左侧选择的“生命值”属性配置/)).toBeTruthy()
+    expect(screen.getByText(/DSL 单位注册表中的/)).toBeTruthy()
+    expect(screen.getByText('${self:属性_key}')).toBeTruthy()
+    const operationTable = await screen.findByRole('table', { name: '公式支持的操作示例' })
+    expect(within(operationTable).getAllByRole('row')).toHaveLength(22)
+    for (const operation of [
+      '加法 +', '减法 -', '乘法 *', '除法 /',
+      '小于 <', '小于等于 <=', '大于 >', '大于等于 >=', '等于 ==', '不等于 !=',
+      '逻辑与 &&', '逻辑或 ||', '逻辑非 !',
+      '条件 if', '最小值 min', '最大值 max', '区间限制 clamp', '绝对值 abs',
+      '向下取整 floor', '向上取整 ceil', '四舍六入五成双 round',
+    ]) expect(within(operationTable).getByText(operation)).toBeTruthy()
+    expect(screen.getByText('80[health_point] + 10[damage_point]')).toBeTruthy()
+    expect(screen.getByText(/会因量纲不同而校验失败/)).toBeTruthy()
+  })
+
+  it('shows an inline validation error for incompatible formula dimensions', async () => {
+    const user = userEvent.setup()
+    const fallback = mockEntityCatalogs()
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/v1/entities/attribute?limit=200') {
+        return Promise.resolve(new Response(JSON.stringify({
+          items: [{
+            id: project.id,
+            name: 'Health',
+            key: 'health',
+            entity_version: 1,
+            payload: { value_type: 'decimal', dimension: 'health', base_unit: 'health_point', default: '100' },
+          }],
+          next_cursor: null,
+        }), { status: 200 }))
+      }
+      return fallback(input, init)
+    }))
+    renderApp('/config/character/new')
+
+    await user.click(await screen.findByRole('button', { name: /添加属性值/ }))
+    const attribute = screen.getByRole('combobox', { name: '属性' })
+    await user.click(attribute)
+    const attributeLabels = await screen.findAllByText('Health（health）')
+    await user.click(attributeLabels[attributeLabels.length - 1])
+    const formula = screen.getByRole('combobox', { name: '数值或公式' })
+    await user.click(formula)
+    await user.paste('80[health_point] + 10[damage_point]')
+    await user.tab()
+
+    expect(await screen.findByText(/公式中的单位或量纲不兼容/)).toBeTruthy()
+    expect(formula.getAttribute('aria-invalid')).toBe('true')
   })
 
   it('submits a selected parent tag through the shared reference control', async () => {

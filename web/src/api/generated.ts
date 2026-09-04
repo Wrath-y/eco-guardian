@@ -133,6 +133,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/formula-validations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["validateFormula"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/entities/{kind}": {
         parameters: {
             query?: never;
@@ -1151,6 +1167,21 @@ export interface components {
         FormulaBinding: {
             output_attribute_id: components["schemas"]["UUIDv7"];
             expression: string;
+        };
+        FormulaValidationRequest: {
+            expression: string;
+            output_attribute_id?: components["schemas"]["UUIDv7"];
+        };
+        FormulaDiagnostic: {
+            /** @enum {string} */
+            code: "FORMULA_SYNTAX_INVALID" | "FORMULA_UNKNOWN_VARIABLE" | "FORMULA_UNKNOWN_FUNCTION" | "FORMULA_TYPE_MISMATCH" | "FORMULA_UNIT_MISMATCH" | "FORMULA_DIVISION_BY_ZERO" | "NUMERIC_NON_FINITE" | "NUMERIC_OUT_OF_RANGE";
+            message: string;
+            start_byte: number;
+            end_byte: number;
+        };
+        FormulaValidationResult: {
+            valid: boolean;
+            diagnostics: components["schemas"]["FormulaDiagnostic"][];
         };
         TargetSelector: {
             /** @enum {string} */
@@ -2869,6 +2900,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EntitySchema"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    validateFormula: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FormulaValidationRequest"];
+            };
+        };
+        responses: {
+            /** @description Formula syntax */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormulaValidationResult"];
                 };
             };
             default: components["responses"]["Problem"];

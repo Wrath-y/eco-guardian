@@ -60,6 +60,13 @@ paths:
       responses:
         '200': { description: Compiled registry schema, content: { application/json: { schema: { $ref: '#/components/schemas/EntitySchema' } } } }
         default: { $ref: '#/components/responses/Problem' }
+  /formula-validations:
+    post:
+      operationId: validateFormula
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/FormulaValidationRequest' } } } }
+      responses:
+        '200': { description: Formula syntax, type and unit diagnostics, content: { application/json: { schema: { $ref: '#/components/schemas/FormulaValidationResult' } } } }
+        default: { $ref: '#/components/responses/Problem' }
   /entities/{kind}:
     get:
       operationId: listEntities
@@ -893,6 +900,31 @@ components:
       properties:
         output_attribute_id: { $ref: '#/components/schemas/UUIDv7' }
         expression: { type: string, minLength: 1 }
+    FormulaValidationRequest:
+      type: object
+      additionalProperties: false
+      required: [expression]
+      properties:
+        expression: { type: string, minLength: 1, maxLength: 10000 }
+        output_attribute_id: { $ref: '#/components/schemas/UUIDv7' }
+    FormulaDiagnostic:
+      type: object
+      additionalProperties: false
+      required: [code, message, start_byte, end_byte]
+      properties:
+        code:
+          type: string
+          enum: [FORMULA_SYNTAX_INVALID, FORMULA_UNKNOWN_VARIABLE, FORMULA_UNKNOWN_FUNCTION, FORMULA_TYPE_MISMATCH, FORMULA_UNIT_MISMATCH, FORMULA_DIVISION_BY_ZERO, NUMERIC_NON_FINITE, NUMERIC_OUT_OF_RANGE]
+        message: { type: string }
+        start_byte: { type: integer, minimum: 0 }
+        end_byte: { type: integer, minimum: 0 }
+    FormulaValidationResult:
+      type: object
+      additionalProperties: false
+      required: [valid, diagnostics]
+      properties:
+        valid: { type: boolean }
+        diagnostics: { type: array, items: { $ref: '#/components/schemas/FormulaDiagnostic' } }
     TargetSelector:
       type: object
       required: [type]

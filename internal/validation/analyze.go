@@ -63,7 +63,7 @@ func AnalyzeV1(ctx context.Context, schemas *domain.Registry, registry *formula.
 			return nil, err
 		}
 	}
-	records, diagnostics := CompileFormulaBindings(bindings, registry, formula.SymbolTable{})
+	records, diagnostics := CompileFormulaBindings(bindings, registry, AttributeSymbols(entities, registry, nil))
 	for _, diagnostic := range diagnostics {
 		var span *FormulaSpan
 		if diagnostic.Span.EndByte > diagnostic.Span.StartByte {
@@ -82,6 +82,13 @@ func AnalyzeV1(ctx context.Context, schemas *domain.Registry, registry *formula.
 	}
 	nodes := make([]FormulaNode, 0, len(records))
 	producer := make(map[string]FormulaNode, len(records))
+	attributeIDs := make(map[string]domain.ID)
+	for _, entity := range entities {
+		if entity.Kind == domain.KindAttribute && entity.Status == domain.StatusActive {
+			attributeIDs[entity.Key] = entity.ID
+			attributeIDs[string(entity.ID)] = entity.ID
+		}
+	}
 	for _, record := range records {
 		node := FormulaNode{EntityID: record.SourceID, FieldPath: record.FieldPath, OutputAttributeID: record.OutputAttributeID}
 		nodes = append(nodes, node)
@@ -92,7 +99,8 @@ func AnalyzeV1(ctx context.Context, schemas *domain.Registry, registry *formula.
 		from := FormulaNode{EntityID: record.SourceID, FieldPath: record.FieldPath, OutputAttributeID: record.OutputAttributeID}
 		for _, read := range record.Reads {
 			if read.Scope == "self" {
-				if to, ok := producer[string(record.SourceID)+"|"+read.Symbol]; ok {
+				target := attributeIDs[read.Symbol]
+				if to, ok := producer[string(record.SourceID)+"|"+string(target)]; ok {
 					edges = append(edges, FormulaEdge{From: from, To: to})
 				}
 			}

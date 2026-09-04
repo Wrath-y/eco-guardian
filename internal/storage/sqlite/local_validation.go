@@ -42,7 +42,7 @@ func (s *Store) preflightLocal(ctx context.Context, entity domain.Entity) (local
 	// This is deliberately non-authoritative feedback. It ensures LOCAL parser,
 	// type, and unit checks happen before acquiring the serialized write lock;
 	// diagnostics are recomputed after the dependency identity is rechecked.
-	_, _ = validation.CompileFormulaBindings(bindings, registry, formula.SymbolTable{})
+	_, _ = validation.CompileFormulaBindings(bindings, registry, validation.AttributeSymbols(snapshot.Entities, registry, nil))
 	byID := make(map[domain.ID]domain.Entity, len(snapshot.Entities))
 	for _, current := range snapshot.Entities {
 		byID[current.ID] = current
@@ -135,7 +135,11 @@ func currentValidationVersionManifest() (validation.VersionManifest, error) {
 // entity's formula syntax/type checks. Global graph validators deliberately
 // remain FULL-only.
 func (s *Store) persistLocalValidation(ctx context.Context, tx *sql.Tx, entity domain.Entity, revision domain.RevisionSummary, versions validation.VersionManifest) (domain.LocalValidationSummary, error) {
-	return s.persistLocalValidationForEntities(ctx, tx, []domain.Entity{entity}, revision, versions)
+	symbolEntities, err := materializeWorkingEntitiesTx(ctx, tx)
+	if err != nil {
+		return domain.LocalValidationSummary{}, err
+	}
+	return s.persistLocalValidationForEntitiesAndSymbols(ctx, tx, []domain.Entity{entity}, symbolEntities, revision, versions)
 }
 
 // persistLocalValidationForEntities remains LOCAL-only: it checks direct
@@ -143,6 +147,10 @@ func (s *Store) persistLocalValidation(ctx context.Context, tx *sql.Tx, entity d
 // Checkpoints use it with their materialized immutable manifest so their run
 // is never mislabeled FULL.
 func (s *Store) persistLocalValidationForEntities(ctx context.Context, tx *sql.Tx, entities []domain.Entity, revision domain.RevisionSummary, versions validation.VersionManifest) (domain.LocalValidationSummary, error) {
+	return s.persistLocalValidationForEntitiesAndSymbols(ctx, tx, entities, entities, revision, versions)
+}
+
+func (s *Store) persistLocalValidationForEntitiesAndSymbols(ctx context.Context, tx *sql.Tx, entities, symbolEntities []domain.Entity, revision domain.RevisionSummary, versions validation.VersionManifest) (domain.LocalValidationSummary, error) {
 	registry, err := formula.V1Registry()
 	if err != nil {
 		return domain.LocalValidationSummary{}, err
@@ -171,7 +179,7 @@ func (s *Store) persistLocalValidationForEntities(ctx context.Context, tx *sql.T
 			issues = append(issues, issue)
 		}
 	}
-	_, diagnostics := validation.CompileFormulaBindings(bindings, registry, formula.SymbolTable{})
+	_, diagnostics := validation.CompileFormulaBindings(bindings, registry, validation.AttributeSymbols(symbolEntities, registry, nil))
 	for _, diagnostic := range diagnostics {
 		span := validation.FormulaSpan{StartByte: diagnostic.Span.StartByte, EndByte: diagnostic.Span.EndByte}
 		var issueSpan *validation.FormulaSpan
@@ -224,7 +232,7 @@ func (s *Store) persistRevisionDerived(ctx context.Context, tx *sql.Tx, revision
 		return err
 	}
 	references, bindings := validation.WalkKnownSchema(entities)
-	formulas, _ := validation.CompileFormulaBindings(bindings, registry, formula.SymbolTable{})
+	formulas, _ := validation.CompileFormulaBindings(bindings, registry, validation.AttributeSymbols(entities, registry, nil))
 	return s.replaceRevisionDerivedTx(ctx, tx, revisionID, formulas, references)
 }
 
@@ -250,4 +258,25 @@ func materializeRevisionEntitiesTx(ctx context.Context, tx *sql.Tx, revisionID d
 		return nil, err
 	}
 	return entities, nil
+}
+
+func materializeWorkingEntitiesTx(ctx context.Context, tx *sql.Tx) ([]domain.Entity, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT b.json FROM working_entities w JOIN entity_blobs b ON b.hash=w.blob_hash ORDER BY w.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	entities := []domain.Entity{}
+	for rows.Next() {
+		var raw []byte
+		if err = rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var entity domain.Entity
+		if err = json.Unmarshal(raw, &entity); err != nil {
+			return nil, err
+		}
+		entities = append(entities, entity)
+	}
+	return entities, rows.Err()
 }

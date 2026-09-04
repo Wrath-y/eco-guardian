@@ -8,6 +8,7 @@ class ResizeObserverMock {
 }
 
 beforeEach(() => {
+  localStorage.clear()
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 })
   Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 })
   Object.defineProperty(window, 'matchMedia', {

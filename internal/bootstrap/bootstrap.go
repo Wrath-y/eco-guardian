@@ -371,7 +371,9 @@ func registerRoutes(host *httpapi.Runtime, projects *project.Manager, registry *
 	projectHandler.Register(engine)
 	httpapi.NewInstanceControlHandler(projects, instanceSecret, shutdown).Register(engine)
 	httpapi.NewSchemaHandler(registry).Register(engine)
-	httpapi.NewEntityHandler(httpapi.StoreFromProjectManager(projects)).Register(engine)
+	entityStore := httpapi.StoreFromProjectManager(projects)
+	httpapi.NewEntityHandler(entityStore).Register(engine)
+	httpapi.NewFormulaHandler(entityStore).Register(engine)
 	httpapi.NewValidationHandler(httpapi.ValidationStoreFromProjectManager(projects)).Register(engine)
 	httpapi.NewSettingsHandler(settings, func(name string) bool {
 		secret, err := credentials.Resolve(context.Background(), name)

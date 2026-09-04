@@ -27,7 +27,7 @@ func (s *Store) RebuildRevisionDerived(ctx context.Context, revisionID domain.ID
 		return RebuildResult{}, err
 	}
 	references, bindings := validation.WalkKnownSchema(snapshot.Entities)
-	formulas, diagnostics := validation.CompileFormulaBindings(bindings, registry, symbols)
+	formulas, diagnostics := validation.CompileFormulaBindings(bindings, registry, validation.AttributeSymbols(snapshot.Entities, registry, symbols))
 	if len(diagnostics) > 0 {
 		return RebuildResult{}, fmt.Errorf("cannot rebuild invalid formula indexes: %s", diagnostics[0].Code)
 	}

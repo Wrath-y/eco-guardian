@@ -117,6 +117,22 @@ pre { max-width: 100%; margin: 8px 0; padding: 12px 14px; overflow: auto; color:
 .payload-form-note, .form-sync-status { display: flex; width: 100%; justify-content: flex-end; }
 .payload-form-note { margin-top: -4px; }
 .form-sync-status { margin-top: 14px; padding-top: 12px; border-top: 1px solid #edf1f6; }
+.deletable-option { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; }
+.deletable-option > span { overflow: hidden; text-overflow: ellipsis; }
+.deletable-option .ant-btn { flex: 0 0 auto; }
+.formula-help { width: min(680px, calc(100vw - 64px)); line-height: 1.55; }
+.formula-help p { margin: 8px 0 0; }
+.formula-help ol { margin: 6px 0 0; padding-inline-start: 20px; }
+.formula-help li + li { margin-top: 3px; }
+.formula-help code { padding: 1px 4px; color: #bae0ff; background: rgb(255 255 255 / 12%); border-radius: 3px; font-size: 12px; }
+.formula-operation-title { display: block; margin-top: 12px; }
+.formula-example-scroll { margin-top: 6px; overflow-x: auto; }
+.formula-example-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.formula-example-table th, .formula-example-table td { padding: 5px 7px; border-top: 1px solid rgb(255 255 255 / 16%); text-align: left; vertical-align: top; }
+.formula-example-table th { color: #fff; font-weight: 600; }
+.formula-example-table th:first-child, .formula-example-table td:first-child { width: 124px; white-space: nowrap; }
+.formula-example-table th:last-child, .formula-example-table td:last-child { white-space: nowrap; }
+.formula-example-table code { white-space: nowrap; }
 .validation-table { margin-top: 16px; }
 .validation-table .issue-link { height: auto; padding: 0; text-align: left; white-space: normal; }
 

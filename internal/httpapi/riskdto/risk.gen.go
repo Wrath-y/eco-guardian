@@ -951,6 +951,42 @@ func (e FieldChangeKind) Valid() bool {
 	}
 }
 
+// Defines values for FormulaDiagnosticCode.
+const (
+	FORMULADIVISIONBYZERO  FormulaDiagnosticCode = "FORMULA_DIVISION_BY_ZERO"
+	FORMULASYNTAXINVALID   FormulaDiagnosticCode = "FORMULA_SYNTAX_INVALID"
+	FORMULATYPEMISMATCH    FormulaDiagnosticCode = "FORMULA_TYPE_MISMATCH"
+	FORMULAUNITMISMATCH    FormulaDiagnosticCode = "FORMULA_UNIT_MISMATCH"
+	FORMULAUNKNOWNFUNCTION FormulaDiagnosticCode = "FORMULA_UNKNOWN_FUNCTION"
+	FORMULAUNKNOWNVARIABLE FormulaDiagnosticCode = "FORMULA_UNKNOWN_VARIABLE"
+	NUMERICNONFINITE       FormulaDiagnosticCode = "NUMERIC_NON_FINITE"
+	NUMERICOUTOFRANGE      FormulaDiagnosticCode = "NUMERIC_OUT_OF_RANGE"
+)
+
+// Valid indicates whether the value is a known member of the FormulaDiagnosticCode enum.
+func (e FormulaDiagnosticCode) Valid() bool {
+	switch e {
+	case FORMULADIVISIONBYZERO:
+		return true
+	case FORMULASYNTAXINVALID:
+		return true
+	case FORMULATYPEMISMATCH:
+		return true
+	case FORMULAUNITMISMATCH:
+		return true
+	case FORMULAUNKNOWNFUNCTION:
+		return true
+	case FORMULAUNKNOWNVARIABLE:
+		return true
+	case NUMERICNONFINITE:
+		return true
+	case NUMERICOUTOFRANGE:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GateEvidenceState.
 const (
 	GateEvidenceStateBLOCK       GateEvidenceState = "BLOCK"
@@ -4205,6 +4241,17 @@ type FormulaBinding struct {
 	OutputAttributeId UUIDv7 `json:"output_attribute_id"`
 }
 
+// FormulaDiagnostic defines model for FormulaDiagnostic.
+type FormulaDiagnostic struct {
+	Code      FormulaDiagnosticCode `json:"code"`
+	EndByte   int                   `json:"end_byte"`
+	Message   string                `json:"message"`
+	StartByte int                   `json:"start_byte"`
+}
+
+// FormulaDiagnosticCode defines model for FormulaDiagnostic.Code.
+type FormulaDiagnosticCode string
+
 // FormulaSpan defines model for FormulaSpan.
 type FormulaSpan struct {
 	// EndByte UTF-8 byte offset
@@ -4212,6 +4259,20 @@ type FormulaSpan struct {
 
 	// StartByte UTF-8 byte offset
 	StartByte int `json:"start_byte"`
+}
+
+// FormulaValidationRequest defines model for FormulaValidationRequest.
+type FormulaValidationRequest struct {
+	Expression string `json:"expression"`
+
+	// OutputAttributeId Server allocated UUIDv7.
+	OutputAttributeId *UUIDv7 `json:"output_attribute_id,omitempty"`
+}
+
+// FormulaValidationResult defines model for FormulaValidationResult.
+type FormulaValidationResult struct {
+	Diagnostics []FormulaDiagnostic `json:"diagnostics"`
+	Valid       bool                `json:"valid"`
 }
 
 // GateEvidence defines model for GateEvidence.
@@ -6185,6 +6246,9 @@ type CreateEntityJSONRequestBody = EntityDraft
 
 // PatchEntityJSONRequestBody defines body for PatchEntity for application/json ContentType.
 type PatchEntityJSONRequestBody = EntityPatch
+
+// ValidateFormulaJSONRequestBody defines body for ValidateFormula for application/json ContentType.
+type ValidateFormulaJSONRequestBody = FormulaValidationRequest
 
 // CreateImpactAnalysisJSONRequestBody defines body for CreateImpactAnalysis for application/json ContentType.
 type CreateImpactAnalysisJSONRequestBody = CreateImpactAnalysisRequest

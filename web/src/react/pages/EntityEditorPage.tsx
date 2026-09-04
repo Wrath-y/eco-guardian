@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Card, Col, Descriptions, Divider, Form, Input, Row, Select, Space, Table, Tag, Typography, message } from 'antd'
-import { ArrowLeftOutlined, CheckCircleOutlined, CodeOutlined, CopyOutlined, ExperimentOutlined, SaveOutlined } from '@ant-design/icons'
+import { Alert, AutoComplete, Button, Card, Col, Descriptions, Divider, Form, Input, Row, Select, Space, Table, Tag, Typography, message } from 'antd'
+import { ArrowLeftOutlined, CheckCircleOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, DownOutlined, ExperimentOutlined, QuestionCircleOutlined, SaveOutlined } from '@ant-design/icons'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { components } from '@/api/generated'
 import { emptyDraft, entityKindLabels, preparePayload, validateDraft, type EntityKind, type EntitySchema, type FieldIssue } from '@/forms/registry'
 import PageHeader from '../components/PageHeader'
 import PayloadForm, { type EntityCatalogs, type EntityOption } from '../components/PayloadForm'
 import { ApiError, apiRequest, errorMessage } from '../api'
+import { useAppState } from '../context/AppContext'
 
 type Entity = components['schemas']['Entity']
 type ValidationRun = components['schemas']['ValidationRun']
@@ -18,7 +19,7 @@ interface LoadedEntity { entity: Record<string, unknown>; etag: string }
 interface EntityPage { items: EntityOption[]; next_cursor: string | null }
 
 const allowedCommandFields = ['key', 'name', 'description', 'tag_ids', 'balance_group', 'payload', 'extensions']
-const referenceKinds: EntityKind[] = ['attribute', 'tag', 'skill', 'item', 'effect']
+const catalogKinds: EntityKind[] = ['attribute', 'tag', 'character', 'skill', 'item', 'effect']
 const basicExamples: Record<EntityKind, { key: string; name: string; description: string; balanceGroup: string; tags: string }> = {
   attribute: { key: 'attack_power', name: '攻击力', description: '角色造成伤害时使用的基础攻击数值。', balanceGroup: 'combat_core', tags: '战斗、核心属性' },
   tag: { key: 'fire', name: '火焰', description: '标记火焰相关技能、物品与效果。', balanceGroup: 'elements', tags: '元素分类' },
@@ -28,10 +29,15 @@ const basicExamples: Record<EntityKind, { key: string; name: string; description
   effect: { key: 'burning', name: '燃烧', description: '在数个回合内持续造成火焰伤害。', balanceGroup: 'damage_over_time', tags: '火焰、持续伤害' },
 }
 
+function helpTooltip(title: string) {
+  return { title, icon: <QuestionCircleOutlined aria-hidden /> }
+}
+
 export default function EntityEditorPage() {
   const { kind = 'attribute', id = 'new' } = useParams()
   const entityKind = kind as EntityKind
   const navigate = useNavigate()
+  const { project } = useAppState()
   const [searchParams, setSearchParams] = useSearchParams()
   const client = useQueryClient()
   const [form] = Form.useForm()
@@ -42,11 +48,13 @@ export default function EntityEditorPage() {
   const [unprotectedDate, setUnprotectedDate] = useState('')
   const [localSummary, setLocalSummary] = useState<LocalSummary>()
   const [validationRun, setValidationRun] = useState<ValidationRun>()
+  const [deletedBalanceGroups, setDeletedBalanceGroups] = useState<string[]>([])
   const [messageApi, contextHolder] = message.useMessage()
   const creating = id === 'new'
   const kindLabel = entityKindLabels[entityKind]
   const basicExample = basicExamples[entityKind]
   const editingTag = entityKind === 'tag'
+  const balanceGroupStorageKey = project?.id ? `entity-editor:hidden-balance-groups:${project.id}:${entityKind}` : ''
 
   const schema = useQuery({ queryKey: ['entity-schema', kind], queryFn: () => apiRequest<EntitySchema>(`/api/v1/schemas/entities/${kind}`) })
   const entity = useQuery({
@@ -62,13 +70,43 @@ export default function EntityEditorPage() {
     queryKey: ['entity-reference-catalogs', kind, id],
     enabled: Boolean(entity.data),
     queryFn: async (): Promise<EntityCatalogs> => {
-      const entries = await Promise.all(referenceKinds.map(async referenceKind => {
-        const page = await apiRequest<EntityPage>(`/api/v1/entities/${referenceKind}?limit=200`)
-        return [referenceKind, page.items] as const
+      const entries = await Promise.all(catalogKinds.map(async catalogKind => {
+        const items: EntityOption[] = []
+        let cursor = ''
+        do {
+          const params = new URLSearchParams({ limit: '200' })
+          if (cursor) params.set('cursor', cursor)
+          const page = await apiRequest<EntityPage>(`/api/v1/entities/${catalogKind}?${params}`)
+          items.push(...page.items)
+          cursor = page.next_cursor ?? ''
+        } while (cursor)
+        return [catalogKind, items] as const
       }))
       return Object.fromEntries(entries) as EntityCatalogs
     },
   })
+
+  const balanceGroupOptions = useMemo(() => {
+    const values = new Set<string>([basicExample.balanceGroup])
+    for (const item of catalogs.data?.[entityKind] ?? []) {
+      const value = item.balance_group?.trim()
+      if (value) values.add(value)
+    }
+    const current = entity.data?.entity.balance_group
+    if (typeof current === 'string' && current.trim()) values.add(current.trim())
+    const hidden = new Set(deletedBalanceGroups)
+    return [...values].filter(value => !hidden.has(value)).sort((left, right) => left.localeCompare(right, 'zh-CN')).map(value => ({ value }))
+  }, [basicExample.balanceGroup, catalogs.data, deletedBalanceGroups, entity.data, entityKind])
+
+  useEffect(() => {
+    if (!balanceGroupStorageKey) { setDeletedBalanceGroups([]); return }
+    try {
+      const stored = JSON.parse(localStorage.getItem(balanceGroupStorageKey) ?? '[]') as unknown
+      setDeletedBalanceGroups(Array.isArray(stored) ? stored.filter((value): value is string => typeof value === 'string') : [])
+    } catch {
+      setDeletedBalanceGroups([])
+    }
+  }, [balanceGroupStorageKey])
 
   useEffect(() => {
     if (!entity.data) return
@@ -165,6 +203,27 @@ export default function EntityEditorPage() {
 
   const severityFilters = useMemo(() => ({ ERROR: 'error', BLOCK: 'error', WARNING: 'warning', INFO: 'processing' } as const), [])
 
+  function updateDeletedBalanceGroups(update: (current: string[]) => string[]) {
+    setDeletedBalanceGroups(current => {
+      const next = update(current)
+      if (balanceGroupStorageKey) {
+        try { localStorage.setItem(balanceGroupStorageKey, JSON.stringify(next)) } catch { /* UI suggestions can still update in memory. */ }
+      }
+      return next
+    })
+  }
+
+  function deleteBalanceGroupOption(value: string) {
+    updateDeletedBalanceGroups(current => current.includes(value) ? current : [...current, value])
+    messageApi.success(`已从下拉候选中删除「${value}」，已保存配置未改动`)
+  }
+
+  function restoreBalanceGroupOption(value: string) {
+    const normalized = value.trim()
+    if (!normalized || !deletedBalanceGroups.includes(normalized)) return
+    updateDeletedBalanceGroups(current => current.filter(item => item !== normalized))
+  }
+
   if (entity.isLoading) return <div className="route-loading"><Typography.Text>正在加载编辑器…</Typography.Text></div>
   if (entity.isError) return <div className="page-container"><Alert type="error" showIcon title={errorMessage(entity.error, '无法加载对象')} action={<Button onClick={() => navigate(`/config/${kind}`)}>返回列表</Button>} /></div>
 
@@ -187,15 +246,18 @@ export default function EntityEditorPage() {
         <Card className="section-card" title="基础信息">
           <Form form={form} layout="vertical" onValuesChange={() => setDirty(true)}>
             <Row gutter={16}>
-              <Col xs={24} md={12}><Form.Item name="key" label="Key" rules={[{ required: true, message: '请输入 Key' }, { pattern: /^[a-z][a-z0-9_]*$/, message: '仅可使用小写字母、数字和下划线' }]} extra={creating ? `示例：${basicExample.key}；用于系统内唯一识别` : undefined}><Input placeholder={`例如 ${basicExample.key}`} data-field-path="/key" /></Form.Item></Col>
-              <Col xs={24} md={12}><Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]} extra={creating ? `示例：${basicExample.name}；用于页面展示` : undefined}><Input placeholder={`例如 ${basicExample.name}`} data-field-path="/name" /></Form.Item></Col>
+              <Col xs={24} md={12}><Form.Item name="key" label="Key" tooltip={helpTooltip('配置在系统内的稳定标识，用于引用、版本比较和问题定位。')} rules={[{ required: true, message: '请输入 Key' }, { pattern: /^[a-z][a-z0-9_]*$/, message: '仅可使用小写字母、数字和下划线' }]} extra={creating ? `示例：${basicExample.key}；用于系统内唯一识别` : undefined}><Input placeholder={`例如 ${basicExample.key}`} data-field-path="/key" /></Form.Item></Col>
+              <Col xs={24} md={12}><Form.Item name="name" label="名称" tooltip={helpTooltip('配置的显示名称，会出现在列表、选择器和分析结果中。')} rules={[{ required: true, message: '请输入名称' }]} extra={creating ? `示例：${basicExample.name}；用于页面展示` : undefined}><Input placeholder={`例如 ${basicExample.name}`} data-field-path="/name" /></Form.Item></Col>
             </Row>
-            <Form.Item name="description" label="说明" extra={creating ? `示例：${basicExample.description}` : undefined}><Input.TextArea rows={3} placeholder={basicExample.description} data-field-path="/description" /></Form.Item>
+            <Form.Item name="description" label="说明" tooltip={helpTooltip('记录这项配置的用途和设计意图，方便维护者理解何时使用它。')} extra={creating ? `示例：${basicExample.description}` : undefined}><Input.TextArea rows={3} placeholder={basicExample.description} data-field-path="/description" /></Form.Item>
             <Row gutter={16}>
               <Col xs={24} md={12}>
                 <Form.Item
                   name="tag_ids"
                   label={editingTag ? '关联标签（可选）' : '标签'}
+                  tooltip={helpTooltip(editingTag
+                    ? '给当前标签附加用于检索的标签；这里不会建立父子层级。'
+                    : '用于配置分类、筛选和规则匹配，可以选择多个标签。')}
                   extra={editingTag
                     ? '用于给当前标签附加检索标签，与下方“父标签”的层级关系不同；可留空。'
                     : creating ? `示例：${basicExample.tags}` : undefined}
@@ -217,13 +279,40 @@ export default function EntityEditorPage() {
                 </Form.Item>
               </Col>
               <Col xs={24} md={12}>
-                <Form.Item name="balance_group" label="平衡分组" extra={creating ? `示例：${basicExample.balanceGroup}；同组配置便于一起比较` : undefined}><Input placeholder={`例如 ${basicExample.balanceGroup}`} data-field-path="/balance_group" /></Form.Item>
+                <Form.Item name="balance_group" label="平衡分组" tooltip={helpTooltip('把同类型且需要一起比较的配置归入一组，供平衡分析和风险评估使用。删除图标只移除下拉候选，不会修改已保存配置。')} extra={creating ? `示例：${basicExample.balanceGroup}；同组配置便于一起比较` : undefined}>
+                  <AutoComplete
+                    allowClear
+                    options={balanceGroupOptions}
+                    suffixIcon={<DownOutlined />}
+                    placeholder={catalogs.isLoading ? '正在加载已有分组…' : '请选择已有分组，也可输入新分组'}
+                    filterOption={(inputValue, option) => String(option?.value ?? '').toLowerCase().includes(inputValue.toLowerCase())}
+                    notFoundContent="没有匹配的已有分组，可直接输入新分组"
+                    onChange={restoreBalanceGroupOption}
+                    optionRender={option => {
+                      const value = String(option.value ?? '')
+                      return <div className="deletable-option">
+                        <span>{value}</span>
+                        <Button
+                          danger
+                          type="text"
+                          size="small"
+                          icon={<DeleteOutlined />}
+                          title="删除候选项（不修改已保存配置）"
+                          aria-label={`删除平衡分组候选 ${value}`}
+                          onMouseDown={event => { event.preventDefault(); event.stopPropagation() }}
+                          onClick={event => { event.stopPropagation(); deleteBalanceGroupOption(value) }}
+                        />
+                      </div>
+                    }}
+                    data-field-path="/balance_group"
+                  />
+                </Form.Item>
               </Col>
             </Row>
             <Divider titlePlacement="start">配置字段</Divider>
             <Typography.Paragraph type="secondary">请按业务含义填写以下字段，系统会自动整理并校验数据，无需编写 JSON。</Typography.Paragraph>
             {catalogs.isError && <Alert className="block-alert" type="warning" showIcon title="引用选项加载失败" description="属性、标签、技能、物品或效果的选择列表暂不可用。" action={<Button onClick={() => void catalogs.refetch()}>重试</Button>} />}
-            <PayloadForm kind={entityKind} form={form} catalogs={catalogs.data} catalogsLoading={catalogs.isLoading} showExamples={creating} />
+            <PayloadForm kind={entityKind} form={form} catalogs={catalogs.data} catalogsLoading={catalogs.isLoading} dslUnits={schema.data?.dsl_registry?.units} showExamples={creating} />
             <Space className="form-sync-status"><Typography.Text type={dirty ? 'warning' : 'secondary'}>{dirty ? '有未保存修改' : '已与服务器同步'}</Typography.Text></Space>
           </Form>
         </Card>
