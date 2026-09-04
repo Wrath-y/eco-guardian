@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
@@ -71,6 +71,28 @@ describe('React application shell', () => {
     expect(await screen.findByRole('heading', { name: 'balance' })).toBeTruthy()
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/project-selections'))).toBe(true))
     await waitFor(() => expect((screen.getByRole('button', { name: /创建项目/ }) as HTMLButtonElement).disabled).toBe(false))
+  })
+
+  it('closes the active project without waiting for a deferred editor timer', async () => {
+    const fallback = mockBase()
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/projects/close') && init?.method === 'POST') {
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      return fallback(input, init)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderApp()
+
+    const closeButton = await screen.findByRole('button', { name: /关闭项目/ })
+    const deferredTimer = vi.spyOn(window, 'setTimeout').mockImplementation(() => undefined as unknown as ReturnType<typeof window.setTimeout>)
+    fireEvent.click(closeButton)
+    await Promise.resolve()
+    await Promise.resolve()
+    deferredTimer.mockRestore()
+
+    expect(fetchMock.mock.calls.some(([input, init]) => String(input).endsWith('/projects/close') && init?.method === 'POST')).toBe(true)
+    expect(await screen.findByText('尚未打开项目')).toBeTruthy()
   })
 
   it('routes an active project to the Ant Design entity table', async () => {

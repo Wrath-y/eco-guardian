@@ -6,15 +6,6 @@ import PageHeader from '../components/PageHeader'
 import { ApiError, apiRequest, errorMessage, postJSON, type ActiveProject } from '../api'
 import { useAppState } from '../context/AppContext'
 
-function requestEditorClose() {
-  return new Promise<boolean>(resolve => {
-    let settled = false
-    const finish = (value: boolean) => { if (!settled) { settled = true; resolve(value) } }
-    window.dispatchEvent(new CustomEvent('eco-guardian:request-close', { detail: { resolve: finish } }))
-    window.setTimeout(() => finish(true), 0)
-  })
-}
-
 export default function ProjectsPage() {
   const { project, setProject } = useAppState()
   const [messageApi, contextHolder] = message.useMessage()
@@ -25,7 +16,6 @@ export default function ProjectsPage() {
 
   async function closeCurrent() {
     if (!project) return
-    if (!await requestEditorClose()) return
     await apiRequest<void>('/api/v1/projects/close', { method: 'POST' })
     setProject(null)
   }

@@ -74,7 +74,7 @@ pre { max-width: 100%; margin: 8px 0; padding: 12px 14px; overflow: auto; color:
 .ant-typography code { overflow-wrap: anywhere; }
 
 .hero-project-card { position: relative; margin-bottom: 18px; overflow: hidden; color: #fff; background: linear-gradient(120deg, #0f5fc2 0%, #1677ff 55%, #69b1ff 130%); border: 0 !important; box-shadow: 0 16px 34px rgb(22 119 255 / 18%); }
-.hero-project-card::after { position: absolute; top: -130px; right: -80px; width: 320px; height: 320px; background: radial-gradient(circle, rgb(255 255 255 / 24%) 0%, transparent 68%); content: ''; }
+.hero-project-card::after { position: absolute; top: -130px; right: -80px; width: 320px; height: 320px; pointer-events: none; background: radial-gradient(circle, rgb(255 255 255 / 24%) 0%, transparent 68%); content: ''; }
 .hero-project-card .ant-typography, .hero-project-card .ant-statistic-title, .hero-project-card .ant-statistic-content { color: #fff !important; }
 .hero-project-card .ant-typography-secondary { color: rgb(255 255 255 / 70%) !important; }
 .hero-project-card .ant-tag { color: #d9f7be; background: rgb(82 196 26 / 15%); border-color: rgb(183 235 143 / 45%); }

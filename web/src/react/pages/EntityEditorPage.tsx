@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Alert, Button, Card, Col, Descriptions, Divider, Form, Input, Modal, Row, Select, Space, Table, Tag, Typography, message } from 'antd'
+import { Alert, Button, Card, Col, Descriptions, Divider, Form, Input, Row, Select, Space, Table, Tag, Typography, message } from 'antd'
 import { ArrowLeftOutlined, CheckCircleOutlined, CodeOutlined, CopyOutlined, ExperimentOutlined, SaveOutlined } from '@ant-design/icons'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { components } from '@/api/generated'
@@ -87,20 +87,8 @@ export default function EntityEditorPage() {
 
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => { if (dirty) { event.preventDefault(); event.returnValue = '' } }
-    const closeRequest = (event: Event) => {
-      const request = event as CustomEvent<{ resolve: (value: boolean) => void }>
-      if (!dirty) { request.detail.resolve(true); return }
-      Modal.confirm({
-        title: '处理未保存修改',
-        content: '切换或关闭项目前，请保存或放弃当前输入。',
-        okText: '放弃修改并继续', cancelText: '继续编辑', okButtonProps: { danger: true },
-        onOk: () => { setDirty(false); request.detail.resolve(true) },
-        onCancel: () => request.detail.resolve(false),
-      })
-    }
     window.addEventListener('beforeunload', warn)
-    window.addEventListener('eco-guardian:request-close', closeRequest)
-    return () => { window.removeEventListener('beforeunload', warn); window.removeEventListener('eco-guardian:request-close', closeRequest) }
+    return () => window.removeEventListener('beforeunload', warn)
   }, [dirty])
 
   useEffect(() => {
