@@ -81,9 +81,10 @@ pre { max-width: 100%; margin: 8px 0; padding: 12px 14px; overflow: auto; color:
 .hero-project-card .ant-btn-dangerous { color: #fff; background: rgb(255 255 255 / 8%); border-color: rgb(255 255 255 / 38%); }
 .project-actions, .project-actions .ant-btn { width: 100%; }
 .project-list-icon { display: grid; width: 40px; height: 40px; place-items: center; color: #1677ff; background: #e6f4ff; border-radius: 10px; font-size: 18px; }
-.project-recent-row { display: flex; min-height: 70px; padding: 12px 4px; align-items: center; gap: 14px; border-bottom: 1px solid #edf1f6; }
+.project-recent-row { display: flex; min-height: 70px; padding: 12px 4px; align-items: center; flex-wrap: wrap; gap: 14px; border-bottom: 1px solid #edf1f6; }
 .project-recent-row:last-child { border-bottom: 0; }
 .project-recent-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 5px; }
+.project-recent-buttons { margin-left: auto; justify-content: flex-end; }
 .runtime-capability-list { margin-bottom: 20px; border-top: 1px solid #edf1f6; }
 .runtime-capability-row { display: flex; min-height: 58px; padding: 10px 4px; align-items: center; gap: 12px; border-bottom: 1px solid #edf1f6; }
 .runtime-capability-icon { font-size: 18px; }

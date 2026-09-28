@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Alert, Button, Card, Col, Empty, Flex, Modal, Row, Skeleton, Space, Statistic, Tag, Typography, message } from 'antd'
-import { CloseOutlined, DatabaseOutlined, FolderAddOutlined, FolderOpenOutlined, HistoryOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
+import { CloseOutlined, DatabaseOutlined, DeleteOutlined, FolderAddOutlined, FolderOpenOutlined, HistoryOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
 import PageHeader from '../components/PageHeader'
 import { ApiError, apiRequest, errorMessage, postJSON, type ActiveProject } from '../api'
 import { baseDataCounts, baseDataTotal, initializeBaseData } from '../baseData'
@@ -80,6 +80,33 @@ export default function ProjectsPage() {
     onError: cause => messageApi.error(errorMessage(cause, '无法关闭项目')),
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: async (value: ActiveProject) => {
+      if (project?.id === value.id) await closeCurrent()
+      await apiRequest<void>(`/api/v1/projects/recent/${value.id}`, { method: 'DELETE' })
+    },
+    onSuccess: (_, value) => {
+      if (lockedProject?.id === value.id) setLockedProject(null)
+      void client.invalidateQueries({ queryKey: ['projects', 'recent'] })
+      void client.invalidateQueries({ queryKey: ['runtime', 'status'] })
+      messageApi.success(`已删除项目「${value.name}」`)
+    },
+    onError: cause => messageApi.error(cause instanceof ApiError && cause.code === 'PROJECT_LOCKED'
+      ? '项目正在其他实例中使用，请先关闭后重试'
+      : errorMessage(cause, '无法删除项目')),
+  })
+
+  function confirmDelete(value: ActiveProject) {
+    Modal.confirm({
+      title: `永久删除项目「${value.name}」？`,
+      content: '将删除项目数据库及其 SQLite 附属文件，并从最近项目列表移除。此操作无法撤销；目录中的其他文件和已有备份会保留。若是当前项目，将先安全关闭。',
+      okText: '删除项目',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: () => deleteMutation.mutateAsync(value),
+    })
+  }
+
   const initializeMutation = useMutation({
     mutationFn: initializeBaseData,
     onSuccess: result => {
@@ -112,8 +139,8 @@ export default function ProjectsPage() {
       title="项目空间"
       description="创建或打开一个项目，所有配置、版本、验证和恢复记录都会围绕当前项目组织。"
       extra={<Space wrap>
-        <Button icon={<FolderOpenOutlined />} loading={operation === 'open'} disabled={initializeMutation.isPending} onClick={() => chooseMutation.mutate('open')}>打开项目</Button>
-        <Button type="primary" icon={<FolderAddOutlined />} loading={operation === 'create'} disabled={initializeMutation.isPending} onClick={() => chooseMutation.mutate('create')}>创建项目</Button>
+        <Button icon={<FolderOpenOutlined />} loading={operation === 'open'} disabled={initializeMutation.isPending || deleteMutation.isPending} onClick={() => chooseMutation.mutate('open')}>打开项目</Button>
+        <Button type="primary" icon={<FolderAddOutlined />} loading={operation === 'create'} disabled={initializeMutation.isPending || deleteMutation.isPending} onClick={() => chooseMutation.mutate('create')}>创建项目</Button>
       </Space>}
     />
 
@@ -129,8 +156,8 @@ export default function ProjectsPage() {
         <Col><Statistic title="数据库 Schema" value={project.db_schema_version} prefix="v" /></Col>
         <Col>
           <Space orientation="vertical" className="project-actions">
-            <Button danger icon={<CloseOutlined />} loading={closeMutation.isPending} disabled={initializeMutation.isPending} onClick={() => closeMutation.mutate()}>关闭项目</Button>
-            <Button icon={<DatabaseOutlined />} loading={initializeMutation.isPending} disabled={closeMutation.isPending} onClick={confirmInitialize}>初始化基础数据</Button>
+            <Button danger icon={<CloseOutlined />} loading={closeMutation.isPending} disabled={initializeMutation.isPending || deleteMutation.isPending} onClick={() => closeMutation.mutate()}>关闭项目</Button>
+            <Button icon={<DatabaseOutlined />} loading={initializeMutation.isPending} disabled={closeMutation.isPending || deleteMutation.isPending} onClick={confirmInitialize}>初始化基础数据</Button>
           </Space>
         </Col>
       </Row>
@@ -152,7 +179,10 @@ export default function ProjectsPage() {
         {recent.data.map(item => <div className="project-recent-row" key={item.id}>
           <div className="project-list-icon"><FolderOpenOutlined /></div>
           <div className="project-recent-copy"><strong>{item.name}</strong><Flex gap="small" wrap><Typography.Text type="secondary">{item.id}</Typography.Text>{item.db_schema_version && <Tag>Schema v{item.db_schema_version}</Tag>}</Flex></div>
-          <Button type="link" loading={operation === item.id} disabled={initializeMutation.isPending} onClick={() => recentMutation.mutate(item)}>打开 {item.name}</Button>
+          <Space size="small" wrap className="project-recent-buttons">
+            <Button type="link" loading={operation === item.id} disabled={initializeMutation.isPending || deleteMutation.isPending} onClick={() => recentMutation.mutate(item)}>打开 {item.name}</Button>
+            <Button danger icon={<DeleteOutlined />} loading={deleteMutation.isPending && deleteMutation.variables?.id === item.id} disabled={initializeMutation.isPending || Boolean(operation) || deleteMutation.isPending} onClick={() => confirmDelete(item)}>删除 {item.name}</Button>
+          </Space>
         </div>)}
       </Flex> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无最近项目" />}
     </Card>

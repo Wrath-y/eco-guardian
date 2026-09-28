@@ -26,6 +26,7 @@ var (
 	ErrOtherRejected    = errors.New("other project instance rejected the request")
 	ErrCloseBlocked     = errors.New("project close is blocked")
 	ErrMaintenance      = errors.New("project is in exclusive maintenance")
+	ErrDeleteUnsafe     = errors.New("recent project cannot be safely deleted")
 )
 
 type Clock interface{ Now() time.Time }
@@ -77,6 +78,7 @@ func MaintenanceCoordinator(ctx context.Context) (domain.ID, bool) {
 type RecentProjects interface {
 	Record(ProjectInfo) error
 	List() ([]ProjectInfo, error)
+	Remove(domain.ID) error
 }
 
 type ProjectInfo struct {
@@ -169,6 +171,35 @@ func (m *Manager) Recent() ([]ProjectInfo, error) {
 		return []ProjectInfo{}, nil
 	}
 	return m.recent.List()
+}
+
+// DeleteRecent removes the registered project's database files after verifying
+// its identity and acquiring the same exclusive lock used for opening it.
+func (m *Manager) DeleteRecent(ctx context.Context, id domain.ID) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !id.Valid() || m.recent == nil {
+		return ErrInvalidSelection
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.maintenance != nil {
+		return ErrMaintenance
+	}
+	values, err := m.recent.List()
+	if err != nil {
+		return err
+	}
+	for _, value := range values {
+		if value.ID == id {
+			if m.active != nil && (m.active.ID == id || filepath.Clean(m.active.Path) == filepath.Clean(value.Path)) {
+				return ErrActiveProject
+			}
+			return deleteRecentProject(ctx, value, m.locker, m.recent)
+		}
+	}
+	return ErrInvalidSelection
 }
 
 // OpenRecent resolves a server-owned recent-project identifier to its saved
@@ -563,6 +594,34 @@ func (r *FileRecentProjects) Record(info ProjectInfo) error {
 	records := make([]recentRecord, len(out))
 	for i, v := range out {
 		records[i] = recentRecord{v.ID, v.Name, v.Path}
+	}
+	b, err := json.Marshal(records)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(r.path, b, 0o600)
+}
+
+func (r *FileRecentProjects) Remove(id domain.ID) error {
+	values, err := r.List()
+	if err != nil {
+		return err
+	}
+	out := make([]ProjectInfo, 0, len(values))
+	found := false
+	for _, value := range values {
+		if value.ID == id {
+			found = true
+			continue
+		}
+		out = append(out, value)
+	}
+	if !found {
+		return ErrInvalidSelection
+	}
+	records := make([]recentRecord, len(out))
+	for i, value := range out {
+		records[i] = recentRecord{value.ID, value.Name, value.Path}
 	}
 	b, err := json.Marshal(records)
 	if err != nil {

@@ -48,6 +48,7 @@ func (h *ProjectHandler) Register(r *gin.Engine) {
 	r.POST("/api/v1/projects", h.open)
 	r.GET("/api/v1/projects/recent", h.recent)
 	r.POST("/api/v1/projects/recent/:id", h.openRecent)
+	r.DELETE("/api/v1/projects/recent/:id", h.deleteRecent)
 	r.POST("/api/v1/projects/recent/:id/close-other-instance", h.closeOtherInstance)
 	r.GET("/api/v1/projects/current", h.current)
 	r.POST("/api/v1/projects/close", h.close)
@@ -92,6 +93,22 @@ func (h *ProjectHandler) openRecent(c *gin.Context) {
 	}
 	h.notifyProjectStateChange(true)
 	c.JSON(http.StatusOK, gin.H{"id": info.ID, "name": info.Name, "db_schema_version": store.DBSchemaVersion()})
+}
+func (h *ProjectHandler) deleteRecent(c *gin.Context) {
+	if !safeLoopbackOrigin(c.Request) {
+		problem(c, http.StatusForbidden, "PROJECT_DELETE_UNSAFE", "Request origin is not allowed")
+		return
+	}
+	id := domain.ID(c.Param("id"))
+	if !id.Valid() {
+		problem(c, http.StatusBadRequest, "INVALID_SELECTION", "Invalid recent project")
+		return
+	}
+	if err := h.manager.DeleteRecent(c.Request.Context(), id); err != nil {
+		writeProjectError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 func (h *ProjectHandler) selectDir(c *gin.Context) {
 	if h.selector == nil {
@@ -160,6 +177,10 @@ func writeProjectError(c *gin.Context, err error) {
 		problem(c, 423, "PROJECT_LOCKED", "Project is locked")
 	case errors.Is(err, project.ErrActiveProject):
 		problem(c, 409, "ACTIVE_PROJECT_CONFLICT", "Close the active project first")
+	case errors.Is(err, project.ErrMaintenance):
+		problem(c, 409, "ACTIVE_PROJECT_CONFLICT", "Project maintenance is active")
+	case errors.Is(err, project.ErrDeleteUnsafe):
+		problem(c, 409, "PROJECT_DELETE_UNSAFE", "The recent project cannot be safely deleted")
 	case errors.Is(err, project.ErrCloseBlocked):
 		problem(c, 409, "CLOSE_BLOCKED", "Project close is blocked")
 	case errors.Is(err, project.ErrLockOwnerUnknown):

@@ -123,6 +123,43 @@ describe('React application shell', () => {
     await waitFor(() => expect((screen.getByRole('button', { name: /创建项目/ }) as HTMLButtonElement).disabled).toBe(false))
   })
 
+  it('confirms deletion of a recent project, closes it, and refreshes the list', async () => {
+    const user = userEvent.setup()
+    const fallback = mockBase(false)
+    let active = true
+    let recentItems = [project]
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input)
+      if (path.endsWith('/projects/current')) return Promise.resolve(active
+        ? new Response(JSON.stringify(project), { status: 200 })
+        : new Response(JSON.stringify({ title: 'not open' }), { status: 404 }))
+      if (path.endsWith('/projects/recent')) return Promise.resolve(new Response(JSON.stringify(recentItems), { status: 200 }))
+      if (path.endsWith('/projects/close') && init?.method === 'POST') {
+        active = false
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      if (path.endsWith(`/projects/recent/${project.id}`) && init?.method === 'DELETE') {
+        recentItems = []
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      return fallback(input, init)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderApp()
+
+    await user.click(await screen.findByRole('button', { name: /删除 balance/ }, { timeout: 5000 }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/项目数据库及其 SQLite 附属文件/)).toBeTruthy()
+    expect(fetchMock.mock.calls.some(([input, init]) => String(input).endsWith(`/projects/recent/${project.id}`) && init?.method === 'DELETE')).toBe(false)
+    await user.click(within(dialog).getByRole('button', { name: '删除项目' }))
+
+    expect(await screen.findByText('暂无最近项目')).toBeTruthy()
+    expect(await screen.findByText('尚未打开项目')).toBeTruthy()
+    const calls = fetchMock.mock.calls.map(([input, init]) => `${init?.method ?? 'GET'} ${String(input)}`)
+    expect(calls.indexOf('POST /api/v1/projects/close')).toBeGreaterThanOrEqual(0)
+    expect(calls.indexOf(`DELETE /api/v1/projects/recent/${project.id}`)).toBeGreaterThan(calls.indexOf('POST /api/v1/projects/close'))
+  })
+
   it('closes the active project without waiting for a deferred editor timer', async () => {
     const fallback = mockBase()
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {

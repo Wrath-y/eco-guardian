@@ -3,6 +3,7 @@ package project
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -189,6 +190,111 @@ func TestJobGuardAndRecentProjects(t *testing.T) {
 	values, err := recent.List()
 	if err != nil || len(values) != 1 || values[0].Path != "/moved" {
 		t.Fatalf("recent=%#v %v", values, err)
+	}
+}
+
+func writeProjectIdentity(t *testing.T, directory string, id domain.ID) {
+	t.Helper()
+	database, err := sql.Open("sqlite", filepath.Join(directory, "project.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = database.Exec("CREATE TABLE project_meta(id TEXT PRIMARY KEY); INSERT INTO project_meta(id) VALUES(?)", id); err != nil {
+		_ = database.Close()
+		t.Fatal(err)
+	}
+	if err = database.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDeleteRecentProjectRemovesVerifiedFilesAndKeepsOtherContents(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "shared")
+	if err := os.Mkdir(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := domain.NewID()
+	writeProjectIdentity(t, directory, id)
+	other := filepath.Join(directory, "notes.txt")
+	if err := os.WriteFile(other, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recent := NewFileRecentProjects(t.TempDir())
+	if err := recent.Record(ProjectInfo{ID: id, Name: "shared", Path: directory}); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewManager(NewTokenStore(time.Minute, nil), FileLocker{}, nil, NoJobs{}, recent)
+	if err := manager.DeleteRecent(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(directory, "project.db")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("database remains: %v", err)
+	}
+	if body, err := os.ReadFile(other); err != nil || string(body) != "keep" {
+		t.Fatalf("other file changed: %q %v", body, err)
+	}
+	if values, err := recent.List(); err != nil || len(values) != 0 {
+		t.Fatalf("recent=%#v err=%v", values, err)
+	}
+}
+
+func TestDeleteRecentProjectRefusesMismatchedIdentityAndLock(t *testing.T) {
+	directory := t.TempDir()
+	registeredID, _ := domain.NewID()
+	actualID, _ := domain.NewID()
+	writeProjectIdentity(t, directory, actualID)
+	recent := NewFileRecentProjects(t.TempDir())
+	if err := recent.Record(ProjectInfo{ID: registeredID, Name: "stale", Path: directory}); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewManager(NewTokenStore(time.Minute, nil), FileLocker{}, nil, NoJobs{}, recent)
+	if err := manager.DeleteRecent(context.Background(), registeredID); !errors.Is(err, ErrDeleteUnsafe) {
+		t.Fatalf("mismatched deletion=%v", err)
+	}
+	lock, err := (FileLocker{}).Acquire(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	if err := manager.DeleteRecent(context.Background(), registeredID); !errors.Is(err, ErrProjectLocked) {
+		t.Fatalf("locked deletion=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(directory, "project.db")); err != nil {
+		t.Fatalf("database was deleted: %v", err)
+	}
+	if values, err := recent.List(); err != nil || len(values) != 1 {
+		t.Fatalf("recent=%#v err=%v", values, err)
+	}
+}
+
+func TestDeleteRecentProjectRejectsActiveAndCleansMissingDatabase(t *testing.T) {
+	id, _ := domain.NewID()
+	directory := t.TempDir()
+	recent := NewFileRecentProjects(t.TempDir())
+	tokens := NewTokenStore(time.Minute, nil)
+	token, _, err := tokens.Issue(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := NewManager(tokens, fakeLocker{lock: &fakeLock{}}, fakeFactory{handle: &fakeHandle{id: id}}, NoJobs{}, recent)
+	if _, err := manager.Create(context.Background(), token); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.DeleteRecent(context.Background(), id); !errors.Is(err, ErrActiveProject) {
+		t.Fatalf("active deletion=%v", err)
+	}
+	if err := manager.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "project.db-wal"), []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager = NewManager(NewTokenStore(time.Minute, nil), FileLocker{}, nil, NoJobs{}, recent)
+	if err := manager.DeleteRecent(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(directory); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("empty project directory remains: %v", err)
 	}
 }
 

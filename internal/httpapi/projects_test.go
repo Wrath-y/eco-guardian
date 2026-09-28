@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -72,5 +74,40 @@ func TestProjectHandlerNotifiesRuntimeAfterSuccessfulStateChanges(t *testing.T) 
 	}
 	if len(changes) != 2 || !changes[0] || changes[1] {
 		t.Fatalf("state changes=%v", changes)
+	}
+}
+
+func TestDeleteRecentProjectRouteRemovesRegisteredFilesAndRejectsForeignOrigin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	id, err := domain.NewID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "project.db-wal"), []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recent := project.NewFileRecentProjects(t.TempDir())
+	if err := recent.Record(project.ProjectInfo{ID: id, Name: "fixture", Path: directory}); err != nil {
+		t.Fatal(err)
+	}
+	manager := project.NewManager(project.NewTokenStore(time.Minute, nil), project.FileLocker{}, nil, project.NoJobs{}, recent)
+	engine := gin.New()
+	NewProjectHandler(manager, nil).Register(engine)
+	path := "/api/v1/projects/recent/" + string(id)
+	foreign := httptest.NewRequest(http.MethodDelete, path, nil)
+	foreign.Header.Set("Origin", "https://example.com")
+	foreignResponse := httptest.NewRecorder()
+	engine.ServeHTTP(foreignResponse, foreign)
+	if foreignResponse.Code != http.StatusForbidden {
+		t.Fatalf("foreign status=%d body=%s", foreignResponse.Code, foreignResponse.Body.String())
+	}
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, httptest.NewRequest(http.MethodDelete, path, nil))
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("delete status=%d body=%s", response.Code, response.Body.String())
+	}
+	if values, err := recent.List(); err != nil || len(values) != 0 {
+		t.Fatalf("recent=%#v err=%v", values, err)
 	}
 }
