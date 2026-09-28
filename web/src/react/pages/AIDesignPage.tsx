@@ -7,6 +7,7 @@ import PageHeader from '../components/PageHeader'
 import JobProgress from '../components/JobProgress'
 import { apiRequest, errorMessage, newIdempotencyKey, patchJSON, shortID } from '../api'
 import { useAppState } from '../context/AppContext'
+import { providerReasonSummary } from '../runtimeCopy'
 
 type EntityKind = components['schemas']['EntityKind']
 type Entity = components['schemas']['Entity']
@@ -102,7 +103,7 @@ export default function AIDesignPage() {
 
     <Card className="section-card" title="冻结输入与允许范围">
       {!revisions.isLoading && !revisions.data?.items.length && <Alert className="block-alert" type="error" showIcon title="没有可选择的不可变 Base Revision" />}
-      {capability && !canGenerate && <Alert className="block-alert" type="warning" showIcon title={`Provider 状态：${capability.state}`} description={capability.reasons.join('；')} />}
+      {capability && !canGenerate && <Alert className="block-alert" type="warning" showIcon title="AI 服务尚未就绪" description={providerReasonSummary(capability.reasons)} />}
       <Form form={form} layout="vertical" onFinish={values => generate.mutate(values)}>
         <Form.Item name="base_revision_id" label="Base Revision" rules={[{ required: true }]}><Select options={revisions.data?.items.map(item => ({ value: item.id, label: `#${item.display_revision} · ${shortID(item.id)}` }))} /></Form.Item>
         <Row gutter={16}><Col xs={24} md={8}><Form.Item name="goal_id" label="目标 ID" rules={[{ required: true }]}><Input maxLength={128} /></Form.Item></Col><Col xs={24} md={16}><Form.Item name="goal" label="目标说明" rules={[{ required: true, min: 4 }]}><Input.TextArea rows={3} maxLength={4000} showCount /></Form.Item></Col></Row>
@@ -152,7 +153,7 @@ function ProviderPanel({ settings, capability, onSave, saving, onCredential, cre
   const [credentialForm] = Form.useForm()
   const allowCloud = Form.useWatch('allow_cloud', providerForm)
   useEffect(() => { if (settings) providerForm.setFieldsValue(settings.ai) }, [providerForm, settings])
-  return <Card className="section-card provider-card" title={<Space><CloudOutlined />Provider 设置与就绪状态</Space>} extra={capability && <Tag color={capability.state === 'available' ? 'success' : capability.state === 'degraded' ? 'warning' : 'error'}>{capability.state}</Tag>}>
+  return <Card className="section-card provider-card" title={<Space><CloudOutlined />Provider 设置与就绪状态</Space>} extra={capability && <Tag color={capability.state === 'available' ? 'success' : capability.state === 'degraded' ? 'warning' : 'error'}>{capability.state === 'available' ? '可用' : capability.state === 'degraded' ? '部分可用' : capability.state === 'unconfigured' ? '待配置' : '不可用'}</Tag>}>
     <Row gutter={[24, 16]}>
       <Col xs={24} xl={15}><Form form={providerForm} layout="vertical" onFinish={onSave}>
         <Row gutter={12}><Col xs={24} md={5}><Form.Item name="enabled" label="启用 AI 设计" valuePropName="checked"><Switch /></Form.Item></Col><Col xs={24} md={11}><Form.Item name="endpoint" label="OpenAI-compatible Endpoint" rules={[{ type: 'url', warningOnly: true }]}><Input placeholder="http://127.0.0.1:11434/v1" /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="model" label="Model"><Input autoComplete="off" /></Form.Item></Col></Row>

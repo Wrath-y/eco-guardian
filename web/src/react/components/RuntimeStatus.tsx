@@ -4,6 +4,7 @@ import { ApiOutlined, CheckCircleOutlined, ExclamationCircleOutlined, ReloadOutl
 import { useNavigate } from 'react-router-dom'
 import { apiRequest, errorMessage, newIdempotencyKey } from '../api'
 import { useAppState } from '../context/AppContext'
+import { capabilityName, runtimeActionNames, runtimeReasonSummary } from '../runtimeCopy'
 
 const stateColor: Record<string, string> = {
   available: 'success', healthy: 'success', ready: 'success', degraded: 'warning', unavailable: 'error', stopped: 'default',
@@ -15,14 +16,17 @@ const stateLabel: Record<string, string> = {
 }
 
 export default function RuntimeStatus() {
-  const { runtime, runtimeCapabilities, runtimeError, refreshRuntime } = useAppState()
+  const { project, runtime, runtimeCapabilities, runtimeError, refreshRuntime } = useAppState()
   const [open, setOpen] = useState(false)
   const [runningAction, setRunningAction] = useState('')
   const navigate = useNavigate()
   const [messageApi, contextHolder] = message.useMessage()
   const phase = runtime?.phase ?? 'unavailable'
   const actions = new Map<string, NonNullable<typeof runtime>['capabilities'][number]['actions'][number]>()
-  runtime?.capabilities.forEach(capability => capability.actions.forEach(action => actions.set(`${action.id}:${action.uri}`, action)))
+  runtime?.capabilities.forEach(capability => {
+    if (capability.id === 'backup' && capability.reasons.some(reason => reason.code === 'BACKUP_PROJECT_UNAVAILABLE')) return
+    capability.actions.forEach(action => actions.set(`${action.id}:${action.uri}`, action))
+  })
   const restoreState = runtimeCapabilities?.backup.restore_state ?? 'idle'
   const maintenance = ['maintenance', 'recovering', 'recovery_required'].includes(restoreState)
 
@@ -75,15 +79,23 @@ export default function RuntimeStatus() {
         {runtime && <>
           <Descriptions bordered size="small" column={1} className="runtime-descriptions">
             <Descriptions.Item label="运行阶段"><Tag color={stateColor[phase]}>{stateLabel[phase] ?? phase}</Tag></Descriptions.Item>
+            <Descriptions.Item label="当前项目">{project?.name ?? '尚未打开'}</Descriptions.Item>
             <Descriptions.Item label="应用版本">{runtime.build.version} · {runtime.build.package_mode}</Descriptions.Item>
             <Descriptions.Item label="监听地址"><Typography.Text copyable code>{runtime.listener.url}</Typography.Text></Descriptions.Item>
             <Descriptions.Item label="日志位置"><Typography.Text copyable code>{runtime.log_location}</Typography.Text></Descriptions.Item>
           </Descriptions>
+          {runtime.project.state === 'none' && <Alert type="info" showIcon className="block-alert" title="打开项目后可使用备份与发布"
+            description="当前没有打开项目。创建或打开项目后，系统会自动重新检查这些能力。"
+            action={<Button onClick={() => { setOpen(false); navigate('/projects') }}>前往项目空间</Button>} />}
           <Typography.Title level={5}>能力与依赖</Typography.Title>
           <Flex vertical className="runtime-capability-list">
             {runtime.capabilities.map(item => <div className="runtime-capability-row" key={item.id}>
               <span className="runtime-capability-icon">{item.state === 'available' ? <CheckCircleOutlined className="status-ok" /> : <ExclamationCircleOutlined className="status-warn" />}</span>
-              <span className="runtime-capability-copy"><strong>{item.id}</strong><small>{item.reasons.map(reason => reason.code).join('、') || `v${item.version}`}</small></span>
+              <span className="runtime-capability-copy"><strong>{capabilityName(item.id)}</strong>
+                <Tooltip title={item.reasons.length ? `诊断码：${item.reasons.map(reason => reason.code).join('、')}` : undefined}>
+                  <small>{item.state === 'available' ? '已就绪' : runtimeReasonSummary(item.reasons, runtime.project.state === 'active')}</small>
+                </Tooltip>
+              </span>
               <Tag color={stateColor[item.state]}>{stateLabel[item.state] ?? item.state}</Tag>
             </div>)}
           </Flex>
@@ -94,8 +106,15 @@ export default function RuntimeStatus() {
                 const settings = ['provider.settings', 'credential.configure', 'backup.settings'].includes(action.id)
                 const restore = action.id === 'restore.inspect'
                 return <Button key={`${action.id}:${action.uri}`} loading={runningAction === action.id}
-                  onClick={() => settings ? navigate('/settings') : restore ? navigate('/backups') : void runAction(action)}>
-                  {action.id}
+                  onClick={() => {
+                    if (settings || restore) {
+                      setOpen(false)
+                      navigate(restore ? '/backups' : action.id === 'credential.configure' ? '/ai-design' : '/settings')
+                    } else {
+                      void runAction(action)
+                    }
+                  }}>
+                  {runtimeActionNames[action.id] ?? '查看操作'}
                 </Button>
               })}
             </Flex>

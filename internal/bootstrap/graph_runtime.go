@@ -63,6 +63,8 @@ type graphRuntimeDependency struct {
 	refreshRequests chan struct{}
 	refreshCancel   context.CancelFunc
 	refreshWait     sync.WaitGroup
+	healthTTL       time.Duration
+	healthPoll      time.Duration
 
 	supervisor *graphprocess.Supervisor
 	output     *graphprocess.ChildOutputQueue
@@ -241,8 +243,12 @@ func (dependency *graphRuntimeDependency) start(ctx context.Context) error {
 	if selection.Ownership == platformprocess.OwnershipExternal {
 		dependency.publishProcess(graphprocess.ProcessObservation{State: graphprocess.StateExternal, Ownership: selection.Ownership, Endpoint: selection.Endpoint})
 	}
+	ttl := dependency.healthTTL
+	if ttl <= 0 {
+		ttl = 30 * time.Second
+	}
 	observer, observerErr := graphprocess.NewHealthObserver(graphprocess.HealthObserverOptions{
-		Source: healthAdapter, Timeout: time.Duration(settings.HealthTimeoutSeconds) * time.Second, TTL: 5 * time.Second,
+		Source: healthAdapter, Timeout: time.Duration(settings.HealthTimeoutSeconds) * time.Second, TTL: ttl,
 	})
 	if observerErr != nil {
 		dependency.publishUnavailable("GRAPH_HEALTH_OBSERVER_UNAVAILABLE")
@@ -278,11 +284,10 @@ func (dependency *graphRuntimeDependency) Close(ctx context.Context) error {
 	if dependency == nil {
 		return nil
 	}
+	dependency.stopRefreshLoop()
 	dependency.actionMu.Lock()
 	defer dependency.actionMu.Unlock()
-	err := dependency.close(ctx)
-	dependency.stopRefreshLoop()
-	return err
+	return dependency.close(ctx)
 }
 
 func (dependency *graphRuntimeDependency) close(ctx context.Context) error {
@@ -434,15 +439,47 @@ func (dependency *graphRuntimeDependency) startRefreshLoop() {
 	dependency.mu.Unlock()
 	go func() {
 		defer dependency.refreshWait.Done()
+		interval := dependency.healthPoll
+		if interval <= 0 {
+			interval = 15 * time.Second
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-requests:
 				dependency.triggerRefresh(refreshContext)
+			case <-ticker.C:
+				dependency.pollHealth(refreshContext)
 			case <-refreshContext.Done():
 				return
 			}
 		}
 	}()
+}
+
+func (dependency *graphRuntimeDependency) pollHealth(ctx context.Context) {
+	dependency.actionMu.Lock()
+	dependency.mu.Lock()
+	observer, endpoint := dependency.observer, dependency.endpoint
+	dependency.mu.Unlock()
+	if observer == nil || endpoint == "" {
+		dependency.actionMu.Unlock()
+		return
+	}
+	previous := observer.Snapshot()
+	if previous.Generation != 0 && time.Now().Before(previous.ExpiresAt) {
+		dependency.actionMu.Unlock()
+		return
+	}
+	health, err := observer.Observe(ctx, endpoint)
+	if err == nil {
+		dependency.setHealth(health)
+	}
+	dependency.actionMu.Unlock()
+	if err == nil {
+		dependency.triggerRefresh(ctx)
+	}
 }
 
 func (dependency *graphRuntimeDependency) requestRefresh() {

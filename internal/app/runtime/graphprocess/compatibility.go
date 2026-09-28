@@ -113,24 +113,27 @@ func evaluateHealthCompatibility(health graphsync.Health, registry *OperationReg
 		sort.Strings(operation.Reasons)
 		result.Operations = append(result.Operations, operation)
 	}
-	result.Retrieval = reduceRetrievalCompatibility(result.Operations)
+	result.Retrieval = reduceRetrievalCompatibility(result.Operations, dependencies["rerank"] == "disabled")
 	sort.Strings(result.Reasons)
 	sort.Strings(result.Diagnostics)
 	result.Compatible = len(result.Reasons) == 0 && requiredCoreOperationsAvailable(result.Operations)
 	return result
 }
 
-func reduceRetrievalCompatibility(operations []OperationCompatibility) OperationCompatibility {
+func reduceRetrievalCompatibility(operations []OperationCompatibility, rerankDisabled bool) OperationCompatibility {
 	result := OperationCompatibility{ID: "retrieval", State: OperationAvailable, Reasons: []string{}}
 	bm25 := operationByID(operations, OperationRetrievalBM25)
 	vector := operationByID(operations, OperationRetrievalVector)
 	rerank := operationByID(operations, OperationRetrievalRerank)
 	if bm25.State == OperationUnavailable && vector.State == OperationUnavailable {
 		result.State = OperationUnavailable
-	} else if bm25.State != OperationAvailable || vector.State != OperationAvailable || rerank.State != OperationAvailable {
+	} else if bm25.State != OperationAvailable || vector.State != OperationAvailable || (!rerankDisabled && rerank.State != OperationAvailable) {
 		result.State = OperationDegraded
 	}
 	for _, operation := range []OperationCompatibility{bm25, vector, rerank} {
+		if rerankDisabled && operation.ID == OperationRetrievalRerank {
+			continue
+		}
 		if operation.State != OperationAvailable {
 			result.Reasons = append(result.Reasons, operation.Reasons...)
 		}
@@ -147,7 +150,10 @@ func applyHealthState(operation *OperationCompatibility, prefix, state string) {
 			operation.State = OperationDegraded
 		}
 		operation.Reasons = append(operation.Reasons, prefix+"_DEGRADED")
-	case "unavailable", "disabled", "":
+	case "disabled":
+		operation.State = OperationUnavailable
+		operation.Reasons = append(operation.Reasons, prefix+"_DISABLED")
+	case "unavailable", "":
 		operation.State = OperationUnavailable
 		operation.Reasons = append(operation.Reasons, prefix+"_UNAVAILABLE")
 	default:

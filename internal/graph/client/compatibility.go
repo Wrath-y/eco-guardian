@@ -42,7 +42,8 @@ func EvaluateCompatibility(health graphsync.Health) Compatibility {
 		}
 	}
 	for _, name := range []string{"vector", "rerank"} {
-		if state := stateFor(health.Dependencies, name); state == "degraded" || state == "unavailable" || state == "disabled" {
+		state := stateFor(health.Dependencies, name)
+		if state == "degraded" || state == "unavailable" || (name == "vector" && state == "disabled") {
 			result.Warnings = append(result.Warnings, "DEGRADED_"+name)
 		}
 	}

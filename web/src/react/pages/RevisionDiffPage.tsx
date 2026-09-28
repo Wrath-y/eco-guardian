@@ -9,6 +9,7 @@ import GraphStatusCard from '../components/GraphStatusCard'
 import JobProgress from '../components/JobProgress'
 import { apiRequest, errorMessage, newIdempotencyKey, shortID } from '../api'
 import { useAppState } from '../context/AppContext'
+import { releaseReasonSummary } from '../runtimeCopy'
 
 type RevisionDetail = components['schemas']['RevisionDetail']
 type RevisionDiff = components['schemas']['RevisionDiff']
@@ -93,7 +94,7 @@ export default function RevisionDiffPage() {
     </Card>
 
     <Card className="section-card release-card" title={<Space><SafetyCertificateOutlined />发布检查</Space>}>
-      {capabilities.data && <Alert className="block-alert" type={capabilities.data.release.enabled ? 'success' : 'warning'} showIcon icon={<CheckCircleOutlined />} title={capabilities.data.release.enabled ? '服务端发布入口当前可用' : '服务端发布入口当前不可用'} description={capabilities.data.release.disabled_reasons?.map(reason => `${reason.gate_id}: ${reason.code}`).join('；') || '最终 Gate 仍会在提交时重新校验。'} />}
+      {capabilities.data && <Alert className="block-alert" type={capabilities.data.release.enabled ? 'success' : 'warning'} showIcon icon={<CheckCircleOutlined />} title={capabilities.data.release.enabled ? '发布入口可用' : '发布入口暂不可用'} description={releaseReasonSummary(capabilities.data.release.disabled_reasons)} />}
       <Form form={form} layout="vertical" onFinish={values => release.mutate(values)}>
         <Row gutter={16}>
           <Col xs={24} md={12}><Form.Item name="policy_id" label="Release Policy" rules={[{ required: true }]}><Select options={policies.data?.items.map(item => ({ value: item.id, label: `Policy #${item.display_version} · ${shortID(item.id)}` }))} /></Form.Item></Col>

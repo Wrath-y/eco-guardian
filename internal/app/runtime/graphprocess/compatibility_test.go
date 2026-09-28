@@ -139,3 +139,19 @@ func TestCompatibilityPreservesOneBaseRetrievalMode(t *testing.T) {
 		t.Fatalf("one-mode retrieval=%#v", result.Retrieval)
 	}
 }
+
+func TestCompatibilityTreatsIntentionallyDisabledRerankAsOptional(t *testing.T) {
+	health := compatibleHealth()
+	for index := range health.Dependencies {
+		if health.Dependencies[index].Name == "rerank" {
+			health.Dependencies[index].State = "disabled"
+		}
+	}
+	result := EvaluateHealthCompatibility(health, nil)
+	if !result.Compatible || result.Retrieval.State != OperationAvailable || len(result.Retrieval.Reasons) != 0 {
+		t.Fatalf("disabled optional rerank degraded retrieval: %#v", result.Retrieval)
+	}
+	if got := operationByID(result.Operations, OperationRetrievalRerank); got.State != OperationUnavailable || !reflect.DeepEqual(got.Reasons, []string{"DEPENDENCY_rerank_DISABLED"}) {
+		t.Fatalf("rerank operation=%#v", got)
+	}
+}

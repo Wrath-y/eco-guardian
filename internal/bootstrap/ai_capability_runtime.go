@@ -78,8 +78,10 @@ func (runtime *aiCapabilityRuntime) configurationKey(ctx context.Context) string
 	if ctx != nil {
 		resolutionContext = context.WithoutCancel(ctx)
 	}
-	if secret, resolveErr := runtime.credentials.Resolve(resolutionContext, aiprovider.OpenAICompatibleProvider); resolveErr == nil {
-		credentialPresent, credentialSource = secret.Present(), secret.Source()
+	if settings.AI.Enabled {
+		if secret, resolveErr := runtime.credentials.Resolve(resolutionContext, aiprovider.OpenAICompatibleProvider); resolveErr == nil {
+			credentialPresent, credentialSource = secret.Present(), secret.Source()
+		}
 	}
 	return fmt.Sprintf("%t\x00%s\x00%s\x00%d\x00%t\x00%t\x00%s", settings.AI.Enabled, settings.AI.Endpoint, settings.AI.Model, settings.AI.RequestTimeoutSeconds, settings.AI.AllowCloud, credentialPresent, credentialSource)
 }

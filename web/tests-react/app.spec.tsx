@@ -112,6 +112,31 @@ describe('React application shell', () => {
     expect(new Headers(reprobe?.[1]?.headers).get('Idempotency-Key')).toBeTruthy()
   })
 
+  it('explains unavailable capabilities and the next project action in plain language', async () => {
+    const user = userEvent.setup()
+    const fallback = mockBase(false)
+    const noProjectRuntime = {
+      ...runtime, phase: 'degraded', project: { state: 'none', project_id: null, recent_count: 0, recovery_required: false },
+      capabilities: [
+        { id: 'backup', version: '1', state: 'unavailable', observation_generation: 1, reasons: [{ code: 'BACKUP_PROJECT_UNAVAILABLE', component: 'module.backup', observation_generation: 1 }], actions: [] },
+        { id: 'release', version: '1', state: 'unavailable', observation_generation: 1, reasons: [{ code: 'RELEASE_GATE_UNREGISTERED', component: 'release.gates', observation_generation: 1 }], actions: [] },
+        { id: 'retrieval', version: '1', state: 'degraded', observation_generation: 1, reasons: [{ code: 'DEPENDENCY_rerank_UNAVAILABLE', component: 'graph.retrieval', observation_generation: 1 }], actions: [] },
+      ],
+    }
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => String(input).endsWith('/runtime/status')
+      ? Promise.resolve(new Response(JSON.stringify(noProjectRuntime), { status: 200 }))
+      : fallback(input, init)))
+    renderApp()
+
+    await user.click(await screen.findByRole('button', { name: '降级' }))
+    expect(await screen.findByText('项目备份')).toBeTruthy()
+    expect(screen.getByText('正式发布')).toBeTruthy()
+    expect(screen.getByText('尚未打开项目。打开或创建项目后即可备份。')).toBeTruthy()
+    expect(screen.getByText('尚未打开项目。打开或创建项目后即可检查发布能力。')).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: '前往项目空间' }).length).toBeGreaterThan(1)
+    expect(screen.queryByText('BACKUP_PROJECT_UNAVAILABLE')).toBeNull()
+  })
+
   it('creates a project through the native selection capability', async () => {
     const user = userEvent.setup()
     const fetchMock = mockBase(false)

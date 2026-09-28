@@ -12,6 +12,30 @@ import (
 	runtimeconfig "github.com/zouyi/eco-guardian/internal/app/runtime/config"
 )
 
+type countingCredentialStore struct{ reads atomic.Int64 }
+
+func (*countingCredentialStore) Put(context.Context, string, []byte) error { return nil }
+func (store *countingCredentialStore) Get(context.Context, string) ([]byte, error) {
+	store.reads.Add(1)
+	return nil, aiprovider.ErrCredentialNotFound
+}
+func (*countingCredentialStore) Delete(context.Context, string) error { return nil }
+
+func TestDisabledAIStatusDoesNotAccessCredentialManager(t *testing.T) {
+	settingsStore := runtimeconfig.NewStore(t.TempDir() + "/settings.json")
+	if err := settingsStore.Save(runtimeconfig.Default()); err != nil {
+		t.Fatal(err)
+	}
+	credentialStore := &countingCredentialStore{}
+	runtime := &aiCapabilityRuntime{settings: settingsStore, credentials: aiprovider.CredentialResolver{Store: credentialStore}}
+	if capability := runtime.Observe(t.Context()); capability.State != aiprovider.CapabilityUnconfigured || capability.Reasons[0] != aiprovider.ReasonDisabled {
+		t.Fatalf("capability=%#v", capability)
+	}
+	if credentialStore.reads.Load() != 0 {
+		t.Fatalf("disabled AI read the credential manager %d times", credentialStore.reads.Load())
+	}
+}
+
 func TestAICapabilityRuntimeCachesProbeUntilConfigurationChanges(t *testing.T) {
 	var posts atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

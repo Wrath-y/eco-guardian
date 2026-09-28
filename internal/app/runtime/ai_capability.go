@@ -61,6 +61,9 @@ func (s AICapabilityService) Observe(ctx context.Context) aiprovider.Capability 
 		Enabled: settings.AI.Enabled, Endpoint: settings.AI.Endpoint, Model: settings.AI.Model,
 		Timeout: time.Duration(settings.AI.RequestTimeoutSeconds) * time.Second, AllowCloud: settings.AI.AllowCloud,
 	}
+	if !configuration.Enabled {
+		return aiprovider.ResolveCapability(ctx, configuration, aiprovider.Secret{}, s.Prober)
+	}
 	secret, err := s.Credentials.Resolve(ctx, aiprovider.OpenAICompatibleProvider)
 	if err != nil && !errors.Is(err, aiprovider.ErrCredentialNotFound) {
 		capability := aiprovider.Capability{State: aiprovider.CapabilityUnavailable, Enabled: settings.AI.Enabled, Reasons: []string{aiprovider.ReasonCredentialUnavailable}}

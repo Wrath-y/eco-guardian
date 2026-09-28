@@ -112,6 +112,22 @@ func TestCompatibilityUsesContractAndPreservesOptionalVectorWarning(t *testing.T
 	}
 }
 
+func TestCompatibilityDoesNotWarnForDisabledOptionalRerank(t *testing.T) {
+	health := graphsync.Health{
+		Status: "ok", APIVersions: []string{"v1"}, SupportedSchemaVersions: []string{"1.0"},
+		Capabilities: []graphsync.HealthState{{Name: "snapshot_lifecycle", State: "available"}, {Name: "task_polling", State: "available"}},
+		Dependencies: []graphsync.HealthState{
+			{Name: "sqlite", State: "available"}, {Name: "graph_migrations", State: "available"},
+			{Name: "core_graph_query", State: "available"}, {Name: "bm25", State: "available"},
+			{Name: "vector", State: "available"}, {Name: "rerank", State: "disabled"},
+		},
+	}
+	compatibility := EvaluateCompatibility(health)
+	if !compatibility.Compatible || len(compatibility.Warnings) != 0 {
+		t.Fatalf("disabled optional rerank produced a warning: %#v", compatibility)
+	}
+}
+
 func TestErrorCatalogIsCodeOnlyAndSafe(t *testing.T) {
 	error := &graphsync.ProviderError{Code: "CONTENT_HASH_CONFLICT", Message: "raw graph text must not escape", RequestID: "request-2", Details: map[string]any{"raw": "secret"}}
 	safe := SafeProviderError(error)

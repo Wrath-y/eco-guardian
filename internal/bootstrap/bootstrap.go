@@ -553,6 +553,7 @@ func defaultRuntimeCapabilities(snapshot appruntime.StatusSnapshot, graphs ...*g
 		actions[descriptor.ID] = descriptor.Action
 	}
 	aiUnavailable := observations[capability.ObservationAIProvider].State != capability.Available
+	graphIssue := observations[capability.ObservationGraphSync].State != capability.Available || observations[capability.ObservationRetrieval].State != capability.Available
 	graphAffected := map[string]bool{
 		capability.CapabilityGraphSync: true, capability.CapabilityDeterministicImpact: true,
 		capability.CapabilityRetrieval: true, capability.CapabilityAIDesign: true, capability.CapabilityRelease: true,
@@ -561,7 +562,7 @@ func defaultRuntimeCapabilities(snapshot appruntime.StatusSnapshot, graphs ...*g
 		if results[index].State == capability.Available {
 			continue
 		}
-		if configured && graphAffected[results[index].ID] {
+		if configured && graphIssue && graphAffected[results[index].ID] {
 			results[index].Actions = append(results[index].Actions, actions[capability.ActionGraphReconnect])
 			if observed {
 				results[index].Actions = append(results[index].Actions, actions[capability.ActionRuntimeReprobe])
@@ -570,12 +571,21 @@ func defaultRuntimeCapabilities(snapshot appruntime.StatusSnapshot, graphs ...*g
 		if results[index].ID == capability.CapabilityAIDesign && aiUnavailable {
 			results[index].Actions = append(results[index].Actions, actions[capability.ActionProviderSettings], actions[capability.ActionCredentialConfigure])
 		}
-		if results[index].ID == capability.CapabilityBackup {
+		if results[index].ID == capability.CapabilityBackup && !hasCapabilityReason(results[index].Reasons, "BACKUP_PROJECT_UNAVAILABLE") {
 			results[index].Actions = append(results[index].Actions, actions[capability.ActionBackupRetry], actions[capability.ActionBackupSettings])
 		}
 		sort.Slice(results[index].Actions, func(left, right int) bool { return results[index].Actions[left].ID < results[index].Actions[right].ID })
 	}
 	return results
+}
+
+func hasCapabilityReason(reasons []capability.Reason, code string) bool {
+	for _, reason := range reasons {
+		if reason.Code == code {
+			return true
+		}
+	}
+	return false
 }
 
 func graphActionState(graph *graphRuntimeDependency) (configured, observed bool) {

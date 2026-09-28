@@ -122,3 +122,43 @@ func TestGraphRuntimeDependencyCloseCancelsAndJoinsRefreshWorker(t *testing.T) {
 		t.Fatal("refresh worker was not joined before close returned")
 	}
 }
+
+func TestGraphRuntimeDependencyRefreshesExpiredHealthWithoutManualReprobe(t *testing.T) {
+	var unavailable atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		if unavailable.Load() {
+			writer.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = writer.Write([]byte(`{"code":"GRAPH_STORE_UNAVAILABLE","message":"store unavailable","retryable":true,"details":{},"request_id":"probe"}`))
+			return
+		}
+		_, _ = writer.Write([]byte(compatibleHealth))
+	}))
+	defer server.Close()
+
+	settings := runtimeconfig.Default()
+	settings.Graph.Mode = runtimeconfig.GraphExternal
+	settings.Graph.Endpoint = server.URL
+	dependency := &graphRuntimeDependency{
+		settings: &settingsStartup{current: settings}, root: t.TempDir(),
+		healthTTL: 40 * time.Millisecond, healthPoll: 20 * time.Millisecond,
+		refresh: func(context.Context) {},
+	}
+	if err := dependency.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	defer dependency.Close(context.Background())
+	unavailable.Store(true)
+	deadline := time.After(2 * time.Second)
+	for {
+		_, health := dependency.Snapshot()
+		if health.Generation > 1 && health.State == graphprocess.HealthUnavailable {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("expired health was not refreshed: %#v", health)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
