@@ -232,7 +232,7 @@ export default function EntityEditorPage() {
     <PageHeader
       eyebrow={<><CodeOutlined /> 结构化实体</>}
       title={creating ? `新建${kindLabel}` : `${String(entity.data?.entity.name ?? kindLabel)} · 编辑`}
-      description={schema.isLoading ? '正在读取表单配置…' : creating ? `按字段填写${kindLabel}信息；每一项都附有填写示例。` : `按字段编辑${kindLabel}信息，保存后会创建新的配置修订。`}
+      description={schema.isLoading ? '正在读取表单配置…' : creating ? `按字段填写${kindLabel}信息；每一项都附有填写示例。` : `按字段编辑${kindLabel}信息；每一项都附有填写示例，保存后会创建新的配置修订。`}
       extra={<Space><Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/config/${kind}`)}>返回列表</Button><Button type="primary" icon={<SaveOutlined />} loading={save.isPending} onClick={() => save.mutate()}>保存</Button></Space>}
     />
 
@@ -246,10 +246,10 @@ export default function EntityEditorPage() {
         <Card className="section-card" title="基础信息">
           <Form form={form} layout="vertical" onValuesChange={() => setDirty(true)}>
             <Row gutter={16}>
-              <Col xs={24} md={12}><Form.Item name="key" label="Key" tooltip={helpTooltip('配置在系统内的稳定标识，用于引用、版本比较和问题定位。')} rules={[{ required: true, message: '请输入 Key' }, { pattern: /^[a-z][a-z0-9_]*$/, message: '仅可使用小写字母、数字和下划线' }]} extra={creating ? `示例：${basicExample.key}；用于系统内唯一识别` : undefined}><Input placeholder={`例如 ${basicExample.key}`} data-field-path="/key" /></Form.Item></Col>
-              <Col xs={24} md={12}><Form.Item name="name" label="名称" tooltip={helpTooltip('配置的显示名称，会出现在列表、选择器和分析结果中。')} rules={[{ required: true, message: '请输入名称' }]} extra={creating ? `示例：${basicExample.name}；用于页面展示` : undefined}><Input placeholder={`例如 ${basicExample.name}`} data-field-path="/name" /></Form.Item></Col>
+              <Col xs={24} md={12}><Form.Item name="key" label="Key" tooltip={helpTooltip('配置在系统内的稳定标识，用于引用、版本比较和问题定位。')} rules={[{ required: true, message: '请输入 Key' }, { pattern: /^[a-z][a-z0-9_]*$/, message: '仅可使用小写字母、数字和下划线' }]} extra={`示例：${basicExample.key}；用于系统内唯一识别`}><Input placeholder={`例如 ${basicExample.key}`} data-field-path="/key" /></Form.Item></Col>
+              <Col xs={24} md={12}><Form.Item name="name" label="名称" tooltip={helpTooltip('配置的显示名称，会出现在列表、选择器和分析结果中。')} rules={[{ required: true, message: '请输入名称' }]} extra={`示例：${basicExample.name}；用于页面展示`}><Input placeholder={`例如 ${basicExample.name}`} data-field-path="/name" /></Form.Item></Col>
             </Row>
-            <Form.Item name="description" label="说明" tooltip={helpTooltip('记录这项配置的用途和设计意图，方便维护者理解何时使用它。')} extra={creating ? `示例：${basicExample.description}` : undefined}><Input.TextArea rows={3} placeholder={basicExample.description} data-field-path="/description" /></Form.Item>
+            <Form.Item name="description" label="说明" tooltip={helpTooltip('记录这项配置的用途和设计意图，方便维护者理解何时使用它。')} extra={`示例：${basicExample.description}`}><Input.TextArea rows={3} placeholder={basicExample.description} data-field-path="/description" /></Form.Item>
             <Row gutter={16}>
               <Col xs={24} md={12}>
                 <Form.Item
@@ -260,7 +260,7 @@ export default function EntityEditorPage() {
                     : '用于配置分类、筛选和规则匹配，可以选择多个标签。')}
                   extra={editingTag
                     ? '用于给当前标签附加检索标签，与下方“父标签”的层级关系不同；可留空。'
-                    : creating ? `示例：${basicExample.tags}` : undefined}
+                    : `示例：${basicExample.tags}`}
                 >
                   <Select
                     mode="multiple"
@@ -279,7 +279,7 @@ export default function EntityEditorPage() {
                 </Form.Item>
               </Col>
               <Col xs={24} md={12}>
-                <Form.Item name="balance_group" label="平衡分组" tooltip={helpTooltip('把同类型且需要一起比较的配置归入一组，供平衡分析和风险评估使用。删除图标只移除下拉候选，不会修改已保存配置。')} extra={creating ? `示例：${basicExample.balanceGroup}；同组配置便于一起比较` : undefined}>
+                <Form.Item name="balance_group" label="平衡分组" tooltip={helpTooltip('把同类型且需要一起比较的配置归入一组，供平衡分析和风险评估使用。删除图标只移除下拉候选，不会修改已保存配置。')} extra={`示例：${basicExample.balanceGroup}；同组配置便于一起比较`}>
                   <AutoComplete
                     allowClear
                     options={balanceGroupOptions}
@@ -312,7 +312,7 @@ export default function EntityEditorPage() {
             <Divider titlePlacement="start">配置字段</Divider>
             <Typography.Paragraph type="secondary">请按业务含义填写以下字段，系统会自动整理并校验数据，无需编写 JSON。</Typography.Paragraph>
             {catalogs.isError && <Alert className="block-alert" type="warning" showIcon title="引用选项加载失败" description="属性、标签、技能、物品或效果的选择列表暂不可用。" action={<Button onClick={() => void catalogs.refetch()}>重试</Button>} />}
-            <PayloadForm kind={entityKind} form={form} catalogs={catalogs.data} catalogsLoading={catalogs.isLoading} dslUnits={schema.data?.dsl_registry?.units} showExamples={creating} />
+            <PayloadForm kind={entityKind} form={form} catalogs={catalogs.data} catalogsLoading={catalogs.isLoading} dslUnits={schema.data?.dsl_registry?.units} showExamples />
             <Space className="form-sync-status"><Typography.Text type={dirty ? 'warning' : 'secondary'}>{dirty ? '有未保存修改' : '已与服务器同步'}</Typography.Text></Space>
           </Form>
         </Card>

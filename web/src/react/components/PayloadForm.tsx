@@ -89,7 +89,7 @@ const fieldHelp = {
   modifierOperation: '决定新数值与原属性值的组合方式，例如增加、乘算、覆盖或取极值。',
   modifierValue: '作为计算方式的操作数；填写负数可以表示减少。',
   triggerEvent: '选择系统在什么事件发生时检查并执行这条规则。',
-  triggerCondition: '进一步限制规则何时执行；留空时，只要触发事件发生就会执行。',
+  triggerCondition: '进一步限制规则何时执行；留空时，只要触发事件发生就会执行。示例中的属性 Key 和单位需与项目配置对应。当前模拟执行仅支持留空的触发条件。',
   triggerEffects: '选择规则触发后要施加的一个或多个效果。',
   terminationBudget: '限制这条规则在一次触发链中的执行次数，防止效果循环无限触发。',
   valueType: '决定属性保存和校验为整数、小数还是布尔值，并影响默认值的填写方式。',
@@ -253,8 +253,67 @@ function formulaSuggestions(name: 'attribute_values' | 'costs', attribute?: Enti
   return [...options].map(([value, label]) => ({ value, label }))
 }
 
+const triggerConditionExample = '${self:critical_rate} > 0.5'
+
+function conditionSuggestions(attributes: EntityOption[]) {
+  const options = new Map<string, string>([
+    ['true', 'true · 布尔常量：真'],
+    ['false', 'false · 布尔常量：假'],
+    [triggerConditionExample, `${triggerConditionExample} · 自身暴击率高于 50%`],
+    ['${self:health} <= 30[health_point]', '${self:health} <= 30[health_point] · 自身生命值不高于 30'],
+    ['${target:health} < 30[health_point]', '${target:health} < 30[health_point] · 目标生命值低于 30'],
+    ['${source:attack_power} >= 100[damage_point]', '${source:attack_power} >= 100[damage_point] · 来源攻击力至少 100'],
+    ['${self:health} != 0[health_point]', '${self:health} != 0[health_point] · 自身生命值不为零'],
+    ['!${self:stunned}', '!${self:stunned} · 自身未眩晕'],
+    ['${self:stunned} == false', '${self:stunned} == false · 布尔属性比较'],
+    ['${self:critical_rate} > 0.5 && ${target:health} < 30[health_point]', '${self:critical_rate} > 0.5 && ${target:health} < 30[health_point] · 同时满足两个条件'],
+    ['${self:critical_rate} > 0.5 || ${self:health} <= 30[health_point]', '${self:critical_rate} > 0.5 || ${self:health} <= 30[health_point] · 满足任一条件'],
+    ['if(${self:stunned}, false, true)', 'if(${self:stunned}, false, true) · 条件函数返回布尔值'],
+  ])
+  for (const item of attributes) {
+    const self = `\${self:${item.key}}`
+    const target = `\${target:${item.key}}`
+    if (item.payload?.value_type === 'boolean') {
+      options.set(self, `${self} · 读取自身 · ${item.name}（${item.key}）`)
+      options.set(`!${self}`, `!${self} · 自身属性为假 · ${item.name}（${item.key}）`)
+      options.set(target, `${target} · 读取目标 · ${item.name}（${item.key}）`)
+    } else if ((item.payload?.value_type === 'integer' || item.payload?.value_type === 'decimal') && item.payload.base_unit) {
+      const unit = item.payload.base_unit
+      options.set(`${self} > 0[${unit}]`, `${self} > 0[${unit}] · 自身属性大于零 · ${item.name}（${item.key}）`)
+      options.set(`${target} < 100[${unit}]`, `${target} < 100[${unit}] · 目标属性小于 100 · ${item.name}（${item.key}）`)
+      const source = `\${source:${item.key}}`
+      options.set(`${source} >= 0[${unit}]`, `${source} >= 0[${unit}] · 来源属性非负 · ${item.name}（${item.key}）`)
+    }
+  }
+  return [...options].map(([value, label]) => ({ value, label }))
+}
+
+function ExpressionAutocomplete({
+  options, placeholder, fieldPath, onClick, onFocus, onSearch, onSelect, ...inputProps
+}: Omit<AutoCompleteProps<string>, 'options'> & {
+  options: { value: string; label: string }[]
+  placeholder: string
+  fieldPath: string
+}) {
+  const [filtering, setFiltering] = useState(false)
+  return <AutoComplete
+    {...inputProps}
+    allowClear
+    options={options}
+    suffixIcon={<DownOutlined />}
+    placeholder={placeholder}
+    popupMatchSelectWidth={520}
+    filterOption={(inputValue, option) => !filtering || `${String(option?.value ?? '')} ${String(option?.label ?? '')}`.toLowerCase().includes(inputValue.toLowerCase())}
+    onClick={event => { setFiltering(false); onClick?.(event) }}
+    onFocus={event => { setFiltering(false); onFocus?.(event) }}
+    onSearch={value => { setFiltering(true); onSearch?.(value) }}
+    onSelect={(value, option) => { setFiltering(false); onSelect?.(value, option) }}
+    data-field-path={fieldPath}
+  />
+}
+
 function FormulaExpressionInput({
-  name, watchName, catalogs, dslUnits, fieldPath, onClick, onFocus, onSearch, onSelect, ...inputProps
+  name, watchName, catalogs, dslUnits, fieldPath, ...inputProps
 }: Omit<AutoCompleteProps<string>, 'options'> & {
   name: 'attribute_values' | 'costs'
   watchName: PathPart[]
@@ -263,25 +322,30 @@ function FormulaExpressionInput({
   fieldPath: string
 }) {
   const form = Form.useFormInstance()
-  const [filtering, setFiltering] = useState(false)
   const outputAttributeID = Form.useWatch(watchName, form)
   const attributes = catalogs?.attribute ?? []
   const outputAttribute = attributes.find(item => item.id === outputAttributeID)
-  const options = formulaSuggestions(name, outputAttribute, attributes, dslUnits)
-  return <AutoComplete
+  return <ExpressionAutocomplete
     {...inputProps}
-    allowClear
-    options={options}
-    suffixIcon={<DownOutlined />}
+    options={formulaSuggestions(name, outputAttribute, attributes, dslUnits)}
     placeholder="请输入公式，或点击选择常用公式"
-    popupMatchSelectWidth={520}
-    filterOption={(inputValue, option) => !filtering || `${String(option?.value ?? '')} ${String(option?.label ?? '')}`.toLowerCase().includes(inputValue.toLowerCase())}
     notFoundContent="没有匹配的公式，可继续直接输入"
-    onClick={event => { setFiltering(false); onClick?.(event) }}
-    onFocus={event => { setFiltering(false); onFocus?.(event) }}
-    onSearch={value => { setFiltering(true); onSearch?.(value) }}
-    onSelect={(value, option) => { setFiltering(false); onSelect?.(value, option) }}
-    data-field-path={fieldPath}
+    fieldPath={fieldPath}
+  />
+}
+
+function TriggerConditionInput({
+  catalogs, fieldPath, ...inputProps
+}: Omit<AutoCompleteProps<string>, 'options'> & {
+  catalogs?: EntityCatalogs
+  fieldPath: string
+}) {
+  return <ExpressionAutocomplete
+    {...inputProps}
+    options={conditionSuggestions(catalogs?.attribute ?? [])}
+    placeholder="留空表示总是触发；可输入条件或选择示例"
+    notFoundContent="没有匹配的条件示例，可继续直接输入"
+    fieldPath={fieldPath}
   />
 }
 
@@ -523,7 +587,7 @@ function TriggerRules({
     name={name}
     title={title}
     description="定义何时触发、作用于谁，以及触发哪些效果。"
-    example={showExamples ? '命中时，对主要目标施加“燃烧”效果；条件可填写 ${self:critical_rate} > 0.5。' : undefined}
+    example={showExamples ? `命中时，对主要目标施加“燃烧”效果；条件可填写 ${triggerConditionExample}。` : undefined}
     addLabel={`添加${title}`}
     createItem={() => ({ event: 'on_use', condition: '', target: { type: 'self' }, effect_ids: [], termination_budget: '' })}
   >
@@ -541,8 +605,8 @@ function TriggerRules({
           </Form.Item>
         </Col>
         <Col xs={24} md={16}>
-          <Form.Item name={[field.name, 'condition']} label="触发条件（可选）" tooltip={helpTooltip(fieldHelp.triggerCondition)} extra={fieldExample(showExamples, '${self:critical_rate} > 0.5；留空表示总是触发')}>
-            <Input placeholder="留空表示总是触发" data-field-path={`/payload/${name}/${index}/condition`} />
+          <Form.Item name={[field.name, 'condition']} label="触发条件（可选）" tooltip={helpTooltip(fieldHelp.triggerCondition)} extra={fieldExample(showExamples, `${triggerConditionExample}；留空表示总是触发`)}>
+            <TriggerConditionInput catalogs={catalogs} fieldPath={`/payload/${name}/${index}/condition`} />
           </Form.Item>
         </Col>
         <TargetSelectorFields

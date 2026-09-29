@@ -455,6 +455,46 @@ describe('React application shell', () => {
     expect(screen.getByText(/会因量纲不同而校验失败/)).toBeTruthy()
   })
 
+  it('offers trigger-condition examples while keeping free-form input', async () => {
+    const user = userEvent.setup()
+    const fallback = mockEntityCatalogs()
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/v1/entities/attribute?limit=200') {
+        return Promise.resolve(new Response(JSON.stringify({
+          items: [{
+            id: project.id,
+            name: '暴击率',
+            key: 'critical_rate',
+            entity_version: 1,
+            payload: { value_type: 'decimal', dimension: 'scalar', base_unit: 'scalar' },
+          }],
+          next_cursor: null,
+        }), { status: 200 }))
+      }
+      return fallback(input, init)
+    }))
+    renderApp('/config/character/new')
+
+    await user.click(await screen.findByRole('button', { name: /添加触发规则/ }))
+    const condition = screen.getByRole('combobox', { name: '触发条件（可选）' }) as HTMLInputElement
+    await user.click(condition)
+    await user.click(await screen.findByText('${self:critical_rate} > 0.5 · 自身暴击率高于 50%'))
+    expect(condition.value).toBe('${self:critical_rate} > 0.5')
+
+    await user.clear(condition)
+    await user.paste('同时满足两个条件')
+    expect(await screen.findByText('${self:critical_rate} > 0.5 && ${target:health} < 30[health_point] · 同时满足两个条件')).toBeTruthy()
+
+    await user.clear(condition)
+    await user.paste('自身属性大于零')
+    await user.click(await screen.findByText('${self:critical_rate} > 0[scalar] · 自身属性大于零 · 暴击率（critical_rate）'))
+    expect(condition.value).toBe('${self:critical_rate} > 0[scalar]')
+
+    await user.clear(condition)
+    await user.paste('${self:critical_rate} > 0.5[scalar]')
+    expect(condition.value).toBe('${self:critical_rate} > 0.5[scalar]')
+  })
+
   it('shows an inline validation error for incompatible formula dimensions', async () => {
     const user = userEvent.setup()
     const fallback = mockEntityCatalogs()
