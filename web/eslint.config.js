@@ -4,7 +4,7 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 
 export default [
   {
-    files: ['src/main.tsx', 'src/react/**/*.{ts,tsx}'],
+    files: ['src/main.tsx', 'src/react/**/*.{ts,tsx}', 'src/tfd/**/*.{ts,tsx}'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',

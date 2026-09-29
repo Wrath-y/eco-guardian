@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Avatar, Breadcrumb, Button, Layout, Menu, Space, Spin, Tag, Typography, type MenuProps } from 'antd'
 import {
-  ApartmentOutlined, AppstoreOutlined, BarsOutlined, BranchesOutlined, CloudSyncOutlined,
+  ApartmentOutlined, AppstoreOutlined, BarsOutlined, BranchesOutlined, CalculatorOutlined, CloudSyncOutlined,
   BulbOutlined, CloudServerOutlined, CodeOutlined, DatabaseOutlined, ExperimentOutlined, FileSearchOutlined,
   FolderOpenOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ProjectOutlined, RobotOutlined, SafetyCertificateOutlined,
   SettingOutlined, TagsOutlined, ThunderboltOutlined,
@@ -22,6 +22,7 @@ const RiskReviewsPage = lazy(() => import('./pages/RiskReviewsPage'))
 const AIDesignPage = lazy(() => import('./pages/AIDesignPage'))
 const BackupsPage = lazy(() => import('./pages/BackupsPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const TFDCalculatorPage = lazy(() => import('./pages/TFDCalculatorPage'))
 
 const { Header, Sider, Content } = Layout
 
@@ -32,6 +33,7 @@ const routeLabels: Array<[RegExp, string, string]> = [
   [/^\/versions\/[^/]+\/diff/, '版本与发布', '版本差异'],
   [/^\/versions/, '版本与发布', '版本历史'],
   [/^\/simulations/, '分析工具', '模拟实验'],
+  [/^\/tfd-calculator/, '分析工具', '配装与伤害计算'],
   [/^\/impact/, '分析工具', '影响分析'],
   [/^\/risk-reviews/, '分析工具', '风险复核'],
   [/^\/ai-design/, '智能辅助', 'AI 平衡设计'],
@@ -68,6 +70,7 @@ function Shell() {
     { type: 'group', label: '版本与分析', children: [
       { key: 'versions', icon: <BranchesOutlined />, label: '版本历史', disabled: !project },
       { key: 'simulations', icon: <ExperimentOutlined />, label: '模拟实验', disabled: !project },
+      { key: 'tfd-calculator', icon: <CalculatorOutlined />, label: '配装与伤害计算', disabled: !project },
       { key: 'impact', icon: <ApartmentOutlined />, label: '影响分析', disabled: !project },
       { key: 'risk-reviews', icon: <FileSearchOutlined />, label: '风险复核', disabled: !project },
       { key: 'ai-design', icon: <RobotOutlined />, label: 'AI 平衡设计', disabled: !project },
@@ -127,6 +130,7 @@ function Shell() {
               <Route path="/versions" element={<VersionsPage />} />
               <Route path="/versions/:id/diff" element={<RevisionDiffPage />} />
               <Route path="/simulations" element={<SimulationsPage />} />
+              <Route path="/tfd-calculator" element={<TFDCalculatorPage />} />
               <Route path="/impact" element={<ImpactPage />} />
               <Route path="/risk-reviews" element={<RiskReviewsPage />} />
               <Route path="/ai-design" element={<AIDesignPage />} />
