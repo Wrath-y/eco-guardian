@@ -101,4 +101,20 @@ func TestEntityHandlerRequiresProjectAndBoundsPage(t *testing.T) {
 	if w.Code != 400 {
 		t.Fatal(w.Code)
 	}
+	for _, suffix := range []string{"?page=0", "?page=abc", "?page=1&cursor=invalid"} {
+		w = httptest.NewRecorder()
+		engine.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/entities/tag"+suffix, nil))
+		if w.Code != 400 {
+			t.Fatalf("%s: %d", suffix, w.Code)
+		}
+	}
+	w = httptest.NewRecorder()
+	engine.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/entities/tag?page=1&limit=2", nil))
+	var page struct {
+		Total int             `json:"total"`
+		Items []domain.Entity `json:"items"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &page) != nil || page.Total != 0 || len(page.Items) != 0 {
+		t.Fatalf("numbered page: %d %s", w.Code, w.Body.String())
+	}
 }

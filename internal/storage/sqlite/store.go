@@ -1076,6 +1076,7 @@ func (s *Store) Get(ctx context.Context, kind domain.EntityKind, id domain.ID) (
 type Page struct {
 	Items      []domain.Entity
 	NextCursor string
+	Total      int
 }
 type cursor struct {
 	Key string    `json:"k"`
@@ -1116,6 +1117,48 @@ func (s *Store) List(ctx context.Context, kind domain.EntityKind, query, after s
 	if err != nil {
 		return Page{}, err
 	}
+	return readEntityPage(rows, limit)
+}
+
+// ListNumbered serves direct page navigation while List preserves the stable
+// cursor contract for clients that traverse a changing catalog.
+func (s *Store) ListNumbered(ctx context.Context, kind domain.EntityKind, query string, page, limit int) (Page, error) {
+	if !kind.Valid() {
+		return Page{}, errors.New("unsupported kind")
+	}
+	if limit < 1 || limit > 200 {
+		return Page{}, errors.New("limit must be 1..200")
+	}
+	if page < 1 || page-1 > int(^uint(0)>>1)/limit {
+		return Page{}, errors.New("invalid page")
+	}
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return Page{}, err
+	}
+	defer tx.Rollback()
+	var total int
+	err = tx.QueryRowContext(ctx, `SELECT count(*) FROM working_entities w JOIN entity_blobs b ON b.hash=w.blob_hash WHERE w.kind=? AND w.status='active' AND (?='' OR lower(w.entity_key) LIKE lower(?) OR lower(json_extract(b.json,'$.name')) LIKE lower(?))`, kind, query, "%"+query+"%", "%"+query+"%").Scan(&total)
+	if err != nil {
+		return Page{}, err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT b.json FROM working_entities w JOIN entity_blobs b ON b.hash=w.blob_hash WHERE w.kind=? AND w.status='active' AND (?='' OR lower(w.entity_key) LIKE lower(?) OR lower(json_extract(b.json,'$.name')) LIKE lower(?)) ORDER BY w.entity_key,w.id LIMIT ? OFFSET ?`, kind, query, "%"+query+"%", "%"+query+"%", limit+1, (page-1)*limit)
+	if err != nil {
+		return Page{}, err
+	}
+	p, err := readEntityPage(rows, limit)
+	if err != nil {
+		return Page{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Page{}, err
+	}
+	p.Total = total
+	return p, nil
+}
+
+func readEntityPage(rows *sql.Rows, limit int) (Page, error) {
 	defer rows.Close()
 	p := Page{Items: make([]domain.Entity, 0, limit)}
 	for rows.Next() {

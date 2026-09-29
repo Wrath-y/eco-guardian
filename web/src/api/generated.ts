@@ -2458,6 +2458,8 @@ export interface components {
         EntityPage: {
             items: components["schemas"]["Entity"][];
             next_cursor?: string | null;
+            /** @description Matching active entity count when page is requested. */
+            total?: number;
         };
         AIVersionIdentity: {
             id: string;
@@ -2958,6 +2960,8 @@ export interface operations {
                 query?: string;
                 /** @description Opaque continuation cursor */
                 cursor?: string;
+                /** @description One-based page number for direct navigation; cannot be combined with cursor. Numbered pages may shift after catalog writes. Responses include total. */
+                page?: number;
                 limit?: number;
             };
             header?: never;
@@ -2968,7 +2972,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Stable entity page */
+            /** @description Entity page with cursor or numbered navigation */
             200: {
                 headers: {
                     [name: string]: unknown;

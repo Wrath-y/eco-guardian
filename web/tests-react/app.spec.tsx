@@ -33,7 +33,7 @@ function mockBase(active = true) {
     if (path.endsWith('/projects/recent')) return Promise.resolve(new Response('[]', { status: 200 }))
     if (path.endsWith('/project-selections')) return Promise.resolve(new Response(JSON.stringify({ token: 'opaque' }), { status: 201 }))
     if (path.endsWith('/projects') && init?.method === 'POST') return Promise.resolve(new Response(JSON.stringify(project), { status: 201 }))
-    if (path.includes('/entities/tag')) return Promise.resolve(new Response(JSON.stringify({ items: [{ id: project.id, kind: 'tag', name: 'Flame', key: 'flame', entity_version: 1 }], next_cursor: null }), { status: 200 }))
+    if (path.includes('/entities/tag')) return Promise.resolve(new Response(JSON.stringify({ items: [{ id: project.id, kind: 'tag', name: 'Flame', key: 'flame', entity_version: 1 }], next_cursor: null, total: 1 }), { status: 200 }))
     return Promise.resolve(new Response(JSON.stringify({ title: 'not mocked' }), { status: 404 }))
   })
 }
@@ -276,6 +276,37 @@ describe('React application shell', () => {
     expect(await screen.findByRole('heading', { name: '标签配置' })).toBeTruthy()
     expect(await screen.findByRole('button', { name: 'Flame' })).toBeTruthy()
   })
+
+  it('shows numbered entity pages with previous, next, and direct jump controls', async () => {
+    const user = userEvent.setup()
+    const fallback = mockBase()
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), 'http://localhost')
+      if (url.pathname !== '/api/v1/entities/tag' || !url.searchParams.has('page')) return fallback(input, init)
+      const page = Number(url.searchParams.get('page'))
+      const query = url.searchParams.get('query') ?? ''
+      const total = query ? 1 : 120
+      const first = (page - 1) * 50 + 1
+      const items = query ? [{ id: 'filtered', name: 'Filtered', key: 'filtered', entity_version: 1 }]
+        : Array.from({ length: Math.max(0, Math.min(50, total - first + 1)) }, (_, index) => ({ id: String(first + index), name: `Tag ${first + index}`, key: `tag_${first + index}`, entity_version: 1 }))
+      return Promise.resolve(new Response(JSON.stringify({ items, total, next_cursor: null }), { status: 200 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderApp('/config/tag')
+
+    expect(await screen.findByRole('button', { name: 'Tag 1' })).toBeTruthy()
+    expect(screen.getByText('共 120 条')).toBeTruthy()
+    await user.click(screen.getByText('3', { selector: '.ant-pagination-item-3 a' }))
+    expect(await screen.findByRole('button', { name: 'Tag 101' })).toBeTruthy()
+    await user.click(screen.getByText('上一页'))
+    expect(await screen.findByRole('button', { name: 'Tag 51' })).toBeTruthy()
+    await user.type(document.querySelector('.ant-pagination-options-quick-jumper input') as HTMLInputElement, '3')
+    await user.click(screen.getByRole('button', { name: '跳转' }))
+    expect(await screen.findByRole('button', { name: 'Tag 101' })).toBeTruthy()
+    await user.type(screen.getByRole('textbox', { name: '搜索' }), 'Filtered')
+    expect(await screen.findByRole('button', { name: 'Filtered' })).toBeTruthy()
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('query=Filtered') && String(input).includes('page=1'))).toBe(true)
+  }, 20000)
 
   it('allows the first tag to be created without a circular tag prerequisite', async () => {
     const user = userEvent.setup()

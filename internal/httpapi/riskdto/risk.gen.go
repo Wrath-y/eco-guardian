@@ -1740,6 +1740,7 @@ const (
 	ProblemCodeMIGRATIONBACKUPREQUIRED             ProblemCode = "MIGRATION_BACKUP_REQUIRED"
 	ProblemCodeOTHERINSTANCEUNAVAILABLE            ProblemCode = "OTHER_INSTANCE_UNAVAILABLE"
 	ProblemCodePRECONDITIONREQUIRED                ProblemCode = "PRECONDITION_REQUIRED"
+	ProblemCodePROJECTDELETEUNSAFE                 ProblemCode = "PROJECT_DELETE_UNSAFE"
 	ProblemCodePROJECTLOCKED                       ProblemCode = "PROJECT_LOCKED"
 	ProblemCodePROJECTNOTOPEN                      ProblemCode = "PROJECT_NOT_OPEN"
 	ProblemCodePROJECTORVERSIONUNAVAILABLE         ProblemCode = "PROJECTOR_VERSION_UNAVAILABLE"
@@ -1929,6 +1930,8 @@ func (e ProblemCode) Valid() bool {
 	case ProblemCodeOTHERINSTANCEUNAVAILABLE:
 		return true
 	case ProblemCodePRECONDITIONREQUIRED:
+		return true
+	case ProblemCodePROJECTDELETEUNSAFE:
 		return true
 	case ProblemCodePROJECTLOCKED:
 		return true
@@ -4164,6 +4167,9 @@ type EntityKind string
 type EntityPage struct {
 	Items      []Entity `json:"items"`
 	NextCursor *string  `json:"next_cursor,omitempty"`
+
+	// Total Matching active entity count when page is requested.
+	Total *int `json:"total,omitempty"`
 }
 
 // EntityPatch defines model for EntityPatch.
@@ -6109,7 +6115,10 @@ type ListEntitiesParams struct {
 
 	// Cursor Opaque continuation cursor
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Page One-based page number for direct navigation; cannot be combined with cursor. Numbered pages may shift after catalog writes. Responses include total.
+	Page  *int `form:"page,omitempty" json:"page,omitempty"`
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // DeleteEntityParams defines parameters for DeleteEntity.

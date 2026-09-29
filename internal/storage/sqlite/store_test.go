@@ -736,6 +736,34 @@ func TestListHasStableCursorAndKindIsolation(t *testing.T) {
 	}
 }
 
+func TestListNumberedSupportsDirectPagesAndFilteredTotals(t *testing.T) {
+	s := newStore(t)
+	for _, key := range []string{"alpha", "bravo", "charlie"} {
+		if _, _, err := s.Create(context.Background(), domain.KindTag, tagDraft(key)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := s.Create(context.Background(), domain.KindAttribute, domain.EntityDraft{Key: "delta", Name: "delta", Payload: map[string]json.RawMessage{"value_type": json.RawMessage(`"decimal"`), "dimension": json.RawMessage(`"d"`), "base_unit": json.RawMessage(`"u"`), "default": json.RawMessage(`"1"`)}}); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := s.ListNumbered(context.Background(), domain.KindTag, "", 2, 2)
+	if err != nil || page.Total != 3 || len(page.Items) != 1 || page.Items[0].Key != "charlie" {
+		t.Fatalf("second page=%#v err=%v", page, err)
+	}
+	page, err = s.ListNumbered(context.Background(), domain.KindTag, "br", 1, 2)
+	if err != nil || page.Total != 1 || len(page.Items) != 1 || page.Items[0].Key != "bravo" {
+		t.Fatalf("filtered page=%#v err=%v", page, err)
+	}
+	page, err = s.ListNumbered(context.Background(), domain.KindTag, "", 3, 2)
+	if err != nil || page.Total != 3 || len(page.Items) != 0 {
+		t.Fatalf("out of range page=%#v err=%v", page, err)
+	}
+	if _, err := s.ListNumbered(context.Background(), domain.KindTag, "", 0, 2); err == nil {
+		t.Fatal("zero page accepted")
+	}
+}
+
 func TestArchiveReferenceProtectionAndRevisionImmutability(t *testing.T) {
 	s := newStore(t)
 	tag, _, err := s.Create(context.Background(), domain.KindTag, tagDraft("fire"))

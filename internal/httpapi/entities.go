@@ -19,6 +19,7 @@ import (
 type EntityStore interface {
 	Get(context.Context, domain.EntityKind, domain.ID) (domain.Entity, error)
 	List(context.Context, domain.EntityKind, string, string, int) (store.Page, error)
+	ListNumbered(context.Context, domain.EntityKind, string, int, int) (store.Page, error)
 	Create(context.Context, domain.EntityKind, domain.EntityDraft) (domain.Entity, domain.RevisionSummary, error)
 	Patch(context.Context, domain.EntityKind, domain.ID, int64, domain.EntityPatch) (domain.Entity, domain.RevisionSummary, error)
 	Delete(context.Context, domain.EntityKind, domain.ID, int64) (domain.Entity, domain.RevisionSummary, error)
@@ -92,12 +93,28 @@ func (h *EntityHandler) list(c *gin.Context) {
 		problem(c, 400, "VALIDATION_FAILED", "limit must be between 1 and 200")
 		return
 	}
-	p, err := s.List(c.Request.Context(), k, c.Query("query"), c.Query("cursor"), limit)
+	var p store.Page
+	var err error
+	pageValue, hasPage := c.GetQuery("page")
+	if hasPage {
+		page, parseErr := strconv.Atoi(pageValue)
+		if parseErr != nil || page < 1 || page-1 > int(^uint(0)>>1)/limit || c.Query("cursor") != "" {
+			problem(c, 400, "VALIDATION_FAILED", "page must be positive and cannot be combined with cursor")
+			return
+		}
+		p, err = s.ListNumbered(c.Request.Context(), k, c.Query("query"), page, limit)
+	} else {
+		p, err = s.List(c.Request.Context(), k, c.Query("query"), c.Query("cursor"), limit)
+	}
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	c.JSON(200, gin.H{"items": p.Items, "next_cursor": nullable(p.NextCursor)})
+	response := gin.H{"items": p.Items, "next_cursor": nullable(p.NextCursor)}
+	if hasPage {
+		response["total"] = p.Total
+	}
+	c.JSON(200, response)
 }
 func nullable(v string) any {
 	if v == "" {
